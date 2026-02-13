@@ -1,6 +1,6 @@
 ﻿<?php
 /**
- * BGL System v3.0 - Server Driven Refactor
+ * WBGL System v3.0 - Server Driven Refactor
  * ==============================================
  * Stack: PHP 8 + Vanilla JS + CSS Variables
  * Logic: Stateless Interface (HTML is truth)
@@ -46,7 +46,7 @@ $mockCandidates = [
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BGL System v3.0 (Vanilla)</title>
+    <title>WBGL System v3.0 (Vanilla)</title>
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">

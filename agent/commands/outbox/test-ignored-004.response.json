@@ -1,1 +1,0 @@
-{"id": "test-ignored-004", "op": "set_ignored", "ts": "2026-01-29T14:17:08.443277+00:00", "ignored_paths": ["C:\\Users\\Bakheet\\Documents\\Projects\\BGL3\\ignored_area"], "ignored_globs": ["**/*.tmp", "ignored_area/**"], "ok": true, "msg": "ignored rules updated"}

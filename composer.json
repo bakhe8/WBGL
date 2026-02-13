@@ -1,6 +1,6 @@
 {
     "name": "bakhe8/wbgl",
-    "description": "نظام إدارة الضمانات البنكية - WBGL System v3",
+    "description": "نظام إدارة الضمانات البنكية - WBGL System",
     "version": "1.0.0",
     "type": "project",
     "keywords": ["guarantee", "bank", "management", "php", "sqlite"],

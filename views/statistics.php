@@ -529,7 +529,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>الإحصائيات المتقدمة - BGL3</title>
+    <title>الإحصائيات المتقدمة - WBGL</title>
     
     <!-- Design System CSS -->
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">

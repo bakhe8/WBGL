@@ -11,7 +11,7 @@ namespace App\Services;
  * - Easily extensible for future actions
  * - Uses PreviewFormatter for helper functions
  * 
- * @author BGL3 System
+ * @author WBGL System
  * @version 1.0.0
  */
 class LetterBuilder

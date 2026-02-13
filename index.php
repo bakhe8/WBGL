@@ -5,7 +5,7 @@ header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
 /**
- * BGL System v3.0 - Clean Rebuild
+ * WBGL System v3.0 - Clean Rebuild
  * =====================================
  * 
  * Timeline-First approach with clean, maintainable code
@@ -13,7 +13,7 @@ header("Pragma: no-cache");
  * 
  * @version 3.0.0
  * @date 2025-12-23
- * @author BGL Team
+ * @author WBGL Team
  */
 
 // Load dependencies
@@ -377,7 +377,7 @@ $formattedSuppliers = array_map(function($s) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BGL System v3.0</title>
+    <title>WBGL System v3.0</title>
     
     <!-- ✅ COMPLIANCE: Server-Driven Partials (Hidden) -->
     <?php include __DIR__ . '/partials/confirm-modal.php'; ?>

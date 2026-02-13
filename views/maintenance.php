@@ -57,7 +57,7 @@ $isProd = $settings->isProductionMode();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>أدوات الصيانة - BGL System v3.0</title>
+    <title>أدوات الصيانة - WBGL System v3.0</title>
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Core Styles -->

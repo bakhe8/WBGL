@@ -1,6 +1,6 @@
 <?php
 /**
- * Batch Detail Page - Refactored for BGL3
+ * Batch Detail Page - Refactored for WBGL
  * Features: Modern UI, Toast Notifications, Modal Inputs, Loading States
  * Uses Standard Design System
  */

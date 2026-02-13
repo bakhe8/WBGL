@@ -64,12 +64,21 @@ WBGL/
 git clone https://github.com/bakhe8/WBGL.git
 cd WBGL
 
-# Start development server
-php -S localhost:8000
+# Windows (موصى به): تشغيل آمن بدون تعارض منافذ
+./toggle.bat
+
+# أو تحديد منفذ مخصص للمشروع (اختياري)
+$env:WBGL_PORT=8012
+./toggle.bat
+
+# تشغيل يدوي مباشر (إذا رغبت)
+php -S localhost:8000 server.php
 
 # Open in browser
-http://localhost:8000
+http://localhost:<PORT>
 ```
+
+ملاحظة: سكربت `toggle.ps1` يختار منفذًا متاحًا تلقائيًا بين `8000-8100` إذا لم تحدد `WBGL_PORT`.
 
 ### Database Setup
 

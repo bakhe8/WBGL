@@ -11,7 +11,7 @@ if (!window.RecordsController) {
         }
 
         init() {
-            // console.log('BGL System Controller initialized');
+            // console.log('WBGL System Controller initialized');
             this.bindEvents();
             this.bindGlobalEvents();
             this.initializeState();
@@ -26,21 +26,21 @@ if (!window.RecordsController) {
         }
 
         flushPendingToast() {
-            const raw = sessionStorage.getItem('bgl_pending_toast');
+            const raw = sessionStorage.getItem('wbgl_pending_toast');
             if (!raw) return;
-            sessionStorage.removeItem('bgl_pending_toast');
+            sessionStorage.removeItem('wbgl_pending_toast');
             try {
                 const payload = JSON.parse(raw);
                 if (payload && payload.message && window.showToast) {
                     window.showToast(payload.message, payload.type || 'info');
                 }
             } catch (e) {
-                sessionStorage.removeItem('bgl_pending_toast');
+                sessionStorage.removeItem('wbgl_pending_toast');
             }
         }
 
         queueToast(message, type = 'info') {
-            sessionStorage.setItem('bgl_pending_toast', JSON.stringify({ message, type }));
+            sessionStorage.setItem('wbgl_pending_toast', JSON.stringify({ message, type }));
         }
 
         bindGlobalEvents() {
@@ -596,21 +596,21 @@ if (!window.RecordsController) {
         // Custom UI Helpers
         customConfirm(message) {
             return new Promise((resolve) => {
-                const overlay = document.getElementById('bgl-confirm-overlay');
+                const overlay = document.getElementById('wbgl-confirm-overlay');
                 if (!overlay) {
                     // Critical: Modal HTML not found in page
                     // This should never happen if the partial is included
-                    console.error('CRITICAL: bgl-confirm-overlay not found. Ensure partials/confirm-modal.php is included.');
+                    console.error('CRITICAL: wbgl-confirm-overlay not found. Ensure partials/confirm-modal.php is included.');
                     // Resolve false to prevent any destructive action
                     resolve(false);
                     return;
                 }
 
-                const msgEl = document.getElementById('bgl-confirm-message');
+                const msgEl = document.getElementById('wbgl-confirm-message');
                 if (msgEl) msgEl.textContent = message;
 
-                const yesBtn = document.getElementById('bgl-confirm-yes');
-                const noBtn = document.getElementById('bgl-confirm-no');
+                const yesBtn = document.getElementById('wbgl-confirm-yes');
+                const noBtn = document.getElementById('wbgl-confirm-no');
 
                 // Show modal
                 overlay.style.display = 'flex';
@@ -638,7 +638,7 @@ if (!window.RecordsController) {
         customPrompt(message) {
             return new Promise((resolve) => {
                 const overlay = document.createElement('div');
-                overlay.id = 'bgl-prompt-overlay';
+                overlay.id = 'wbgl-prompt-overlay';
                 overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);';
 
                 overlay.innerHTML = `

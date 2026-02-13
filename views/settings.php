@@ -12,7 +12,7 @@ $currentSettings = $settings->all();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>الإعدادات - BGL System v3.0</title>
+    <title>الإعدادات - WBGL System v3.0</title>
     
     <!-- Design System CSS -->
     <link rel="stylesheet" href="../public/css/design-system.css">

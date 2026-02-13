@@ -1,6 +1,0 @@
-{
-  "op": "set_ignored",
-  "id": "test-ignored-004",
-  "paths": ["ignored_area"],
-  "globs": ["**/*.tmp", "ignored_area/**"]
-}

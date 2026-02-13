@@ -1,1 +1,7 @@
 /vendor/
+server.pid
+server.port
+storage/logs/*.log
+storage/database/*.sqlite
+storage/database/*.db
+storage/attachments/*

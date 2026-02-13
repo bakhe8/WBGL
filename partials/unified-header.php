@@ -1,7 +1,7 @@
 <?php
 /**
  * Unified Header Component
- * Used across all BGL3 pages for consistent navigation
+ * Used across all WBGL pages for consistent navigation
  */
 
 // Detect current page for active state

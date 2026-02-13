@@ -57,7 +57,7 @@ class SimpleXlsxReader
             $rowData = [];
             // Simple logic: assume sequential cells but they might be sparse.
             // Improve: use 'r' attribute like 'A1' to place in correct index if needed.
-            // For BGL context, sequential is usually fine. 
+            // For WBGL context, sequential is usually fine. 
             // Better: loop through all 'c' children.
             
             foreach ($row->c as $cell) {

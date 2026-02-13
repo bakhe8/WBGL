@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Paste Confidence Demo - BGL3</title>
+    <title>Smart Paste Confidence Demo - WBGL</title>
     <link rel="stylesheet" href="../public/css/confidence-indicators.css">
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; background: #f9fafb; }
