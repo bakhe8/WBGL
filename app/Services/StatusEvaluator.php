@@ -3,6 +3,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\Database;
+use PDO;
+
 /**
  * StatusEvaluator
  * 
@@ -40,9 +43,9 @@ class StatusEvaluator
      * @param int $guaranteeId Guarantee ID
      * @return string Status: 'ready' or 'pending'
      */
-    public static function evaluateFromDatabase(int $guaranteeId): string
+    public static function evaluateFromDatabase(int $guaranteeId, ?PDO $db = null): string
     {
-        global $db;
+        $db = $db ?? Database::connect();
         
         $stmt = $db->prepare("
             SELECT supplier_id, bank_id 

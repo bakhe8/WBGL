@@ -16,6 +16,11 @@ header('Content-Type: text/html; charset=utf-8');
 
 try {
     $index = isset($_GET['index']) ? intval($_GET['index']) : 1;
+    $statusFilter = isset($_GET['filter']) ? trim((string)$_GET['filter']) : (isset($_GET['status_filter']) ? trim((string)$_GET['status_filter']) : 'all');
+    $searchTerm = isset($_GET['search']) ? trim((string)$_GET['search']) : null;
+    if ($searchTerm === '') {
+        $searchTerm = null;
+    }
     
     if ($index < 1) {
         throw new \RuntimeException('Invalid index');
@@ -75,16 +80,17 @@ try {
         ]);
     };
     
-    // Get all guarantees IDs
-    $stmt = $db->query('SELECT id FROM guarantees ORDER BY imported_at DESC LIMIT 100');
-    $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
-    $total = count($ids);
-    
-    if ($index > $total) {
+    $guaranteeId = \App\Services\NavigationService::getIdByIndex(
+        $db,
+        $index,
+        $statusFilter,
+        $searchTerm
+    );
+
+    if (!$guaranteeId) {
         throw new \RuntimeException('Index out of range');
     }
-    
-    $guaranteeId = $ids[$index - 1];
+
     $guarantee = $guaranteeRepo->find($guaranteeId);
     
     if (!$guarantee) {

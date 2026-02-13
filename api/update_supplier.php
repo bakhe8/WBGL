@@ -65,8 +65,9 @@ try {
         throw new Exception('Update execution failed');
     }
     
-    // ✅ Verify ID preservation (using direct query due to SQLite PDO bug)
-    $verifyStmt = $db->query("SELECT id FROM suppliers WHERE id = $supplierId");
+    // ✅ Verify ID preservation
+    $verifyStmt = $db->prepare('SELECT id FROM suppliers WHERE id = ?');
+    $verifyStmt->execute([$supplierId]);
     if (!$verifyStmt->fetchColumn()) {
         throw new Exception('Critical: Supplier ID was lost during update!');
     }

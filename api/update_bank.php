@@ -51,10 +51,10 @@ try {
         throw new Exception('Update execution failed');
     }
     
-    // ✅ Verify the bank still exists (using direct query due to SQLite PDO bug)
+    // ✅ Verify the bank still exists
     // Note: rows affected = 0 is OK if data didn't change
-    // IMPORTANT: Using direct query because prepared statements fail for some IDs in SQLite
-    $verifyStmt = $db->query("SELECT id FROM banks WHERE id = $bankId");
+    $verifyStmt = $db->prepare('SELECT id FROM banks WHERE id = ?');
+    $verifyStmt->execute([$bankId]);
     $verified = $verifyStmt->fetchColumn();
     
     if (!$verified) {

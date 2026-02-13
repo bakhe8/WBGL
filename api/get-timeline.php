@@ -13,15 +13,26 @@ use App\Services\TimelineRecorder;
 header('Content-Type: text/html; charset=utf-8');
 
 try {
-    $index = $_GET['index'] ?? 1;
+    $index = isset($_GET['index']) ? (int)$_GET['index'] : 1;
+    $statusFilter = isset($_GET['filter']) ? trim((string)$_GET['filter']) : (isset($_GET['status_filter']) ? trim((string)$_GET['status_filter']) : 'all');
+    $searchTerm = isset($_GET['search']) ? trim((string)$_GET['search']) : null;
+    if ($searchTerm === '') {
+        $searchTerm = null;
+    }
+
+    if ($index < 1) {
+        throw new \RuntimeException('Invalid index');
+    }
+
     $db = Database::connect();
-    
-    // Get guarantee ID for this index
-    // Note: We use the same ordering as get-record.php to match the record
-    $stmtIds = $db->query('SELECT id FROM guarantees ORDER BY imported_at DESC LIMIT 100');
-    $ids = $stmtIds->fetchAll(PDO::FETCH_COLUMN);
-    
-    $guaranteeId = $ids[$index - 1] ?? null;
+
+    $guaranteeId = \App\Services\NavigationService::getIdByIndex(
+        $db,
+        $index,
+        $statusFilter,
+        $searchTerm
+    );
+
     $timeline = [];
 
     if ($guaranteeId) {

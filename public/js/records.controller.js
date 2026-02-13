@@ -852,8 +852,19 @@ if (!window.RecordsController) {
         // Navigation Implementation
         async loadRecord(index) {
             try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const query = new URLSearchParams({ index: String(index) });
+
+                const statusFilter = urlParams.get('filter') || 'all';
+                query.set('filter', statusFilter);
+
+                const searchTerm = urlParams.get('search');
+                if (searchTerm && searchTerm.trim() !== '') {
+                    query.set('search', searchTerm);
+                }
+
                 // Fetch Record HTML
-                const res = await fetch(`/api/get-record.php?index=${index}`);
+                const res = await fetch(`/api/get-record.php?${query.toString()}`);
                 const html = await res.text();
 
                 // Replace Record Section (Server Driven)
@@ -879,7 +890,18 @@ if (!window.RecordsController) {
 
         async updateTimeline(index) {
             try {
-                const res = await fetch(`/api/get-timeline.php?index=${index}`);
+                const urlParams = new URLSearchParams(window.location.search);
+                const query = new URLSearchParams({ index: String(index) });
+
+                const statusFilter = urlParams.get('filter') || 'all';
+                query.set('filter', statusFilter);
+
+                const searchTerm = urlParams.get('search');
+                if (searchTerm && searchTerm.trim() !== '') {
+                    query.set('search', searchTerm);
+                }
+
+                const res = await fetch(`/api/get-timeline.php?${query.toString()}`);
                 const html = await res.text();
                 const timelineSection = document.getElementById('timeline-section');
                 if (timelineSection) {
