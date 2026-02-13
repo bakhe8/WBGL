@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-powershell -ExecutionPolicy Bypass -File "%~dp0toggle.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0wbgl_server.ps1" -Action restart -Port 8181 -OpenBrowser

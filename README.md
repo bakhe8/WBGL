@@ -64,12 +64,14 @@ WBGL/
 git clone https://github.com/bakhe8/WBGL.git
 cd WBGL
 
-# Windows (موصى به): تشغيل آمن بدون تعارض منافذ
+# Windows (موصى به): تشغيل مباشر موحد
 ./toggle.bat
 
-# أو تحديد منفذ مخصص للمشروع (اختياري)
-$env:WBGL_PORT=8012
-./toggle.bat
+# عبر السكربت الموحد (الملف الوحيد لإدارة السيرفر)
+./wbgl_server.ps1 -Action start -Port 8181
+./wbgl_server.ps1 -Action stop -Port 8181
+./wbgl_server.ps1 -Action restart -Port 8181 -OpenBrowser
+./wbgl_server.ps1 -Action toggle
 
 # تشغيل يدوي مباشر (إذا رغبت)
 php -S localhost:8000 server.php
@@ -78,7 +80,9 @@ php -S localhost:8000 server.php
 http://localhost:<PORT>
 ```
 
-ملاحظة: سكربت `toggle.ps1` يختار منفذًا متاحًا تلقائيًا بين `8000-8100` إذا لم تحدد `WBGL_PORT`.
+ملاحظة: تم توحيد الإدارة في ملف واحد فقط: `wbgl_server.ps1`.
+الملف `toggle.bat` مجرد launcher سريع لتشغيل `restart` على المنفذ `8181`.
+إذا لم تحدد `-Port` أو `WBGL_PORT` فسيتم اختيار منفذ متاح تلقائيًا بين `8000-8100`.
 
 ### Database Setup
 
