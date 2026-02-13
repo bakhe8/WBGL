@@ -1,0 +1,77 @@
+name: PHP Lint & Basic Checks
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+
+jobs:
+  lint:
+    name: PHP Syntax Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.3'
+        extensions: sqlite3, pdo_sqlite
+        
+    - name: PHP Syntax Check
+      run: |
+        find . -name "*.php" -not -path "./vendor/*" -print0 | xargs -0 -n1 php -l
+        
+    - name: Check for critical files
+      run: |
+        test -f database.db || echo "⚠️ database.db not found (will be created on first run)"
+        test -f app/Core/Database.php || (echo "❌ Database.php missing!" && exit 1)
+        test -f public/css/design-system.css || (echo "❌ design-system.css missing!" && exit 1)
+        
+    - name: Check file permissions
+      run: |
+        ls -la database.db 2>/dev/null || echo "database.db will be created"
+        ls -la public/uploads/ || mkdir -p public/uploads
+        
+  structure:
+    name: Project Structure Validation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Validate directory structure
+      run: |
+        echo "✅ Checking critical directories..."
+        test -d app/Core && echo "✓ app/Core exists"
+        test -d app/Services && echo "✓ app/Services exists"
+        test -d app/Support && echo "✓ app/Support exists"
+        test -d views && echo "✓ views exists"
+        test -d public/css && echo "✓ public/css exists"
+        test -d partials && echo "✓ partials exists"
+        test -d api && echo "✓ api exists"
+        
+    - name: Verify critical files
+      run: |
+        echo "✅ Checking critical files..."
+        test -f index.php && echo "✓ index.php exists"
+        test -f views/batches.php && echo "✓ batches.php exists"
+        test -f views/statistics.php && echo "✓ statistics.php exists"
+        test -f partials/unified-header.php && echo "✓ unified-header.php exists"
+        test -f public/css/design-system.css && echo "✓ design-system.css exists"
+        test -f public/css/components.css && echo "✓ components.css exists"
+        
+  summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [lint, structure]
+    
+    steps:
+    - name: Success
+      run: |
+        echo "🎉 All checks passed!"
+        echo "✅ PHP syntax is valid"
+        echo "✅ Project structure is correct"
+        echo "✅ Critical files exist"

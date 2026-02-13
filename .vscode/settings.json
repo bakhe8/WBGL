@@ -1,0 +1,24 @@
+{
+    "php.validate.executablePath": "${workspaceFolder}/php/php.exe",
+    "php.executablePath": "${workspaceFolder}/php/php.exe",
+    "php.suggest.basic": false,
+    "intelephense.environment.includePaths": [
+        "vendor"
+    ],
+    "intelephense.diagnostics.undefinedTypes": true,
+    "intelephense.diagnostics.undefinedMethods": true,
+    "intelephense.diagnostics.undefinedConstants": true,
+    "intelephense.diagnostics.undefinedClassConstants": true,
+    "intelephense.diagnostics.undefinedFunctions": true,
+    "files.associations": {
+        "*.php": "php"
+    },
+    "files.exclude": {
+        "**/.git": true,
+        "**/node_modules": true
+    },
+    "search.exclude": {
+        "**/vendor": true,
+        "**/node_modules": true
+    }
+}

@@ -1,0 +1,1 @@
+{"id": "abs-ignored-006", "op": "set_ignored", "ts": "2026-01-29T14:24:35.952230+00:00", "ignored_paths": ["C:\\Users\\Bakheet\\Documents\\Projects\\BGL3\\resume_check.txt"], "ignored_globs": [], "ok": true, "msg": "ignored rules updated"}

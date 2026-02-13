@@ -1,0 +1,214 @@
+/* ═══════════════════════════════════════════════════════════════
+   BGL3 DESIGN SYSTEM - CSS VARIABLES & RESET
+   Contains: Variables, Reset Styles, Base Elements, Scrollbar
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+    /* ═══ Base Colors ═══ */
+    --bg-body: #f1f5f9;
+    --bg-card: #ffffff;
+    --bg-secondary: #f8fafc;
+    --bg-neutral: #fafbfc;
+    --bg-hover: #f8fafc;
+
+    --border-primary: #e2e8f0;
+    --border-light: #f1f5f9;
+    --border-neutral: #cbd5e1;
+    --border-focus: #3b82f6;
+
+    --text-primary: #1e293b;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    --text-light: #94a3b8;
+
+    /* ═══ Accent Colors ═══ */
+    --accent-primary: #3b82f6;
+    --accent-primary-hover: #2563eb;
+    --accent-primary-light: #dbeafe;
+
+    --accent-success: #16a34a;
+    --accent-success-hover: #15803d;
+    --accent-success-light: #dcfce7;
+
+    --accent-warning: #d97706;
+    --accent-warning-hover: #b45309;
+    --accent-warning-light: #fef3c7;
+
+    --accent-danger: #dc2626;
+    --accent-danger-hover: #b91c1c;
+    --accent-danger-light: #fee2e2;
+
+    --accent-info: #0891b2;
+    --accent-info-hover: #0e7490;
+    --accent-info-light: #cffafe;
+
+    /* ═══ Badge/Tag Colors ═══ */
+    --badge-success-bg: #10b981;
+    --badge-success-text: #ffffff;
+    --badge-warning-bg: #f59e0b;
+    --badge-warning-text: #ffffff;
+    --badge-danger-bg: #ef4444;
+    --badge-danger-text: #ffffff;
+    --badge-info-bg: #3b82f6;
+    --badge-info-text: #ffffff;
+    --badge-neutral-bg: #6b7280;
+    --badge-neutral-text: #ffffff;
+
+    /* ═══ Button Colors ═══ */
+    --btn-primary-bg: #3b82f6;
+    --btn-primary-hover: #2563eb;
+    --btn-primary-text: #ffffff;
+
+    --btn-secondary-bg: #ffffff;
+    --btn-secondary-hover: #f9fafb;
+    --btn-secondary-text: #374151;
+    --btn-secondary-border: #d1d5db;
+
+    --btn-danger-bg: #fef2f2;
+    --btn-danger-hover: #fee2e2;
+    --btn-danger-text: #dc2626;
+    --btn-danger-border: #fecaca;
+
+    --btn-success-bg: #16a34a;
+    --btn-success-hover: #15803d;
+    --btn-success-text: #ffffff;
+
+    /* ═══ Spacing ═══ */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+    --space-2xl: 48px;
+
+    --gap-card: 20px;
+    --gap-section: 16px;
+    --gap-small: 6px;
+
+    /* ═══ Typography ═══ */
+    --font-family: 'Tajawal', sans-serif;
+    --font-size-xs: 11px;
+    --font-size-sm: 12px;
+    --font-size-base: 14px;
+    --font-size-lg: 16px;
+    --font-size-xl: 20px;
+    --font-size-2xl: 24px;
+    --font-size-3xl: 32px;
+
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+    --font-weight-black: 800;
+
+    --line-height-tight: 1.25;
+    --line-height-normal: 1.5;
+    --line-height-relaxed: 1.75;
+
+    /* ═══ Dimensions ═══ */
+    --width-sidebar: 290px;
+    --width-timeline: 360px;
+    --height-top-bar: 64px;
+    --height-record-header: 48px;
+    --height-action-bar: 72px;
+
+    /* ═══ Border Radius ═══ */
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-full: 50px;
+
+    /* ═══ Shadows ═══ */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 4px 20px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 8px 30px rgba(0, 0, 0, 0.12);
+    --shadow-focus: 0 0 0 3px rgba(59, 130, 246, 0.1);
+
+    /* ═══ Transitions ═══ */
+    --transition-fast: 0.15s ease;
+    --transition-base: 0.2s ease;
+    --transition-slow: 0.3s ease;
+
+    /* ═══ Z-Index Scale ═══ */
+    --z-base: 1;
+    --z-dropdown: 1000;
+    --z-sticky: 1020;
+    --z-fixed: 1030;
+    --z-modal-backdrop: 1040;
+    --z-modal: 1050;
+    --z-toast: 1060;
+    --z-tooltip: 1070;
+
+    /* ═══ Icon Sizes ═══ */
+    --icon-xs: 14px;
+    --icon-sm: 16px;
+    --icon-md: 20px;
+    --icon-lg: 24px;
+    --icon-xl: 32px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RESET & BASE
+   ═══════════════════════════════════════════════════════════════ */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body {
+    font-family: var(--font-family);
+    height: 100%;
+    -webkit-font-smoothing: antialiased;
+}
+
+body {
+    background: var(--bg-body);
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+    /* overflow: hidden; */
+    /* Removed to allow scrolling */
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CUSTOM SCROLLBAR - Modern & Clean
+   ═══════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+
+/* Firefox Scrollbar (Firefox only - limited browser support) */
+/* Note: These properties are progressive enhancement - they work in Firefox 64+ */
+/* Other browsers will use their default scrollbar styling */
+/* stylelint-disable-next-line property-no-unknown */
+* {
+    scrollbar-width: thin;
+    /* Firefox 64+ only */
+    scrollbar-color: #cbd5e1 transparent;
+    /* Firefox 64+ only */
+}

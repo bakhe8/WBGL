@@ -1,0 +1,6 @@
+{
+  "op": "set_ignored",
+  "id": "demo-ignored-1",
+  "paths": ["storage/tmp"],
+  "globs": ["**/*.tmp", "**/*.log.tmp"]
+}
