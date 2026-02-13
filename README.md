@@ -6,7 +6,7 @@
 
 ## 📋 نظرة عامة
 
-**WBGL** (Bank Guarantee Letters v3.0) هو نظام شامل لإدارة الضمانات البنكية مع ميزات الذكاء الاصطناعي للمطابقة التلقائية.
+**WBGL** (Bank Guarantee Letters) هو نظام شامل لإدارة الضمانات البنكية مع ميزات الذكاء الاصطناعي للمطابقة التلقائية.
 
 ### ✨ المميزات الرئيسية
 
@@ -64,7 +64,7 @@ WBGL/
 git clone https://github.com/bakhe8/WBGL.git
 cd WBGL
 
-# Windows (موصى به): تشغيل مباشر موحد
+# Windows (موصى به): تشغيل مباشر موحد على 8181
 ./toggle.bat
 
 # عبر السكربت الموحد (الملف الوحيد لإدارة السيرفر)
@@ -74,15 +74,11 @@ cd WBGL
 ./wbgl_server.ps1 -Action toggle
 
 # تشغيل يدوي مباشر (إذا رغبت)
-php -S localhost:8000 server.php
+php -S localhost:8181 server.php
 
 # Open in browser
 http://localhost:<PORT>
 ```
-
-ملاحظة: تم توحيد الإدارة في ملف واحد فقط: `wbgl_server.ps1`.
-الملف `toggle.bat` مجرد launcher سريع لتشغيل `restart` على المنفذ `8181`.
-إذا لم تحدد `-Port` أو `WBGL_PORT` فسيتم اختيار منفذ متاح تلقائيًا بين `8000-8100`.
 
 ### Database Setup
 
@@ -90,95 +86,6 @@ http://localhost:<PORT>
 
 - `database.db` - SQLite database
 - جداول تُنشأ تلقائياً إذا لم تكن موجودة
-
----
-
-## 🤝 المساهمة
-
-نرحب بمساهماتك! يرجى اتباع العملية التالية:
-
-### 1️⃣ فتح Issue
-
-قبل البدء بأي عمل، افتح Issue لـ:
-
-- 🐛 الإبلاغ عن bug
-- ✨ اقتراح feature جديد
-- 📝 تحسين documentation
-- 💡 مناقشة قرار تقني
-
-**استخدم Labels المناسبة:**
-
-- `bug` - مشاكل تقنية
-- `feature` - ميزات جديدة
-- `improvement` - تحسينات على كود موجود
-- `documentation` - تحديثات documentation
-- `decision` - قرارات تقنية تحتاج نقاش
-
-### 2️⃣ إنشاء Branch
-
-```bash
-# Always branch from main
-git checkout main
-git pull origin main
-
-# Create feature branch
-git checkout -b feature/your-feature-name
-# OR
-git checkout -b fix/bug-description
-```
-
-### 3️⃣ Commit Changes
-
-```bash
-# Make your changes
-git add .
-git commit -m "Clear description of what changed
-
-- Detailed point 1
-- Detailed point 2
-- Fixes #issue_number"
-```
-
-### 4️⃣ إنشاء Pull Request
-
-- Push your branch
-- افتح PR على GitHub
-- اربط PR بالـ Issue المناسب
-- انتظر المراجعة
-
-**⚠️ مهم:**
-
-- لا يُسمح بالـ commit مباشرة على `main`
-- جميع التغييرات يجب أن تمر عبر Pull Request
-- يجب نجاح جميع الـ checks قبل الدمج
-
----
-
-## 📚 الوثائق
-
-- [Architecture Overview](https://github.com/bakhe8/WBGL/wiki/Architecture) - البنية المعمارية
-- [AI Matching System](https://github.com/bakhe8/WBGL/wiki/AI-Matching) - نظام المطابقة الذكية
-- [Design System](https://github.com/bakhe8/WBGL/wiki/Design-System) - نظام التصميم
-- [API Reference](https://github.com/bakhe8/WBGL/wiki/API) - مرجع APIs
-- [Decisions Log](https://github.com/bakhe8/WBGL/wiki/Decisions) - سجل القرارات التقنية
-
----
-
-## 🔒 الأمان
-
-- لا تشارك بيانات حساسة في Issues أو PRs
-- استخدم `.env` للمعلومات السرية (غير موجود في Git)
-- الإبلاغ عن ثغرات أمنية عبر email مباشر (لا تفتح Issue عام)
-
----
-
-## 📞 الدعم
-
-- **Issues**: للمشاكل التقنية والطلبات
-- **Discussions**: للنقاشات والأسئلة العامة
-- **Wiki**: للوثائق الشاملة
-
----
 
 ## 📝 الترخيص
 
@@ -188,15 +95,5 @@ git commit -m "Clear description of what changed
 
 ## 🎉 الإصدارات
 
-### v3.0.0 (2026-01-10)
-
-- ✅ نظام تصميم موحد (Design System)
-- ✅ Unified Header Component
-- ✅ إزالة Tailwind CDN
-- ✅ إصلاح مشاكل التمرير والتنقل
-- ✅ دعم Safari (webkit prefixes)
-- ✅ +1557 additions, -585 deletions
-
----
 
 **Made with ❤️ in Saudi Arabia**
