@@ -59,6 +59,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $input['CANDIDATES_LIMIT'] = $value;
         }
+
+        if (isset($input['HISTORICAL_IMPORT_ENABLED'])) {
+            $input['HISTORICAL_IMPORT_ENABLED'] = (bool) $input['HISTORICAL_IMPORT_ENABLED'];
+        }
         
         // Logical validation: AUTO >= REVIEW
         if (isset($input['MATCH_AUTO_THRESHOLD']) && isset($input['MATCH_REVIEW_THRESHOLD'])) {

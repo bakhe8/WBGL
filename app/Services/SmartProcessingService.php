@@ -104,15 +104,25 @@ class SmartProcessingService
                 $bank = $stmt2->fetch(PDO::FETCH_ASSOC);
                 
                 if ($bank) {
-                    $bankId = $bank['id'];
+                    $bankId = (int)$bank['id'];
                     $finalBankName = $bank['arabic_name'];
+                    $rawBankName = (string)($rawData['bank'] ?? '');
+                    $bankNameChanged = trim($rawBankName) !== trim($finalBankName);
+                    $decisionBeforeBank = $this->fetchDecisionRow($guaranteeId);
+                    $hasBankDecisionBefore = !empty($decisionBeforeBank['bank_id']);
+                    $shouldLogBankMatch = $bankNameChanged || !$hasBankDecisionBefore;
                     
-                    // ✅ ALWAYS log bank match event (independent of supplier)
-                    $this->logBankAutoMatchEvent($guaranteeId, $rawData['bank'], $finalBankName);
-                    $stats['banks_matched']++;
-                    
-                    // Update raw_data with matched bank name
-                    $this->updateBankNameInRawData($guaranteeId, $finalBankName);
+                    if ($shouldLogBankMatch) {
+                        // Log bank match when value changed OR when bank_id is assigned for first time
+                        $this->logBankAutoMatchEvent($guaranteeId, $rawBankName, $finalBankName);
+                        $stats['banks_matched']++;
+
+                        // Update raw_data display name only when textual bank value changed
+                        if ($bankNameChanged) {
+                            $this->updateBankNameInRawData($guaranteeId, $finalBankName);
+                        }
+                    }
+
                 }
             }
 
@@ -449,6 +459,23 @@ class SmartProcessingService
      */
     private function logBankAutoMatchEvent(int $guaranteeId, string $rawBankName, string $matchedBankName): void
     {
+        // Idempotency guard: do not record duplicate bank_match for same guarantee/new bank
+        $existingStmt = $this->db->prepare("SELECT id, event_details FROM guarantee_history WHERE guarantee_id = ? AND event_subtype = 'bank_match' ORDER BY id DESC");
+        $existingStmt->execute([$guaranteeId]);
+        $existingEvents = $existingStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($existingEvents as $event) {
+            $details = json_decode((string)($event['event_details'] ?? ''), true);
+            $changes = $details['changes'][0] ?? null;
+            if (is_array($changes)) {
+                $old = trim((string)($changes['old_value'] ?? ''));
+                $new = trim((string)($changes['new_value'] ?? ''));
+                if ($new === trim($matchedBankName) || ($old === trim($rawBankName) && $new === trim($matchedBankName))) {
+                    return;
+                }
+            }
+        }
+
         // Get current guarantee data to build snapshot
         $stmt = $this->db->prepare("SELECT raw_data FROM guarantees WHERE id = ?");
         $stmt->execute([$guaranteeId]);

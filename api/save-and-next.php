@@ -9,6 +9,7 @@ require_once __DIR__ . '/../app/Support/autoload.php';
 
 use App\Support\Database;
 use App\Repositories\GuaranteeRepository;
+use App\Support\BankNormalizer;
 use App\Support\Input;
 use App\Support\Logger;
 
@@ -36,6 +37,121 @@ try {
     $guaranteeRepo = new GuaranteeRepository($db);
     $currentGuarantee = $guaranteeRepo->find($guaranteeId);
     $decidedBy = Input::string($input, 'decided_by', 'web_user');
+
+    $resolveBankId = static function (PDO $db, array $candidates): ?int {
+        $stmtByAlt = $db->prepare(
+            "SELECT DISTINCT b.id
+             FROM banks b
+             LEFT JOIN bank_alternative_names a ON b.id = a.bank_id
+             WHERE a.normalized_name = ? OR LOWER(b.short_name) = LOWER(?)
+             LIMIT 1"
+        );
+
+        $stmtByArabic = $db->query('SELECT id, arabic_name FROM banks');
+        $banks = $stmtByArabic ? $stmtByArabic->fetchAll(PDO::FETCH_ASSOC) : [];
+
+        foreach ($candidates as $candidate) {
+            $candidate = trim((string)$candidate);
+            if ($candidate === '') {
+                continue;
+            }
+
+            $normalized = BankNormalizer::normalize($candidate);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $stmtByAlt->execute([$normalized, $candidate]);
+            $matched = $stmtByAlt->fetchColumn();
+            if ($matched) {
+                return (int)$matched;
+            }
+
+            foreach ($banks as $bank) {
+                $bankArabic = (string)($bank['arabic_name'] ?? '');
+                if ($bankArabic !== '' && BankNormalizer::normalize($bankArabic) === $normalized) {
+                    return (int)$bank['id'];
+                }
+            }
+        }
+
+        return null;
+    };
+
+    $updateRawBankName = static function (PDO $db, int $guaranteeId, string $officialBankName): void {
+        if (trim($officialBankName) === '') {
+            return;
+        }
+
+        $stmt = $db->prepare('SELECT raw_data FROM guarantees WHERE id = ? LIMIT 1');
+        $stmt->execute([$guaranteeId]);
+        $rawData = json_decode((string)$stmt->fetchColumn(), true);
+        if (!is_array($rawData)) {
+            return;
+        }
+
+        if (trim((string)($rawData['bank'] ?? '')) === trim($officialBankName)) {
+            return;
+        }
+
+        $rawData['bank'] = $officialBankName;
+        $update = $db->prepare('UPDATE guarantees SET raw_data = ? WHERE id = ?');
+        $update->execute([json_encode($rawData, JSON_UNESCAPED_UNICODE), $guaranteeId]);
+    };
+
+    $ensureBankMatchTimeline = static function (PDO $db, int $guaranteeId, array $rawData, string $rawBankName, string $matchedBankName): void {
+        $hasBankMatchStmt = $db->prepare("SELECT 1 FROM guarantee_history WHERE guarantee_id = ? AND event_subtype = 'bank_match' LIMIT 1");
+        $hasBankMatchStmt->execute([$guaranteeId]);
+        if ($hasBankMatchStmt->fetchColumn()) {
+            return;
+        }
+
+        $importAtStmt = $db->prepare("SELECT created_at FROM guarantee_history WHERE guarantee_id = ? AND event_type = 'import' ORDER BY datetime(created_at), id LIMIT 1");
+        $importAtStmt->execute([$guaranteeId]);
+        $importAt = (string)($importAtStmt->fetchColumn() ?: date('Y-m-d H:i:s'));
+        $eventAt = date('Y-m-d H:i:s', strtotime($importAt . ' +1 second'));
+
+        $snapshot = [
+            'guarantee_number' => $rawData['bg_number'] ?? $rawData['guarantee_number'] ?? '',
+            'contract_number' => $rawData['contract_number'] ?? $rawData['document_reference'] ?? '',
+            'amount' => $rawData['amount'] ?? 0,
+            'expiry_date' => $rawData['expiry_date'] ?? '',
+            'issue_date' => $rawData['issue_date'] ?? '',
+            'type' => $rawData['type'] ?? '',
+            'supplier_id' => null,
+            'supplier_name' => $rawData['supplier'] ?? '',
+            'raw_supplier_name' => $rawData['supplier'] ?? '',
+            'bank_id' => null,
+            'bank_name' => $rawBankName,
+            'raw_bank_name' => $rawBankName,
+            'status' => 'pending'
+        ];
+
+        $eventDetails = [
+            'action' => 'Bank auto-matched',
+            'changes' => [[
+                'field' => 'bank_name',
+                'old_value' => $rawBankName,
+                'new_value' => $matchedBankName,
+                'trigger' => 'auto'
+            ]],
+            'result' => 'Automatically matched during save'
+        ];
+
+        $insert = $db->prepare(
+            "INSERT INTO guarantee_history (guarantee_id, event_type, event_subtype, snapshot_data, event_details, created_at, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?)"
+        );
+        $insert->execute([
+            $guaranteeId,
+            'auto_matched',
+            'bank_match',
+            json_encode($snapshot, JSON_UNESCAPED_UNICODE),
+            json_encode($eventDetails, JSON_UNESCAPED_UNICODE),
+            $eventAt,
+            'System AI'
+        ]);
+    };
 
     // Track decision source for AI success metrics
     $decisionSource = null;
@@ -175,7 +291,36 @@ try {
     // ✅ FIX: Convert 0 or false to NULL for foreign key compliance
     $bankId = ($bankIdRaw && $bankIdRaw > 0) ? (int)$bankIdRaw : null;
 
-    // ✅ VALIDATION: Ensure bank_id exists (after fetching from DB)
+    // Attempt to auto-resolve bank when decision row is missing bank_id
+    if (!$bankId) {
+        $rawBank = (string)($currentGuarantee->rawData['bank'] ?? '');
+        $guaranteeLabel = (string)($currentGuarantee->guaranteeNumber ?? '');
+        $resolvedBankId = $resolveBankId($db, [$rawBank, $guaranteeLabel]);
+
+        if ($resolvedBankId) {
+            $upsertDecisionStmt = $db->prepare('SELECT id FROM guarantee_decisions WHERE guarantee_id = ? LIMIT 1');
+            $upsertDecisionStmt->execute([$guaranteeId]);
+            $decisionId = $upsertDecisionStmt->fetchColumn();
+
+            if ($decisionId) {
+                $upd = $db->prepare('UPDATE guarantee_decisions SET bank_id = ?, last_modified_at = CURRENT_TIMESTAMP, last_modified_by = ? WHERE guarantee_id = ?');
+                $upd->execute([$resolvedBankId, $decidedBy, $guaranteeId]);
+            } else {
+                $ins = $db->prepare('INSERT INTO guarantee_decisions (guarantee_id, supplier_id, bank_id, status, decided_at, decision_source, decided_by, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)');
+                $nowTmp = date('Y-m-d H:i:s');
+                $ins->execute([$guaranteeId, $resolvedBankId, 'pending', $nowTmp, 'auto_bank_resolve', $decidedBy, $nowTmp]);
+            }
+
+            $bankId = (int)$resolvedBankId;
+            $matchedBankNameStmt = $db->prepare('SELECT arabic_name FROM banks WHERE id = ? LIMIT 1');
+            $matchedBankNameStmt->execute([$bankId]);
+            $matchedBankName = (string)($matchedBankNameStmt->fetchColumn() ?: $rawBank);
+            $updateRawBankName($db, $guaranteeId, $matchedBankName);
+            $ensureBankMatchTimeline($db, $guaranteeId, $currentGuarantee->rawData, $rawBank, $matchedBankName);
+        }
+    }
+
+    // ✅ VALIDATION: Ensure bank_id exists (after fetching/resolving)
     if (!$bankId) {
         http_response_code(400);
         echo json_encode([

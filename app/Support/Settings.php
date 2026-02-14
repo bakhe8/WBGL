@@ -69,6 +69,7 @@ class Settings
         // System Settings
         'TIMEZONE' => 'Asia/Riyadh',                  // System timezone (configurable from UI)
         'PRODUCTION_MODE' => false,                   // Enable production mode (disables debug logging)
+        'HISTORICAL_IMPORT_ENABLED' => false,         // Toggle historical letters import module endpoints
 
         // Limits
         'CANDIDATES_LIMIT' => 20,        // Max suggestions shown

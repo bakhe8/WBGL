@@ -21,6 +21,12 @@ class BankNormalizer {
         // Remove whitespace and punctuation
         $name = preg_replace('/[\s\-_.,;:()]+/u', '', $name);
         
+        // Handle common Arabic prefixes that appear in letters (e.g. لمصرف الإنماء)
+        $prefixedTokens = ['للبنك', 'لبنك', 'للمصرف', 'لمصرف'];
+        foreach ($prefixedTokens as $token) {
+            $name = str_replace($token, '', $name);
+        }
+
         // Remove common words
         $remove = ['bank', 'بنك', 'مصرف', 'the', 'al', 'ال'];
         foreach ($remove as $word) {
