@@ -196,7 +196,32 @@
         padding-top: 4px;
     }
 
-    /* FIX 3: Action Buttons & Decision Card */
+    /* FIX 3: ACTION BUTTONS (The Real Fix) */
+    /* Target existing classes from record-form.php */
+    .record-actions {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        width: 100%;
+        margin-top: 8px;
+        flex: none !important;
+        /* Override inline flex: 1 */
+    }
+
+    /* Hide the vertical separator div on mobile */
+    .record-actions>div[style*="width: 1px"] {
+        display: none !important;
+    }
+
+    /* Common button sizing */
+    .record-actions .btn {
+        width: 100%;
+        justify-content: center;
+        padding: 10px;
+        height: 42px;
+        /* Touch friendly */
+    }
+
     .decision-card {
         padding: 12px !important;
     }
@@ -232,20 +257,6 @@
         font-size: 11px;
     }
 
-    .primary-actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        width: 100%;
-    }
-
-    .primary-actions .btn {
-        width: 100%;
-        justify-content: center;
-        padding: 12px;
-        height: 44px;
-    }
-
     /* 9. Guarantee Information Grid (Info Grid) */
     .info-grid {
         display: grid;
@@ -272,19 +283,17 @@
         word-break: break-all;
     }
 
-    /* 10. Letter Preview Scaling - FIX 4 & 5: Flex Centering and Print Button */
+    /* 10. Letter Preview Scaling */
     .letter-preview {
         padding: 8px;
         background: #f1f5f9;
         overflow: hidden;
         border-radius: 8px;
         margin-top: 16px;
-        /* FLEX CENTERING IS KEY HERE */
         display: flex;
         justify-content: center;
         align-items: flex-start;
         position: relative;
-        /* Context so the absolute print button moves correctly if we kept it */
     }
 
     /* Force hide print button on mobile */
@@ -294,13 +303,11 @@
 
     .letter-preview .letter-paper {
         flex-shrink: 0;
-        /* Don't let flex shrink it */
         transform-origin: top center;
         transform: scale(0.42);
         margin-bottom: -58%;
         height: auto;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        /* Ensure no odd margins interfere with flex centering */
         margin-left: 0 !important;
         margin-right: 0 !important;
     }
