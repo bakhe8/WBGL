@@ -66,19 +66,25 @@ $isProductionMode = $headerSettings->isProductionMode();
                 class="btn-global <?= isActive('batches', $currentPage, $currentDir) ? 'active' : '' ?>">
                 <span>📦 الدفعات</span>
             </a>
-        <a href="<?= $basePath ?>views/statistics.php"
-            class="btn-global <?= isActive('statistics', $currentPage, $currentDir) ? 'active' : '' ?>">
-            📊 إحصائيات
-        </a>
-        <a href="<?= $basePath ?>views/settings.php"
-            class="btn-global <?= isActive('settings', $currentPage, $currentDir) ? 'active' : '' ?>">
-            ⚙ إعدادات
-        </a>
-        <?php if (!$isProductionMode): ?>
-        <a href="<?= $basePath ?>views/maintenance.php"
-            class="btn-global <?= isActive('maintenance', $currentPage, $currentDir) ? 'active' : '' ?>">
-            🛠️ صيانة
-        </a>
-        <?php endif; ?>
-    </nav>
+            <a href="<?= $basePath ?>views/statistics.php"
+                class="btn-global <?= isActive('statistics', $currentPage, $currentDir) ? 'active' : '' ?>">
+                📊 إحصائيات
+            </a>
+            <a href="<?= $basePath ?>views/settings.php"
+                class="btn-global <?= isActive('settings', $currentPage, $currentDir) ? 'active' : '' ?>">
+                ⚙ إعدادات
+            </a>
+            <?php if (!$isProductionMode): ?>
+            <a href="<?= $basePath ?>views/maintenance.php"
+                class="btn-global <?= isActive('maintenance', $currentPage, $currentDir) ? 'active' : '' ?>">
+                🛠️ صيانة
+            </a>
+            <?php endif; ?>
+        </nav>
+        
+        <!-- Mobile Toggle (Right - Timeline) -->
+        <button class="mobile-toggle-btn" onclick="toggleTimeline()" style="display: none;">
+            ⏱️
+        </button>
+    </div>
 </header>
