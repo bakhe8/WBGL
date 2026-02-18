@@ -403,6 +403,11 @@ $formattedSuppliers = array_map(function($s) {
     
     <!-- Main Application Styles -->
     <link rel="stylesheet" href="public/css/index-main.css">
+    <link rel="stylesheet" href="public/css/mobile.css"> <!-- Mobile Retrofit -->
+    
+    <!-- Mobile Logic -->
+    <script src="public/js/mobile.js"></script>
+
     <!-- Header Override to match unified header styling (same as batches page) -->
     <style>
         :root { --height-top-bar: 64px; }

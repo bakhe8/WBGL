@@ -1,0 +1,168 @@
+/* ═══════════════════════════════════════════════════════════════
+   WBGL MOBILE RETROFIT STYLES
+   Target: Width <= 768px (Mobile & Tablet Portrait)
+   ═══════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+
+    /* 1. Global Layout Stack */
+    body {
+        overflow: auto; /* Allow body scroll */
+    }
+
+    .app-container {
+        flex-direction: column;
+        overflow: type; /* Allow internal scroll if needed, but mostly native */
+        height: auto;
+    }
+
+    /* 2. Top Bar Adjustments */
+    .top-bar {
+        padding: 0 16px;
+        position: sticky;
+        top: 0;
+        z-index: 50;
+    }
+
+    .brand span {
+        display: none; /* Hide text logo on mobile to save space */
+    }
+
+    .header-search-container {
+        display: none; /* Hide large search bar */
+    }
+
+    .global-actions {
+        gap: 4px;
+    }
+
+    .btn-global span {
+        display: none; /* Hide labels, show icons only */
+    }
+    
+    .btn-global {
+        padding: 8px;
+    }
+
+    /* 3. Sidebar (Off-Canvas Drawer - Left) */
+    .sidebar {
+        position: fixed;
+        top: var(--height-top-bar);
+        left: -100%; /* Hidden by default */
+        bottom: 0;
+        width: 80%;
+        max-width: 300px;
+        z-index: 40;
+        transition: left 0.3s ease;
+        box-shadow: var(--shadow-lg);
+    }
+
+    .sidebar.active {
+        left: 0;
+    }
+
+    /* 4. Timeline (Off-Canvas Drawer - Right) */
+    .timeline-sidebar, .timeline-panel {
+        position: fixed;
+        top: var(--height-top-bar);
+        right: -100%; /* Hidden by default */
+        bottom: 0;
+        width: 85%;
+        max-width: 320px;
+        z-index: 40;
+        transition: right 0.3s ease;
+        box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+        display: flex; /* Ensure flex layout works */
+    }
+
+    .timeline-sidebar.active, .timeline-panel.active {
+        right: 0;
+    }
+
+    /* 5. Center Section (Main Content) */
+    .center-section {
+        width: 100%;
+        flex: none; /* Stop flex changing width */
+        min-height: calc(100vh - var(--height-top-bar));
+    }
+
+    .main-content {
+        padding: 16px;
+    }
+
+    /* 6. Mobile Toggles (Visible only on mobile) */
+    .mobile-toggle-btn {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        background: transparent;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        color: var(--text-secondary);
+    }
+    
+    /* 7. Overlay for Drawers */
+    .mobile-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 30;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s;
+        backdrop-filter: blur(2px);
+    }
+
+    .mobile-overlay.active {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* 8. Card Adjustments */
+    .fields-grid {
+        grid-template-columns: 1fr; /* Stack fields */
+        gap: 0;
+    }
+
+    .fields-grid > .field-group:first-child {
+        border-left: none;
+        padding-left: 0;
+        padding-bottom: 20px;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--border-light);
+    }
+
+    .record-header {
+        padding: 0 12px;
+        height: auto;
+        min-height: 56px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .record-title h1 {
+        font-size: 16px;
+    }
+
+    /* 9. Action Bar */
+    .action-bar {
+        padding: 12px;
+        height: auto;
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .primary-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .btn {
+        width: 100%;
+        justify-content: center;
+    }
+}

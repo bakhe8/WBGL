@@ -29,9 +29,15 @@ $isProductionMode = $headerSettings->isProductionMode();
 ?>
 
 <header class="top-bar">
-    <div class="brand">
-        <div class="brand-icon">&#x1F4CB;</div>
-        <span>نظام إدارة الضمانات</span>
+    <div style="display: flex; align-items: center; gap: 12px;">
+        <!-- Mobile Toggle (Left) -->
+        <button class="mobile-toggle-btn" onclick="toggleSidebar()" style="display: none;">
+            ☰
+        </button>
+        <div class="brand">
+            <div class="brand-icon">&#x1F4CB;</div>
+            <span>نظام إدارة الضمانات</span>
+        </div>
     </div>
 
     <!-- ✅ Search Bar -->
@@ -49,15 +55,17 @@ $isProductionMode = $headerSettings->isProductionMode();
         </form>
     </div>
 
-    <nav class="global-actions">
-        <a href="<?= $basePath ?>index.php"
-            class="btn-global <?= isActive('index', $currentPage, $currentDir) ? 'active' : '' ?>">
-            🏠 الرئيسية
-        </a>
-        <a href="<?= $basePath ?>views/batches.php"
-            class="btn-global <?= isActive('batches', $currentPage, $currentDir) ? 'active' : '' ?>">
-            📦 الدفعات
-        </a>
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <nav class="global-actions">
+            <a href="<?= $basePath ?>index.php"
+                class="btn-global <?= isActive('index', $currentPage, $currentDir) ? 'active' : '' ?>">
+                <span>🏠 الرئيسية</span>
+                <!-- Mobile Icon fallback handled by CSS -->
+            </a>
+            <a href="<?= $basePath ?>views/batches.php"
+                class="btn-global <?= isActive('batches', $currentPage, $currentDir) ? 'active' : '' ?>">
+                <span>📦 الدفعات</span>
+            </a>
         <a href="<?= $basePath ?>views/statistics.php"
             class="btn-global <?= isActive('statistics', $currentPage, $currentDir) ? 'active' : '' ?>">
             📊 إحصائيات
