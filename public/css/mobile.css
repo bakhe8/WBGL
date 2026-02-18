@@ -24,9 +24,7 @@
         z-index: 50;
         justify-content: space-between;
         background: #ffffff;
-        /* Ensure solid background */
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-        /* Subtle shadow */
     }
 
     /* Hide text labels, show icons only */
@@ -38,28 +36,21 @@
 
     .global-actions {
         gap: 4px;
-        /* Tighter gap */
     }
 
     /* FIX 1: Cleanup Header Icons */
     .btn-global {
         padding: 8px;
         font-size: 18px;
-        /* Larger icons */
         background: transparent !important;
-        /* Remove blocky background */
         border: none !important;
-        /* Remove borders */
         color: #64748b;
-        /* Neutral color */
         border-radius: 50%;
-        /* Circular touch target */
     }
 
     .btn-global.active {
         color: var(--accent-primary);
         background: rgba(59, 130, 246, 0.1) !important;
-        /* Subtle active state */
     }
 
     /* 3. Sidebar (Off-Canvas Drawer - RIGHT for RTL) */
@@ -173,7 +164,6 @@
         padding-bottom: 16px;
         height: auto;
         background: white;
-        /* Clean background */
         border-bottom: 1px solid #f1f5f9;
         margin-bottom: 16px;
     }
@@ -183,21 +173,17 @@
         display: flex;
         align-items: center;
         justify-content: flex-start;
-        /* Align start */
         flex-wrap: wrap;
         gap: 8px;
     }
 
-    /* Ensure title is bold but fitted */
     .record-title h1 {
         font-size: 18px;
         margin: 0;
         flex: 1;
-        /* Take available space */
         min-width: 200px;
     }
 
-    /* Wrapper for badge and buttons to keep them together */
     .record-title .badge-wrapper {
         display: inline-flex;
         align-items: center;
@@ -215,7 +201,6 @@
         padding: 12px !important;
     }
 
-    /* Ensure Inputs take full width */
     .field-row {
         flex-direction: column;
         align-items: flex-start;
@@ -232,16 +217,13 @@
     .field-input {
         width: 100%;
         padding: 10px;
-        /* Larger touch area */
     }
 
-    /* Chips & Hints */
     .chips-row {
         margin-right: 0;
         margin-top: 8px;
         gap: 8px;
         flex-wrap: wrap;
-        /* Ensure chips wrap */
     }
 
     .field-hint {
@@ -250,7 +232,6 @@
         font-size: 11px;
     }
 
-    /* Action Buttons Stack */
     .primary-actions {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -263,7 +244,6 @@
         justify-content: center;
         padding: 12px;
         height: 44px;
-        /* Standard touch height */
     }
 
     /* 9. Guarantee Information Grid (Info Grid) */
@@ -292,23 +272,37 @@
         word-break: break-all;
     }
 
-    /* 10. Letter Preview Scaling - FIX 4: Whitespace removal */
+    /* 10. Letter Preview Scaling - FIX 4 & 5: Flex Centering and Print Button */
     .letter-preview {
         padding: 8px;
         background: #f1f5f9;
         overflow: hidden;
         border-radius: 8px;
         margin-top: 16px;
+        /* FLEX CENTERING IS KEY HERE */
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        position: relative;
+        /* Context so the absolute print button moves correctly if we kept it */
+    }
+
+    /* Force hide print button on mobile */
+    .print-icon-btn {
+        display: none !important;
     }
 
     .letter-preview .letter-paper {
+        flex-shrink: 0;
+        /* Don't let flex shrink it */
         transform-origin: top center;
         transform: scale(0.42);
-        /* Slightly smaller to fit safely */
         margin-bottom: -58%;
-        /* Aggressive negative margin to remove bottom whitespace */
         height: auto;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        /* Ensure no odd margins interfere with flex centering */
+        margin-left: 0 !important;
+        margin-right: 0 !important;
     }
 
     @media (min-width: 480px) and (max-width: 768px) {
