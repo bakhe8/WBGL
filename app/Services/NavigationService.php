@@ -25,16 +25,16 @@ class NavigationService
      * @return array Navigation data with totalRecords, currentIndex, prevId, nextId
      */
     public static function getNavigationInfo(
-        PDO $db, 
-        ?int $currentId, 
+        PDO $db,
+        ?int $currentId,
         string $statusFilter = 'all',
         ?string $searchTerm = null
     ): array {
         $filter = self::buildFilterConditions($statusFilter, $searchTerm);
-        
+
         // Get total count
         $totalRecords = self::getTotalCount($db, $filter);
-        
+
         // If no current ID, return defaults (unless we want to find the first ID for the search?)
         // If currentId is null but we have search results, logic usually handled by controller (index.php) finding the first ID
         if (!$currentId) {
@@ -45,14 +45,14 @@ class NavigationService
                 'nextId' => null
             ];
         }
-        
+
         // Get current position
         $currentIndex = self::getCurrentPosition($db, $currentId, $filter);
-        
+
         // Get prev/next IDs
         $prevId = self::getPreviousId($db, $currentId, $filter);
         $nextId = self::getNextId($db, $currentId, $filter);
-        
+
         return [
             'totalRecords' => $totalRecords,
             'currentIndex' => $currentIndex,
@@ -60,7 +60,7 @@ class NavigationService
             'nextId' => $nextId
         ];
     }
-    
+
     /**
      * Build SQL WHERE conditions based on status filter
      */
@@ -72,12 +72,12 @@ class NavigationService
         if ($settings->isProductionMode()) {
             $testDataFilter = ' AND (g.is_test_data = 0 OR g.is_test_data IS NULL)';
         }
-        
+
         // ✅ Search Mode: Overrides standard status filters
         if ($searchTerm) {
             $searchSafe = stripslashes($searchTerm);
             $searchAny = '%' . $searchSafe . '%';
-            
+
             // Search in directly (Raw Data) AND Linked Official Names
             return [
                 'sql' => " AND (
@@ -90,7 +90,7 @@ class NavigationService
                 ],
             ];
         }
-        
+
         if ($filter === 'released') {
             // Show only released
             return [
@@ -100,22 +100,28 @@ class NavigationService
         } else {
             // Exclude released for other filters
             $conditions = ' AND (d.is_locked IS NULL OR d.is_locked = 0)';
-            
+
             // Apply specific status filter
             if ($filter === 'ready') {
                 $conditions .= ' AND d.status = "ready"';
+            } elseif ($filter === 'actionable') {
+                $conditions .= ' AND d.status = "ready" AND (d.active_action IS NULL OR d.active_action = "")';
             } elseif ($filter === 'pending') {
                 $conditions .= ' AND (d.id IS NULL OR d.status = "pending")';
+            } elseif ($filter === 'expiring_30') {
+                $conditions .= " AND json_extract(g.raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+30 days')";
+            } elseif ($filter === 'expiring_90') {
+                $conditions .= " AND json_extract(g.raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+90 days')";
             }
             // 'all' filter has no additional conditions
-            
+
             return [
                 'sql' => $conditions . $testDataFilter,
                 'params' => [],
             ];
         }
     }
-    
+
     /**
      * Get total count of guarantees matching filter
      */
@@ -127,13 +133,13 @@ class NavigationService
             LEFT JOIN suppliers s ON d.supplier_id = s.id
             WHERE 1=1
         ' . $filter['sql'];
-        
+
         $stmt = $db->prepare($query);
         $stmt->execute($filter['params']);
-        
-        return (int)$stmt->fetchColumn();
+
+        return (int) $stmt->fetchColumn();
     }
-    
+
     /**
      * Get current position (1-indexed) of a guarantee in filtered list
      */
@@ -147,17 +153,17 @@ class NavigationService
                 LEFT JOIN suppliers s ON d.supplier_id = s.id
                 WHERE g.id < :current_id
             ' . $filter['sql'];
-            
+
             $stmt = $db->prepare($query);
             $stmt->execute(array_merge(['current_id' => $currentId], $filter['params']));
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            return ((int)($result['position'] ?? 0)) + 1;
+
+            return ((int) ($result['position'] ?? 0)) + 1;
         } catch (\Exception $e) {
             return 1; // Default to first position on error
         }
     }
-    
+
     /**
      * Get ID of previous guarantee in filtered list
      */
@@ -172,17 +178,17 @@ class NavigationService
             ' . $filter['sql'] . '
                 ORDER BY g.id DESC LIMIT 1
             ';
-            
+
             $stmt = $db->prepare($query);
             $stmt->execute(array_merge(['current_id' => $currentId], $filter['params']));
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            return $result ? (int)$result['id'] : null;
+
+            return $result ? (int) $result['id'] : null;
         } catch (\Exception $e) {
             return null;
         }
     }
-    
+
     /**
      * Get ID of next guarantee in filtered list
      */
@@ -197,12 +203,12 @@ class NavigationService
             ' . $filter['sql'] . '
                 ORDER BY g.id ASC LIMIT 1
             ';
-            
+
             $stmt = $db->prepare($query);
             $stmt->execute(array_merge(['current_id' => $currentId], $filter['params']));
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            return $result ? (int)$result['id'] : null;
+
+            return $result ? (int) $result['id'] : null;
         } catch (\Exception $e) {
             return null;
         }
@@ -212,19 +218,20 @@ class NavigationService
      * Get ID of guarantee at specific 1-based index in filtered list
      */
     public static function getIdByIndex(
-        PDO $db, 
-        int $index, 
+        PDO $db,
+        int $index,
         string $statusFilter = 'all',
         ?string $searchTerm = null
     ): ?int {
-        if ($index < 1) return null;
-        
+        if ($index < 1)
+            return null;
+
         $filter = self::buildFilterConditions($statusFilter, $searchTerm);
-        
+
         try {
             // Offset is index - 1
             $offset = $index - 1;
-            
+
             $query = '
                 SELECT g.id FROM guarantees g
                 LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
@@ -234,12 +241,12 @@ class NavigationService
                 ORDER BY g.id ASC
                 LIMIT 1 OFFSET :offset
             ';
-            
+
             $stmt = $db->prepare($query);
             $stmt->execute(array_merge(['offset' => $offset], $filter['params']));
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            return $result ? (int)$result['id'] : null;
+
+            return $result ? (int) $result['id'] : null;
         } catch (\Exception $e) {
             return null;
         }

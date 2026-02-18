@@ -5,6 +5,7 @@ namespace App\Services\Learning\Feeders;
 use App\Contracts\SignalFeederInterface;
 use App\DTO\SignalDTO;
 use App\Repositories\SupplierRepository;
+use App\Support\Normalizer;
 
 /**
  * Fuzzy Signal Feeder
@@ -44,7 +45,8 @@ class FuzzySignalFeeder implements SignalFeederInterface
     ];
 
     public function __construct(
-        private SupplierRepository $supplierRepo
+        private SupplierRepository $supplierRepo,
+        private Normalizer $normalizer
     ) {}
 
     /**
@@ -61,41 +63,47 @@ class FuzzySignalFeeder implements SignalFeederInterface
         $signals = [];
 
         foreach ($allSuppliers as $supplier) {
-            $supplierNormalized = $supplier['normalized_name'];
-            
-            // Skip invalid suppliers
-            if (empty($supplier['id'])) {
+            $supplierId = $supplier['id'];
+            if (empty($supplierId)) {
                 continue;
             }
 
-            // Calculate similarity
-            $similarity = $this->calculateSimilarity($normalizedInput, $supplierNormalized);
+            // Names to check
+            $namesToCheck = array_filter([
+                'official' => $supplier['normalized_name'] ?? null,
+                'english' => !empty($supplier['english_name']) ? $this->normalizer->normalizeSupplierName($supplier['english_name']) : null
+            ]);
 
-            // Only return if meets minimum threshold
-            if ($similarity >= self::MIN_SIMILARITY) {
-                // ✅ CRITICAL VALIDATION: Check for distinctive keyword match
-                // This prevents false positives like "GULF HORIZON" matching "TREATMENT OCEAN"
-                // even if they share generic words like "MEDICAL" or "INTERNATIONAL"
-                if (!$this->hasDistinctiveKeywordMatch($normalizedInput, $supplierNormalized)) {
-                    // Skip this match - no distinctive keywords in common
-                    // This filters out matches based purely on generic words
-                    continue;
+            foreach ($namesToCheck as $nameType => $supplierNormalized) {
+                // Calculate similarity
+                $similarity = $this->calculateSimilarity($normalizedInput, $supplierNormalized);
+
+                // Only return if meets minimum threshold
+                if ($similarity >= self::MIN_SIMILARITY) {
+                    // ✅ CRITICAL VALIDATION: Check for distinctive keyword match
+                    if (!$this->hasDistinctiveKeywordMatch($normalizedInput, $supplierNormalized)) {
+                        continue;
+                    }
+                    
+                    // Determine signal type based on similarity strength
+                    $signalType = $this->determineSignalType($similarity);
+
+                    $signals[] = new SignalDTO(
+                        supplier_id: $supplierId,
+                        signal_type: $signalType,
+                        raw_strength: $similarity,
+                        metadata: [
+                            'source' => 'fuzzy_official',
+                            'match_method' => 'levenshtein',
+                            'similarity' => $similarity,
+                            'matched_name' => $supplierNormalized,
+                            'matched_field' => $nameType === 'english' ? 'english_name' : 'official_name'
+                        ]
+                    );
+                    
+                    // If we found a very strong match on one, skip the other name for this supplier
+                    if ($similarity >= 0.95) break;
                 }
-                
-                // Determine signal type based on similarity strength
-                $signalType = $this->determineSignalType($similarity);
-
-                $signals[] = new SignalDTO(
-                    supplier_id: $supplier['id'],
-                    signal_type: $signalType,
-                    raw_strength: $similarity, // Raw similarity score (NO weighting)
-                    metadata: [
-                        'source' => 'fuzzy_official',
-                        'match_method' => 'levenshtein',
-                        'similarity' => $similarity,
-                        'matched_name' => $supplierNormalized,
-                    ]
-                );
             }
         }
 
@@ -154,20 +162,10 @@ class FuzzySignalFeeder implements SignalFeederInterface
     /**
      * Check if two names share at least one distinctive keyword
      * 
-     * This is CRITICAL to prevent false matches like:
-     * "GULF HORIZON INTERNATIONAL MEDICAL" matching "TREATMENT OCEAN MEDICAL CO."
-     * 
      * Strategy:
      * 1. Extract all words from both names
      * 2. Filter out generic/common words (MEDICAL, INTERNATIONAL, CO, etc.)
      * 3. Check if at least ONE distinctive word matches
-     * 
-     * Example:
-     * - Input: "gulf horizon international medical"
-     * - Supplier: "treatment ocean medical co"
-     * - Input distinctive: [gulf, horizon]
-     * - Supplier distinctive: [treatment, ocean]
-     * - Common: [] → NO MATCH ✅ Prevents false positive!
      * 
      * @param string $input Normalized input name
      * @param string $supplierName Normalized supplier name
@@ -184,7 +182,6 @@ class FuzzySignalFeeder implements SignalFeederInterface
         $supplierDistinctive = array_diff($supplierWords, self::GENERIC_WORDS);
         
         // If either has NO distinctive words (all generic), allow match
-        // This handles edge cases like "Company for Medical Services"
         if (empty($inputDistinctive) || empty($supplierDistinctive)) {
             return true;
         }

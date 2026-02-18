@@ -58,11 +58,11 @@ class BatchService
                    d.is_locked,
                    d.locked_reason
             FROM guarantees g
-            JOIN guarantee_occurrences o ON o.guarantee_id = g.id
+            LEFT JOIN guarantee_occurrences o ON o.guarantee_id = g.id
             LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
-            WHERE o.batch_identifier = ?
+            WHERE o.batch_identifier = ? OR g.import_source = ?
         ";
-        $params = [$importSource];
+        $params = [$importSource, $importSource];
 
         if (!empty($guaranteeIds)) {
             $placeholders = implode(',', array_fill(0, count($guaranteeIds), '?'));

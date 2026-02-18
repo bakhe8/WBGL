@@ -39,6 +39,7 @@ class StatsService
             SELECT 
                 COUNT(*) as total,
                 SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = 0) AND d.status = "ready" THEN 1 ELSE 0 END) as ready,
+                SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = 0) AND d.status = "ready" AND (d.active_action IS NULL OR d.active_action = "") THEN 1 ELSE 0 END) as actionable,
                 SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = 0) AND (d.id IS NULL OR d.status != "ready") THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN d.is_locked = 1 THEN 1 ELSE 0 END) as released
             FROM guarantees g
@@ -53,6 +54,7 @@ class StatsService
         return [
             'total' => (int)$stats['total'],
             'ready' => (int)$stats['ready'],
+            'actionable' => (int)($stats['actionable'] ?? 0),
             'pending' => (int)$stats['pending'],
             'released' => (int)$stats['released']
         ];

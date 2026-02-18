@@ -41,6 +41,11 @@ try {
         }
     }
 
+    $amount = (string)$input['amount'];
+    if (!preg_match('/^[0-9,.]+$/', $amount)) {
+        throw new \RuntimeException("قيمة المبلغ غير صالحة");
+    }
+
     $db = Database::connect();
     $repo = new GuaranteeRepository($db);
     $decisionRepo = new GuaranteeDecisionRepository($db);
@@ -49,7 +54,6 @@ try {
     $guaranteeNumber = Input::string($input, 'guarantee_number', '');
     $supplier = Input::string($input, 'supplier', '');
     $bank = Input::string($input, 'bank', '');
-    $amount = Input::string($input, 'amount', '');
     $contractNumber = Input::string($input, 'contract_number', '');
     $expiryDate = Input::string($input, 'expiry_date', '');
     $issueDate = Input::string($input, 'issue_date', '');
@@ -58,11 +62,13 @@ try {
     $relatedTo = Input::string($input, 'related_to', 'contract');
 
     // 1. Prepare Raw Data
+    $cleanAmount = str_replace(',', '', $amount);
+    
     $rawData = [
         'bg_number' => $guaranteeNumber,
         'supplier' => $supplier,
         'bank' => $bank,
-        'amount' => $amount,
+        'amount' => $cleanAmount,
         'contract_number' => $contractNumber,
         'expiry_date' => $expiryDate ?: null,
         'issue_date' => $issueDate ?: null,
@@ -105,6 +111,12 @@ try {
 
     $savedGuarantee = $repo->create($guaranteeModel);
     $guaranteeId = $savedGuarantee->id;
+
+    // ✅ ARCHITECTURAL COMPLIANCE: Record occurrence for manual entry
+    $db->prepare("
+        INSERT INTO guarantee_occurrences (guarantee_id, batch_identifier, import_source, occurred_at)
+        VALUES (?, ?, 'manual', ?)
+    ")->execute([$guaranteeId, $batchId, date('Y-m-d H:i:s')]);
     
     // ✅ NEW: Handle test data marking (Phase 1)
     if (!empty($input['is_test_data'])) {

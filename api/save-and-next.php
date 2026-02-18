@@ -463,10 +463,17 @@ try {
         'supplier_id' => $supplierId,
         'supplier_name' => $newSupplier
     ];
+
+    // Detect if this is a correction (previously was ready or re-opened)
+    $wasReadyStmt = $db->prepare("SELECT 1 FROM guarantee_history WHERE guarantee_id = ? AND event_subtype = 'reopened' ORDER BY id DESC LIMIT 1");
+    $wasReadyStmt->execute([$guaranteeId]);
+    $isCorrection = (bool)$wasReadyStmt->fetchColumn();
     
+    $decisionSubtype = $isCorrection ? 'correction' : ($wasAiMatch ? 'ai_match' : 'manual_edit');
+
     try {
-        \App\Services\TimelineRecorder::recordDecisionEvent($guaranteeId, $oldSnapshot, $newData, false); // isAuto = false
-        error_log("[TIMELINE] Decision event recorded for guarantee #$guaranteeId");
+        \App\Services\TimelineRecorder::recordDecisionEvent($guaranteeId, $oldSnapshot, $newData, false, null, $decisionSubtype);
+        error_log("[TIMELINE] Decision event recorded for guarantee #$guaranteeId as $decisionSubtype");
     } catch (\Throwable $e) {
         error_log("[TIMELINE ERROR] Failed to record decision event: " . $e->getMessage());
     }
@@ -493,15 +500,19 @@ try {
             $learningRepo = new \App\Repositories\LearningRepository($db);
             $rawSupplierName = $currentGuarantee->rawData['supplier'];
             
-            // ✅ Step 1: Log CONFIRMATION for chosen supplier
-            $learningRepo->logDecision([
-                'guarantee_id' => $guaranteeId,
-                'raw_supplier_name' => $rawSupplierName,
-                'supplier_id' => $supplierId,
-                'action' => 'confirm',
-                'confidence' => 100, // Manual = 100%
-                'decision_time_seconds' => 0
-            ]);
+            // ✅ Step 1: Log CONFIRMATION/CORRECTION for chosen supplier
+            try {
+                $learningRepo->logDecision([
+                    'guarantee_id' => $guaranteeId,
+                    'raw_supplier_name' => $rawSupplierName,
+                    'supplier_id' => $supplierId,
+                    'action' => $isCorrection ? 'correction' : 'confirm',
+                    'confidence' => 100, // Manual = 100%
+                    'decision_time_seconds' => 0
+                ]);
+            } catch (\Exception $e) {
+                error_log("[LEARNING ERROR] Failed to log decision: " . $e->getMessage());
+            }
 
             // ✅ Step 2: Log REJECTION for ignored top suggestion (implicit learning)
             // Get current suggestions to identify what user ignored

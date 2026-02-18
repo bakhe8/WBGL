@@ -15,7 +15,7 @@ class SupplierRepository
     public function findAllByNormalized(string $normalizedName): array
     {
         $pdo = Database::connection();
-        $stmt = $pdo->prepare('SELECT id, official_name, display_name, normalized_name, supplier_normalized_key FROM suppliers WHERE normalized_name = :n');
+        $stmt = $pdo->prepare('SELECT id, official_name, display_name, english_name, normalized_name, supplier_normalized_key FROM suppliers WHERE normalized_name = :n');
         $stmt->execute(['n' => $normalizedName]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
@@ -26,7 +26,7 @@ class SupplierRepository
     public function allNormalized(): array
     {
         $pdo = Database::connection();
-        $stmt = $pdo->query('SELECT id, official_name, normalized_name, supplier_normalized_key FROM suppliers');
+        $stmt = $pdo->query('SELECT id, official_name, display_name, english_name, normalized_name, supplier_normalized_key FROM suppliers');
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -36,7 +36,7 @@ class SupplierRepository
     public function search(string $normalizedLike): array
     {
         $pdo = Database::connection();
-        $stmt = $pdo->prepare('SELECT id, official_name, normalized_name, supplier_normalized_key FROM suppliers WHERE normalized_name LIKE :q');
+        $stmt = $pdo->prepare('SELECT id, official_name, display_name, english_name, normalized_name, supplier_normalized_key FROM suppliers WHERE normalized_name LIKE :q');
         $stmt->execute(['q' => "%{$normalizedLike}%"]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
@@ -44,10 +44,11 @@ class SupplierRepository
     public function update(int $id, array $data): void
     {
         $pdo = Database::connection();
-        $stmt = $pdo->prepare('UPDATE suppliers SET official_name=:o, display_name=:d, normalized_name=:n, supplier_normalized_key=:k WHERE id=:id');
+        $stmt = $pdo->prepare('UPDATE suppliers SET official_name=:o, display_name=:d, english_name=:e, normalized_name=:n, supplier_normalized_key=:k WHERE id=:id');
         $stmt->execute([
             'o' => $data['official_name'],
             'd' => $data['display_name'] ?? null,
+            'e' => $data['english_name'] ?? null,
             'n' => $data['normalized_name'],
             'k' => $data['supplier_normalized_key'] ?? null,
             'id' => $id,
@@ -88,16 +89,17 @@ class SupplierRepository
     public function create(array $data): Supplier
     {
         $pdo = Database::connection();
-        $stmt = $pdo->prepare('INSERT INTO suppliers (official_name, display_name, normalized_name, supplier_normalized_key, is_confirmed) VALUES (:o, :d, :n, :k, :c)');
+        $stmt = $pdo->prepare('INSERT INTO suppliers (official_name, display_name, english_name, normalized_name, supplier_normalized_key, is_confirmed) VALUES (:o, :d, :e, :n, :k, :c)');
         $stmt->execute([
             'o' => $data['official_name'],
             'd' => $data['display_name'] ?? null,
+            'e' => $data['english_name'] ?? null,
             'n' => $data['normalized_name'],
             'k' => $data['supplier_normalized_key'] ?? null,
             'c' => $data['is_confirmed'] ?? 0,
         ]);
         $id = (int) $pdo->lastInsertId();
-        return new Supplier($id, $data['official_name'], $data['display_name'] ?? null, $data['normalized_name'], $data['supplier_normalized_key'] ?? null, (int) ($data['is_confirmed'] ?? 0), date('c'));
+        return new Supplier($id, $data['official_name'], $data['display_name'] ?? null, $data['english_name'] ?? null, $data['normalized_name'], $data['supplier_normalized_key'] ?? null, (int) ($data['is_confirmed'] ?? 0), date('c'));
     }
 
     public function findByNormalizedKey(string $key): ?Supplier
@@ -118,7 +120,7 @@ class SupplierRepository
     public function getAllSuppliers(): array
     {
         $pdo = Database::connection();
-        $stmt = $pdo->query('SELECT id, official_name, display_name as english_name, normalized_name FROM suppliers');
+        $stmt = $pdo->query('SELECT id, official_name, english_name, normalized_name FROM suppliers');
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -163,7 +165,7 @@ class SupplierRepository
     public function findById(int $id): ?array
     {
         $pdo = Database::connection();
-        $stmt = $pdo->prepare('SELECT id, official_name, display_name as english_name, normalized_name FROM suppliers WHERE id = :id LIMIT 1');
+        $stmt = $pdo->prepare('SELECT id, official_name, english_name, normalized_name FROM suppliers WHERE id = :id LIMIT 1');
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
@@ -175,6 +177,7 @@ class SupplierRepository
             (int) $row['id'],
             $row['official_name'],
             $row['display_name'] ?? null,
+            $row['english_name'] ?? null,
             $row['normalized_name'],
             $row['supplier_normalized_key'] ?? null,
             (int) $row['is_confirmed'],

@@ -273,13 +273,15 @@ try {
     // SECTION 4: EXPIRATION & ACTIONS (RECONSTRUCTED)
     // ============================================
     
-    // 4A: Expiration Pressure
+    // 4A: Expiration Pressure (Filtered to Unlocked Only)
     $expiration = $db->query("
         SELECT 
             COUNT(CASE WHEN json_extract(raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+30 days') THEN 1 END) as next_30,
             COUNT(CASE WHEN json_extract(raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+90 days') THEN 1 END) as next_90
-        FROM guarantees
-        $whereD
+        FROM guarantees g
+        LEFT JOIN guarantee_decisions d ON g.id = d.guarantee_id
+        WHERE (d.is_locked IS NULL OR d.is_locked = 0)
+        $andG
     ")->fetch(PDO::FETCH_ASSOC);
 
     // Peak Month
@@ -391,20 +393,22 @@ try {
             ")->fetch(PDO::FETCH_ASSOC);
             
             $confirmedPatterns = $db->query("
-                SELECT lc.raw_supplier_name, s.official_name, lc.count
+                SELECT lc.raw_supplier_name, s.official_name, COUNT(*) as count
                 FROM learning_confirmations lc
                 JOIN suppliers s ON lc.supplier_id = s.id
                 WHERE lc.action = 'confirm'
-                ORDER BY lc.count DESC
+                GROUP BY lc.raw_supplier_name, s.official_name
+                ORDER BY count DESC
                 LIMIT 5
             ")->fetchAll(PDO::FETCH_ASSOC);
             
             $rejectedPatterns = $db->query("
-                SELECT lc.raw_supplier_name, s.official_name, lc.count
+                SELECT lc.raw_supplier_name, s.official_name, COUNT(*) as count
                 FROM learning_confirmations lc
                 JOIN suppliers s ON lc.supplier_id = s.id
                 WHERE lc.action = 'reject'
-                ORDER BY lc.count DESC
+                GROUP BY lc.raw_supplier_name, s.official_name
+                ORDER BY count DESC
                 LIMIT 5
             ")->fetchAll(PDO::FETCH_ASSOC);
         }
@@ -545,23 +549,73 @@ try {
         }
         
         /* Unified Grid System */
-        .grid-2, .grid-3, .grid-4 { 
+        .grid-2, .grid-3, .grid-4, .grid-6, .grid-12 { 
             display: grid; 
-            gap: 24px;
+            gap: 20px; /* Reduced gap slightly for compact look */
             margin-bottom: 24px;
         }
         
         .grid-2 { grid-template-columns: repeat(2, 1fr); }
         .grid-3 { grid-template-columns: repeat(3, 1fr); }
         .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .grid-6 { grid-template-columns: repeat(6, 1fr); }
+        .grid-12 { grid-template-columns: repeat(12, 1fr); }
+        
+        @media (max-width: 1200px) {
+            .grid-6 { grid-template-columns: repeat(3, 1fr); }
+            .grid-12 { grid-template-columns: repeat(4, 1fr); }
+        }
         
         @media (max-width: 1024px) {
             .grid-4 { grid-template-columns: repeat(2, 1fr); }
         }
         
         @media (max-width: 768px) {
-            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+            .grid-2, .grid-3, .grid-4, .grid-6, .grid-12 { grid-template-columns: 1fr; }
             .stats-container { padding: var(--space-md); }
+        }
+
+        /* Monthly Trend Visuals */
+        .month-stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-md);
+            padding: 10px 5px;
+            position: relative;
+            overflow: hidden;
+            transition: all var(--transition-base);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            min-height: 80px; /* Reduced height */
+        }
+        .month-stat-card:hover {
+            transform: translateY(-3px);
+            border-color: var(--accent-primary);
+            box-shadow: var(--shadow-md);
+        }
+        .month-stat-bar {
+            width: 100%;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            z-index: 1;
+            transition: height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .month-stat-content {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+        }
+        .month-stat-card.is-peak {
+            border-color: #fee2e2;
+            background: #fffafa;
+        }
+        .is-peak .month-stat-bar {
+            background: linear-gradient(to top, #fee2e2, #fecaca);
         }
 
         /* Metric Mini Card (Restored) */
@@ -627,6 +681,27 @@ try {
         @media (max-width: 768px) {
             .roi-card { grid-template-columns: repeat(2, 1fr); gap: 16px; padding: 16px; }
             .roi-metric:not(:last-child) { border-left: none; }
+        }
+
+        /* Interactive Stats Linking */
+        .stat-link {
+            text-decoration: none;
+            color: inherit;
+            display: block;
+            transition: all var(--transition-base);
+            cursor: pointer;
+        }
+        .stat-link:hover {
+            transform: translateY(-2px);
+        }
+        .stat-link:hover .metric-mini-card,
+        .stat-link:hover .card {
+            border-color: var(--accent-primary) !important;
+            background: var(--bg-hover) !important;
+            box-shadow: var(--shadow-md);
+        }
+        .stat-link:active {
+            transform: translateY(0);
         }
     </style>
 </head>
@@ -706,6 +781,86 @@ try {
                 <div class="flex justify-between items-end">
                     <span class="text-3xl font-bold text-warning"><?= formatNumber($overview['active_batches']) ?></span>
                     <i data-lucide="activity" class="text-light" style="width: 24px;"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- PRIMARY ACTION CENTER (NEW & INTERACTIVE) -->
+        <!-- ============================================ -->
+        <div class="card mb-6" style="border-right: 5px solid var(--accent-danger);">
+            <div class="card-header border-bottom flex-between bg-light">
+                <h3 class="card-title text-lg flex items-center gap-2">
+                    <i data-lucide="bell-ring" class="text-danger" style="width: 20px;"></i>
+                    مركز الإجراءات العاجلة
+                </h3>
+                <span class="text-xs text-muted">انقر على الأرقام للتصفية الفورية</span>
+            </div>
+            <div class="card-body">
+                <div class="grid-2 gap-6" style="grid-template-columns: 350px 1fr;">
+                    <div class="flex flex-col gap-3">
+                        <a href="../index.php?filter=expiring_30" class="stat-link">
+                            <div class="card p-4 bg-light border-hover" style="border-top: 3px solid #ef4444; border-radius: 8px;">
+                                <div class="flex justify-between items-center">
+                                    <div>
+                                        <div class="text-xs text-muted mb-1">تنتهي خلال 30 يوم</div>
+                                        <div class="text-2xl font-bold text-danger"><?= formatNumber($expiration['next_30']) ?></div>
+                                    </div>
+                                    <i data-lucide="chevron-left" class="text-muted"></i>
+                                </div>
+                            </div>
+                        </a>
+                        <a href="../index.php?filter=expiring_90" class="stat-link">
+                            <div class="card p-4 bg-light border-hover" style="border-top: 3px solid #f59e0b; border-radius: 8px;">
+                                <div class="flex justify-between items-center">
+                                    <div>
+                                        <div class="text-xs text-muted mb-1">تنتهي خلال 90 يوم</div>
+                                        <div class="text-2xl font-bold text-warning"><?= formatNumber($expiration['next_90']) ?></div>
+                                    </div>
+                                    <i data-lucide="chevron-left" class="text-muted"></i>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+
+                    <!-- Urgent Table -->
+                    <div class="bg-white border rounded overflow-hidden">
+                        <div class="p-3 bg-secondary-light text-xs font-bold border-bottom flex justify-between">
+                            <span>أعلى 5 مبالغ قريبة الانتهاء</span>
+                            <span class="text-muted font-normal">تنبيه عالي الأهمية</span>
+                        </div>
+                        <?php
+                        $urgentList = $db->query("
+                            SELECT g.id, g.guarantee_number, 
+                                   COALESCE(s.official_name, 'غير محدد') as supplier,
+                                   CAST(json_extract(g.raw_data, '$.amount') AS REAL) as amount,
+                                   json_extract(g.raw_data, '$.expiry_date') as expiry_date
+                            FROM guarantees g
+                            LEFT JOIN guarantee_decisions d ON g.id = d.guarantee_id
+                            LEFT JOIN suppliers s ON d.supplier_id = s.id
+                            WHERE json_extract(g.raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+90 days')
+                            AND (d.is_locked IS NULL OR d.is_locked = 0)
+                            $andG
+                            ORDER BY amount DESC
+                            LIMIT 5
+                        ")->fetchAll(PDO::FETCH_ASSOC);
+                        ?>
+                        <table class="table table-sm text-xs">
+                            <tbody style="border: none;">
+                                <?php if (empty($urgentList)): ?>
+                                    <tr><td colspan="3" class="text-center text-muted py-4">لا توجد ضمانات عاجلة حالياً تنتهي خلال 90 يوم</td></tr>
+                                <?php else: ?>
+                                    <?php foreach ($urgentList as $u): ?>
+                                    <tr onclick="window.location='../index.php?id=<?= $u['id'] ?>'" style="cursor: pointer;" class="hover-bg-light">
+                                        <td class="font-bold text-primary"><?= $u['guarantee_number'] ?></td>
+                                        <td><?= $u['supplier'] ?></td>
+                                        <td class="text-danger font-bold text-left"><?= number_format($u['amount']) ?> ر.س</td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1061,6 +1216,46 @@ try {
         <!-- ============================================ -->
         <!-- SECTION 8: TRENDS & FINANCIALS -->
         <!-- ============================================ -->
+        <!-- 5. Time & Performance Grid -->
+        <!-- Expiration Trends By Month -->
+        <div class="card mb-6">
+            <div class="card-header border-bottom">
+                <h3 class="card-title text-lg flex items-center gap-2">
+                    <i data-lucide="calendar-range" style="width: 18px;"></i>
+                    ضغط الانتهاء المتوقع (12 شهر القادمة)
+                </h3>
+            </div>
+            <div class="card-body">
+                <div class="grid-12 gap-2">
+                    <?php 
+                    $maxCount = 1;
+                    foreach ($expirationByMonth as $m) $maxCount = max($maxCount, $m['count']);
+                    
+                    // Month map for Arabic
+                    $arMonths = [
+                        '01'=>'يناير','02'=>'فبراير','03'=>'مارس','04'=>'أبريل','05'=>'مايو','06'=>'يونيو',
+                        '07'=>'يوليو','08'=>'أغسطس','09'=>'سبتمبر','10'=>'أكتوبر','11'=>'نوفمبر','12'=>'ديسمبر'
+                    ];
+
+                    foreach ($expirationByMonth as $month): 
+                        $isPeak = ($peakMonth['month'] ?? '') === $month['month'];
+                        $percentage = ($month['count'] / $maxCount) * 100;
+                        $mPart = substr($month['month'], 5, 2);
+                        $yPart = substr($month['month'], 2, 2);
+                        $mDisplay = ($arMonths[$mPart] ?? $mPart) . " " . $yPart;
+                    ?>
+                    <div class="month-stat-card <?= $isPeak ? 'is-peak' : '' ?>" style="padding: 8px 4px; min-height: 70px;">
+                        <div class="month-stat-bar" style="height: <?= $percentage ?>%"></div>
+                        <div class="month-stat-content">
+                            <div class="text-xs text-muted mb-1" style="font-size: 9px; line-height: 1;"><?= $mDisplay ?></div>
+                            <div class="text-base font-bold <?= $isPeak ? 'text-danger' : 'text-primary' ?>" style="font-size: 14px;"><?= $month['count'] ?></div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+
         <div class="grid-3 mb-6">
             <!-- 1. Time Trends -->
             <div class="card">

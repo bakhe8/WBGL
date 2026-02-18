@@ -90,7 +90,8 @@ class AuthorityFactory
     private static function createFuzzyFeeder(): FuzzySignalFeeder
     {
         $supplierRepo = new SupplierRepository();
-        return new FuzzySignalFeeder($supplierRepo);
+        $normalizer = new Normalizer();
+        return new FuzzySignalFeeder($supplierRepo, $normalizer);
     }
 
     /**

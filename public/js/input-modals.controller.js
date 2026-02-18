@@ -51,19 +51,15 @@ async function submitManualEntry() {
     const bank = document.getElementById('manualBank')?.value;
     const guarantee = document.getElementById('manualGuarantee')?.value;
     const contract = document.getElementById('manualContract')?.value;
-    const amount = document.getElementById('manualAmount')?.value;
-
-    if (!supplier || !bank || !guarantee || !contract || !amount) {
-        showToast('يرجى ملء جميع الحقول المطلوبة', 'error');
-        return;
-    }
+    const originalAmount = document.getElementById('manualAmount')?.value || '';
+    const cleanAmount = originalAmount.replace(/,/g, '');
 
     const payload = {
         supplier,
         bank,
         guarantee_number: guarantee,
         contract_number: contract,
-        amount: parseFloat(amount),
+        amount: parseFloat(cleanAmount),
         expiry_date: document.getElementById('manualExpiry')?.value,
         type: document.getElementById('manualType')?.value,
         issue_date: document.getElementById('manualIssue')?.value,
@@ -123,9 +119,9 @@ async function parsePasteData() {
             },
             body: JSON.stringify({
                 text: text,
-                is_test_data: isTestData,
-                test_batch_id: testBatchId,
-                test_note: testNote
+                is_test_data: document.getElementById('pasteIsTestData')?.checked ? 1 : 0,
+                test_batch_id: document.getElementById('pasteTestBatchId')?.value,
+                test_note: document.getElementById('pasteTestNote')?.value
             })
         });
 

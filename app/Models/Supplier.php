@@ -9,6 +9,7 @@ class Supplier
         public ?int $id,
         public string $officialName,
         public ?string $displayName = null,
+        public ?string $englishName = null,
         public string $normalizedName = '',
         public ?string $supplierNormalizedKey = null,
         public int $isConfirmed = 0,

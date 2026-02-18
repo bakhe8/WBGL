@@ -79,6 +79,7 @@ try {
                 </td>
                 <td>
                     <button class="btn btn-sm" style="padding: 4px 8px; font-size: 12px; margin-left: 5px;" onclick="updateSupplier(' . $s['id'] . ', this)">✏️ تحديث</button>
+                    <button class="btn btn-sm" style="padding: 4px 8px; font-size: 12px; margin-left: 5px; background: #6366f1; color: white;" onclick="openMergeModal(' . $s['id'] . ', \'' . addslashes($s['official_name']) . '\')">🔗 دمج</button>
                     <button class="btn btn-sm btn-danger" style="padding: 4px 8px; font-size: 12px;" onclick="deleteSupplier(' . $s['id'] . ')">🗑️ حذف</button>
                 </td>
             </tr>';

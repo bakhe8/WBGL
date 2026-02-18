@@ -261,11 +261,12 @@ class ImportService
         }
 
         // Build raw_data
+        $cleanAmount = isset($data['amount']) ? str_replace(',', '', (string)$data['amount']) : '0';
         $rawData = [
             'supplier' => $data['supplier'],
             'bank' => $data['bank'],
             'guarantee_number' => $data['guarantee_number'],
-            'amount' => isset($data['amount']) ? floatval($data['amount']) : 0,
+            'amount' => floatval($cleanAmount),
             'issue_date' => $data['issue_date'] ?? null,
             'expiry_date' => $data['expiry_date'] ?? null,
             'type' => TypeNormalizer::normalize($data['type'] ?? ''),

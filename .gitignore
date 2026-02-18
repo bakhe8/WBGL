@@ -1,7 +1,12 @@
 /vendor/
+/php/
+/maint/
+/storage/logs/*.log
+/storage/database/*.sqlite
+/storage/database/*.db
+/storage/attachments/*
 server.pid
 server.port
-storage/logs/*.log
-storage/database/*.sqlite
-storage/database/*.db
-storage/attachments/*
+server.log
+.DS_Store
+Thumbs.db

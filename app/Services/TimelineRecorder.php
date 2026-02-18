@@ -262,7 +262,7 @@ class TimelineRecorder {
      * Record Decision Event (UE-01 or SY-03)
      * Monitors Supplier/Bank changes
      */
-    public static function recordDecisionEvent($guaranteeId, $oldSnapshot, $newData, $isAuto = false, $confidence = null) {
+    public static function recordDecisionEvent($guaranteeId, $oldSnapshot, $newData, $isAuto = false, $confidence = null, $subtype = null) {
         $changes = [];
         
         // Check Supplier
@@ -300,7 +300,7 @@ class TimelineRecorder {
         $creator = $isAuto ? 'System' : 'User';
         $extra = $confidence ? ['confidence' => $confidence] : [];
 
-        $subtype = $isAuto ? 'ai_match' : 'manual_edit';
+        $subtype = $subtype ?? ($isAuto ? 'ai_match' : 'manual_edit');
         return self::recordEvent($guaranteeId, 'modified', $oldSnapshot, $changes, $creator, $extra, $subtype);
     }
 
@@ -602,6 +602,8 @@ class TimelineRecorder {
                 'manual_edit' => 'تطابق يدوي',       // Mixed or supplier-only events
                 'ai_match' => 'تطابق تلقائي',
                 'status_change' => 'تغيير حالة',
+                'reopened' => 'إعادة فتح',
+                'correction' => 'تصحيح بيانات',
                 default => 'تحديث'
             };
         }
@@ -662,6 +664,8 @@ class TimelineRecorder {
             'تخفيض' => '💰',
             'إفراج' => '🔓',
             'تغيير حالة' => '🔄',
+            'إعادة فتح' => '🔓',
+            'تصحيح بيانات' => '🛠️',
             default => '📝'
         };
     }

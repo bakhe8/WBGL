@@ -1,0 +1,74 @@
+
+================================================================================
+PASTE ATTEMPT @ 2026-02-18 00:40:15
+================================================================================
+STATUS: ❌ FAILED
+
+--- ORIGINAL TEXT ---
+Classified by KFSHRC as: Public - عام
+
+السلام عليكم و رحمة الله 
+الرجاء اتخاذ اللازم للإفراج عن الضمان النهائي للعقد المذكور 
+137	GARTNER SAUDI ARABIA LIMITED	PEBHOR437760	SAB	61,884.38	31-Oct-2026
+
+--- EXTRACTED DATA ---
+{
+    "guarantee_number": "PEBHOR437760",
+    "contract_number": null,
+    "expiry_date": "31-Oct-2026",
+    "issue_date": null,
+    "amount": 61884.38,
+    "bank": "SAB",
+    "supplier": "GARTNER SAUDI ARABIA LIMITED",
+    "type": "نهائي",
+    "intent": "release",
+    "currency": "SAR",
+    "source_text": "Classified by KFSHRC as: Public - عام\n\nالسلام عليكم و رحمة الله \nالرجاء اتخاذ اللازم للإفراج عن الضمان النهائي للعقد المذكور \n137\tGARTNER SAUDI ARABIA LIMITED\tPEBHOR437760\tSAB\t61,884.38\t31-Oct-2026",
+    "field_status": {
+        "guarantee_number": "✅",
+        "amount": "✅",
+        "supplier": "✅",
+        "bank": "✅",
+        "expiry_date": "✅",
+        "contract_number": "❌",
+        "issue_date": "⚠️"
+    }
+}
+================================================================================
+
+================================================================================
+PASTE ATTEMPT @ 2026-02-18 00:40:54
+================================================================================
+STATUS: ✅ SUCCESS
+
+--- ORIGINAL TEXT ---
+Classified by KFSHRC as: Public - عام
+
+السلام عليكم و رحمة الله 
+الرجاء اتخاذ اللازم للإفراج عن الضمان النهائي للعقد C/0301/23
+137	GARTNER SAUDI ARABIA LIMITED	PEBHOR437760	SAB	61,884.38	31-Oct-2026
+
+--- EXTRACTED DATA ---
+{
+    "guarantee_number": "PEBHOR437760",
+    "contract_number": "C\/0301\/23",
+    "expiry_date": "31-Oct-2026",
+    "issue_date": null,
+    "amount": 61884.38,
+    "bank": "SAB",
+    "supplier": "GARTNER SAUDI ARABIA LIMITED",
+    "type": "نهائي",
+    "intent": "release",
+    "currency": "SAR",
+    "source_text": "Classified by KFSHRC as: Public - عام\n\nالسلام عليكم و رحمة الله \nالرجاء اتخاذ اللازم للإفراج عن الضمان النهائي للعقد C\/0301\/23\n137\tGARTNER SAUDI ARABIA LIMITED\tPEBHOR437760\tSAB\t61,884.38\t31-Oct-2026",
+    "field_status": {
+        "guarantee_number": "✅",
+        "amount": "✅",
+        "supplier": "✅",
+        "bank": "✅",
+        "expiry_date": "✅",
+        "contract_number": "✅",
+        "issue_date": "⚠️"
+    }
+}
+================================================================================

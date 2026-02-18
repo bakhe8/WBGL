@@ -41,11 +41,11 @@ class LearningSignalFeeder implements SignalFeederInterface
         $signals = [];
 
         foreach ($feedback as $item) {
-            $supplierId = $item['supplier_id'];
-            $action = $item['action']; // 'confirm' | 'reject'
-            $count = $item['count'];
+            $supplierId = (int)$item['supplier_id'];
+            $action = $item['action']; // 'confirm' | 'reject' | 'correction'
+            $count = (int)$item['count'];
 
-            if ($action === 'confirm') {
+            if ($action === 'confirm' || $action === 'correction') {
                 $signals[] = new SignalDTO(
                     supplier_id: $supplierId,
                     signal_type: 'learning_confirmation',
@@ -53,7 +53,7 @@ class LearningSignalFeeder implements SignalFeederInterface
                     metadata: [
                         'source' => 'learning',
                         'confirmation_count' => $count,
-                        'action' => 'confirm',
+                        'action' => $action,
                     ]
                 );
             } elseif ($action === 'reject') {

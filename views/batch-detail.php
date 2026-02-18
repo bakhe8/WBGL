@@ -98,15 +98,21 @@ foreach ($guarantees as &$g) {
     $g['bank_name'] = $g['bank_name'] ?: ($g['parsed']['bank'] ?? '-');
 }
 unset($g);
-?>
-<?php 
-// Calculate ready count for UI logic - 
-// MUST match JS logic: supplier_id, bank_id, and active_action required for printing
-$readyCount = count(array_filter($guarantees, fn($g) => 
+// Calculate counts for UI logic
+// 1. Actionable Count: Matched but no action yet (Ready for batch extend/release)
+$actionableCount = count(array_filter($guarantees, fn($g) => 
+    ($g['decision_status'] ?? '') === 'ready' && 
+    $g['supplier_id'] && 
+    $g['bank_id'] && 
+    empty($g['active_action'])
+));
+
+// 2. Print Ready Count: Matched AND has active action
+$printReadyCount = count(array_filter($guarantees, fn($g) => 
     in_array($g['decision_status'] ?? '', ['ready', 'released']) && 
     $g['supplier_id'] && 
     $g['bank_id'] && 
-    $g['active_action']
+    !empty($g['active_action'])
 ));
 ?>
 <!DOCTYPE html>
@@ -213,9 +219,9 @@ $readyCount = count(array_filter($guarantees, fn($g) =>
                                 <button onclick="handleBatchAction('close')" class="btn btn-outline-danger btn-sm" title="إغلاق الدفعة للأرشفة">
                                     <i data-lucide="lock" style="width: 16px;"></i>
                                 </button>
-                                <?php if ($readyCount > 0): ?>
+                                <?php if ($printReadyCount > 0): ?>
                                 <button onclick="printReadyGuarantees()" class="btn btn-success shadow-md">
-                                    <i data-lucide="printer" style="width: 18px;"></i> طباعة خطابات (<?= $readyCount ?>)
+                                    <i data-lucide="printer" style="width: 18px;"></i> طباعة خطابات (<?= $printReadyCount ?>)
                                 </button>
                                 <?php endif; ?>
                             <?php else: ?>
@@ -229,8 +235,8 @@ $readyCount = count(array_filter($guarantees, fn($g) =>
             </div>
         </div>
 
-        <!-- Actions Toolbar -->
-        <?php if (!$isClosed && $readyCount > 0): ?>
+        <!-- Actions Toolbar (Visible when there are actionable records with no action yet) -->
+        <?php if (!$isClosed && $actionableCount > 0): ?>
         <div class="card mb-4" id="actions-toolbar">
             <div class="card-body p-3 flex-between align-center">
                 <div class="flex-align-center gap-2">
@@ -300,13 +306,19 @@ $readyCount = count(array_filter($guarantees, fn($g) =>
                                 </td>
                                 <td class="text-center">
                                     <?php 
-                                    $isReady = (in_array($g['decision_status'] ?? '', ['ready', 'released']) && $g['supplier_id'] && $g['bank_id'] && $g['active_action']);
-                                    if ($isReady): ?>
+                                    $statusVal = $g['decision_status'] ?? 'pending';
+                                    $hasBasicData = ($g['supplier_id'] && $g['bank_id']);
+                                    
+                                    if ($statusVal === 'released'): ?>
+                                        <div class="text-info flex-center gap-1 text-sm font-bold">
+                                            <i data-lucide="unlock" style="width: 14px;"></i> مُفرج عنه
+                                        </div>
+                                    <?php elseif ($statusVal === 'ready' && $hasBasicData): ?>
                                         <div class="text-success flex-center gap-1 text-sm font-bold">
                                             <i data-lucide="check" style="width: 14px;"></i> جاهز
                                         </div>
                                     <?php else: ?>
-                                        <span class="text-muted text-xs">غير جاهز</span>
+                                        <span class="text-muted text-xs">يحتاج قرار</span>
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center">

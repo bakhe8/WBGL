@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 // Prevent caching
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Cache-Control: post-check=0, pre-check=0", false);
@@ -159,8 +159,14 @@ if (!$currentRecord) {
             // Apply specific status filter
             if ($statusFilter === 'ready') {
                 $defaultRecordQuery .= ' AND d.status = "ready"';
+            } elseif ($statusFilter === 'actionable') {
+                $defaultRecordQuery .= ' AND d.status = "ready" AND (d.active_action IS NULL OR d.active_action = "")';
             } elseif ($statusFilter === 'pending') {
                 $defaultRecordQuery .= ' AND (d.id IS NULL OR d.status = "pending")';
+            } elseif ($statusFilter === 'expiring_30') {
+                $defaultRecordQuery .= " AND json_extract(g.raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+30 days')";
+            } elseif ($statusFilter === 'expiring_90') {
+                $defaultRecordQuery .= " AND json_extract(g.raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+90 days')";
             }
             // 'all' filter has no additional conditions
         }
@@ -494,6 +500,16 @@ $formattedSuppliers = array_map(function($s) {
                             }
                         ?>
                         <span class="badge <?= $statusClass ?>"><?= $statusText ?></span>
+                        <?php if ($mockRecord['status'] === 'ready' || $mockRecord['status'] === 'released'): ?>
+                            <button class="btn btn-ghost btn-xs" 
+                                    title="تعديل البيانات" 
+                                    data-action="reopenRecord"
+                                    style="padding: 2px 6px; font-size: 14px; margin-right: 8px;"
+                                    onmouseover="this.style.background='var(--bg-hover)'"
+                                    onmouseout="this.style.background='transparent'">
+                                ✏️
+                            </button>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
                 
@@ -684,6 +700,13 @@ $formattedSuppliers = array_map(function($s) {
                        onmouseout="if('<?= $statusFilter ?>' !== 'ready') this.style.background='transparent'">
                         <span style="color: #059669;">✅ <?= $importStats['ready'] ?? 0 ?></span>
                     </a>
+                    <a href="/?filter=actionable" 
+                       title="جاهز (بدون إجراء)"
+                       style="display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; text-decoration: none; transition: all 0.2s; <?= $statusFilter === 'actionable' ? 'background: #e0f2fe; font-weight: 600;' : '' ?>"
+                       onmouseover="if('<?= $statusFilter ?>' !== 'actionable') this.style.background='#f1f5f9'"
+                       onmouseout="if('<?= $statusFilter ?>' !== 'actionable') this.style.background='transparent'">
+                        <span style="color: #0284c7;">⏳ <?= $importStats['actionable'] ?? 0 ?></span>
+                    </a>
                     <a href="/?filter=pending" 
                        style="display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; text-decoration: none; transition: all 0.2s; <?= $statusFilter === 'pending' ? 'background: #fef3c7; font-weight: 600;' : '' ?>"
                        onmouseover="if('<?= $statusFilter ?>' !== 'pending') this.style.background='#f1f5f9'"
@@ -700,7 +723,7 @@ $formattedSuppliers = array_map(function($s) {
                 
                 <!-- ✅ NEW: Test Data Filter Toggle (Phase 1) -->
                 <?php 
-                $settings = \App\Support\Settings::getInstance();
+                $settings = Settings::getInstance();
                 if (!$settings->isProductionMode()): 
                 ?>
                 <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">

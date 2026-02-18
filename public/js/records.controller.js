@@ -335,6 +335,34 @@ if (!window.RecordsController) {
             }
         }
 
+        async reopenRecord(target) {
+            const recordIdEl = document.querySelector('[data-record-id]');
+            if (!recordIdEl) return;
+            const id = recordIdEl.dataset.recordId;
+
+            if (!await this.customConfirm('هل تريد إعادة فتح هذا الضمان لتعديل البيانات؟ سيؤدي ذلك إلى تحويل الحالة إلى "يحتاج قرار" مؤقتاً.')) return;
+
+            try {
+                const response = await fetch('/api/reopen.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ guarantee_id: id })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    window.showToast('تم إعادة فتح السجل للتعديل', 'success');
+                    // Reload to reflect changes in UI (unlock fields, update button states)
+                    window.location.reload();
+                } else {
+                    window.showToast('خطأ: ' + (data.error || 'فشل التعديل'), 'error');
+                }
+            } catch (error) {
+                console.error('Reopen error:', error);
+                window.showToast('حدث خطأ في الاتصال', 'error');
+            }
+        }
+
         closePrintDropdown() {
             if (this.printDropdownVisible) {
                 this.printDropdownVisible = false;

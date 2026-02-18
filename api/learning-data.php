@@ -8,38 +8,40 @@ header('Content-Type: application/json');
 try {
     $db = Database::connect();
 
-    // 1. Fetch Confirmations
+    // 1. Fetch Confirmations (Aggregated)
     $stmt = $db->query("
         SELECT 
-            lc.id,
+            MIN(lc.id) as id,
             lc.raw_supplier_name as pattern,
             lc.supplier_id,
             s.official_name,
             lc.matched_anchor,
-            lc.count,
-            lc.updated_at
+            COUNT(*) as count,
+            MAX(lc.updated_at) as updated_at
         FROM learning_confirmations lc
         LEFT JOIN suppliers s ON lc.supplier_id = s.id
         WHERE lc.action = 'confirm'
-        ORDER BY lc.updated_at DESC
+        GROUP BY lc.raw_supplier_name, lc.supplier_id
+        ORDER BY updated_at DESC
         LIMIT 100
     ");
     $confirmations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // 2. Fetch Rejections (Penalized Items)
+    // 2. Fetch Rejections (Aggregated)
     $stmt = $db->query("
         SELECT 
-            lc.id,
+            MIN(lc.id) as id,
             lc.raw_supplier_name as pattern,
             lc.supplier_id,
             s.official_name,
             lc.matched_anchor,
-            lc.count,
-            lc.updated_at
+            COUNT(*) as count,
+            MAX(lc.updated_at) as updated_at
         FROM learning_confirmations lc
-        left join suppliers s ON lc.supplier_id = s.id
+        LEFT JOIN suppliers s ON lc.supplier_id = s.id
         WHERE lc.action = 'reject'
-        ORDER BY lc.updated_at DESC
+        GROUP BY lc.raw_supplier_name, lc.supplier_id
+        ORDER BY updated_at DESC
         LIMIT 100
     ");
     $rejections = $stmt->fetchAll(PDO::FETCH_ASSOC);

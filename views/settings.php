@@ -401,6 +401,38 @@ $currentSettings = $settings->all();
             </div>
         </div>
 
+        <!-- Merge Supplier Modal -->
+        <div id="mergeSupplierModal" class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <span>🔗 دمج مورد مكرر</span>
+                    <button class="close-modal" onclick="closeModal('mergeSupplierModal')">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div style="background: #fdf2f2; border: 1px solid #f87171; border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 13px;">
+                        <strong style="color: #991b1b; display: block; margin-bottom: 4px;">⚠️ تحذير:</strong>
+                        <p style="color: #b91c1c; margin: 0;">سيتم حذف المورد التالي ونقل كافة بياناته وتاريخه إلى مورد آخر. لا يمكن التراجع عن هذه الخطوة.</p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">المورد المكرر (سيتم حذفه)</label>
+                        <input type="text" id="sourceSupplierName" class="form-input" disabled style="background: #f1f5f9;">
+                        <input type="hidden" id="sourceSupplierId">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">الدمج في المورد الأساسي (المعرف المستهدف)</label>
+                        <input type="number" id="targetSupplierId" class="form-input" placeholder="أدخل معرف المورد (ID) الذي تريد الإبقاء عليه">
+                        <small class="form-help">أدخل رقم المعرف (ID) الموجود في العمود الأول من الجدول.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeModal('mergeSupplierModal')">إلغاء</button>
+                    <button class="btn btn-success" id="confirmMergeBtn" onclick="executeMerge()">🚀 تنفيذ الدمج والربط</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Tab 4: Machine Learning -->
         <div id="learning" class="tab-content">
             <!-- Learning Stats -->
@@ -996,6 +1028,55 @@ $currentSettings = $settings->all();
                 btn.innerText = originalText;
                 btn.disabled = false;
                 input.value = ''; // Reset input to allow re-upload same file
+            }
+        }
+
+        // --- Merge Functions ---
+        function openMergeModal(id, name) {
+            document.getElementById('sourceSupplierId').value = id;
+            document.getElementById('sourceSupplierName').value = name;
+            document.getElementById('targetSupplierId').value = '';
+            openModal('mergeSupplierModal');
+        }
+
+        async function executeMerge() {
+            const sourceId = document.getElementById('sourceSupplierId').value;
+            const targetId = document.getElementById('targetSupplierId').value;
+            const btn = document.getElementById('confirmMergeBtn');
+
+            if (!targetId) {
+                showAlert('error', 'يرجى إدخال معرف المورد المستهدف');
+                return;
+            }
+
+            if (sourceId === targetId) {
+                showAlert('error', 'لا يمكن دمج المورد مع نفسه');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '⏳ جاري تنفيذ الدمج...';
+
+            try {
+                const response = await fetch('../api/merge-suppliers.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source_id: sourceId, target_id: targetId })
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('success', '✅ تم دمج الموردين بنجاح ونقل كافة البيانات');
+                    closeModal('mergeSupplierModal');
+                    loadSuppliers(); // Refresh list
+                } else {
+                    showAlert('error', '❌ فشل الدمج: ' + result.error);
+                }
+            } catch (e) {
+                showAlert('error', '❌ خطأ في الاتصال');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🚀 تنفيذ الدمج والربط';
             }
         }
     </script>
