@@ -21,7 +21,8 @@
         padding: 0 12px;
         position: sticky;
         top: 0;
-        z-index: 50;
+        z-index: 999;
+        /* Ensure it stays on top */
         justify-content: space-between;
         background: #ffffff;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
@@ -156,7 +157,7 @@
         margin-bottom: 16px;
     }
 
-    /* FIX 2: Record Header Alignment */
+    /* FIX 2: Record Header Alignment & Spacing */
     .record-header {
         flex-direction: column;
         align-items: flex-start;
@@ -166,6 +167,8 @@
         background: white;
         border-bottom: 1px solid #f1f5f9;
         margin-bottom: 16px;
+        margin-top: 8px;
+        /* Breathing room from sticky header */
     }
 
     .record-title {
@@ -182,6 +185,8 @@
         margin: 0;
         flex: 1;
         min-width: 200px;
+        line-height: 1.4;
+        /* Better line height */
     }
 
     .record-title .badge-wrapper {
@@ -197,15 +202,15 @@
     }
 
     /* FIX 3: ACTION BUTTONS (The Real Fix) */
-    /* Target existing classes from record-form.php */
     .record-actions {
         display: grid !important;
         grid-template-columns: 1fr 1fr;
         gap: 8px;
         width: 100%;
-        margin-top: 8px;
+        margin-top: 12px;
         flex: none !important;
-        /* Override inline flex: 1 */
+        /* Ensure it fits inside logic */
+        box-sizing: border-box;
     }
 
     /* Hide the vertical separator div on mobile */
@@ -213,13 +218,15 @@
         display: none !important;
     }
 
-    /* Common button sizing */
+    /* Common button sizing - Sized down to fit better */
     .record-actions .btn {
         width: 100%;
         justify-content: center;
-        padding: 10px;
-        height: 42px;
-        /* Touch friendly */
+        padding: 8px;
+        height: 38px;
+        /* Slightly smaller height */
+        font-size: 13px;
+        /* Slightly smaller font */
     }
 
     .decision-card {
