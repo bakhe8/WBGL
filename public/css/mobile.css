@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   WBGL MOBILE RETROFIT STYLES
+   WBGL MOBILE RETROFIT STYLES (RTL OPTIMIZED)
    Target: Width <= 768px (Mobile & Tablet Portrait)
    ═══════════════════════════════════════════════════════════════ */
 
@@ -7,87 +7,102 @@
 
     /* 1. Global Layout Stack */
     body {
-        overflow: auto; /* Allow body scroll */
+        overflow-x: hidden;
+        /* Prevent horizontal scroll */
     }
 
     .app-container {
         flex-direction: column;
-        overflow: type; /* Allow internal scroll if needed, but mostly native */
         height: auto;
     }
 
     /* 2. Top Bar Adjustments */
     .top-bar {
-        padding: 0 16px;
+        padding: 0 12px;
         position: sticky;
         top: 0;
         z-index: 50;
+        justify-content: space-between;
     }
 
-    .brand span {
-        display: none; /* Hide text logo on mobile to save space */
+    /* Hide text labels, show icons only */
+    .brand-text {
+        display: none !important;
     }
 
     .header-search-container {
-        display: none; /* Hide large search bar */
+        display: none;
+        /* Hide large search bar */
+    }
+
+    .nav-label {
+        display: none !important;
+        /* Hide menu text */
     }
 
     .global-actions {
-        gap: 4px;
+        gap: 8px;
     }
 
-    .btn-global span {
-        display: none; /* Hide labels, show icons only */
-    }
-    
     .btn-global {
-        padding: 8px;
+        padding: 6px 8px;
+        font-size: 16px;
+        /* Larger icons */
     }
 
-    /* 3. Sidebar (Off-Canvas Drawer - Left) */
+    /* 3. Sidebar (Off-Canvas Drawer - RIGHT for RTL) */
     .sidebar {
         position: fixed;
         top: var(--height-top-bar);
-        left: -100%; /* Hidden by default */
+        right: -100%;
+        /* Hidden by default (Right side) */
+        left: auto;
         bottom: 0;
-        width: 80%;
+        width: 85%;
         max-width: 300px;
         z-index: 40;
-        transition: left 0.3s ease;
-        box-shadow: var(--shadow-lg);
+        transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: -4px 0 15px rgba(0, 0, 0, 0.1);
+        background: #f8fafc;
+        /* Ensure bg is opaque */
     }
 
     .sidebar.active {
-        left: 0;
+        right: 0;
     }
 
-    /* 4. Timeline (Off-Canvas Drawer - Right) */
-    .timeline-sidebar, .timeline-panel {
+    /* 4. Timeline (Off-Canvas Drawer - LEFT for RTL) */
+    .timeline-sidebar,
+    .timeline-panel {
         position: fixed;
         top: var(--height-top-bar);
-        right: -100%; /* Hidden by default */
+        left: -100%;
+        /* Hidden by default (Left side) */
+        right: auto;
         bottom: 0;
         width: 85%;
         max-width: 320px;
         z-index: 40;
-        transition: right 0.3s ease;
-        box-shadow: -2px 0 10px rgba(0,0,0,0.1);
-        display: flex; /* Ensure flex layout works */
+        transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
+        display: flex;
+        background: #ffffff;
+        /* Ensure bg is opaque */
     }
 
-    .timeline-sidebar.active, .timeline-panel.active {
-        right: 0;
+    .timeline-sidebar.active,
+    .timeline-panel.active {
+        left: 0;
     }
 
     /* 5. Center Section (Main Content) */
     .center-section {
         width: 100%;
-        flex: none; /* Stop flex changing width */
         min-height: calc(100vh - var(--height-top-bar));
     }
 
     .main-content {
-        padding: 16px;
+        padding: 12px;
     }
 
     /* 6. Mobile Toggles (Visible only on mobile) */
@@ -99,16 +114,21 @@
         height: 40px;
         background: transparent;
         border: none;
-        font-size: 20px;
+        font-size: 22px;
         cursor: pointer;
         color: var(--text-secondary);
+        border-radius: 8px;
     }
-    
+
+    .mobile-toggle-btn:active {
+        background: rgba(0, 0, 0, 0.05);
+    }
+
     /* 7. Overlay for Drawers */
     .mobile-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0,0,0,0.5);
+        background: rgba(0, 0, 0, 0.5);
         z-index: 30;
         opacity: 0;
         pointer-events: none;
@@ -123,46 +143,34 @@
 
     /* 8. Card Adjustments */
     .fields-grid {
-        grid-template-columns: 1fr; /* Stack fields */
+        grid-template-columns: 1fr !important;
+        /* Force stack */
         gap: 0;
     }
 
-    .fields-grid > .field-group:first-child {
+    .fields-grid>.field-group:first-child {
         border-left: none;
+        border-bottom: 1px solid #e2e8f0;
         padding-left: 0;
-        padding-bottom: 20px;
-        margin-bottom: 20px;
-        border-bottom: 1px solid var(--border-light);
+        padding-bottom: 16px;
+        margin-bottom: 16px;
     }
 
     .record-header {
-        padding: 0 12px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding-bottom: 12px;
         height: auto;
-        min-height: 56px;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-    
-    .record-title h1 {
-        font-size: 16px;
     }
 
-    /* 9. Action Bar */
-    .action-bar {
-        padding: 12px;
-        height: auto;
-        flex-direction: column;
-        gap: 12px;
-    }
-    
-    .primary-actions {
+    .record-title {
         width: 100%;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
+        justify-content: space-between;
     }
-    
-    .btn {
+
+    .navigation-controls {
         width: 100%;
-        justify-content: center;
+        justify-content: space-between;
     }
 }

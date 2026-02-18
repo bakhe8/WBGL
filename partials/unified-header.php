@@ -30,13 +30,13 @@ $isProductionMode = $headerSettings->isProductionMode();
 
 <header class="top-bar">
     <div style="display: flex; align-items: center; gap: 12px;">
-        <!-- Mobile Toggle (Left) -->
+        <!-- Mobile Toggle (Right in RTL - Opens Sidebar) -->
         <button class="mobile-toggle-btn" onclick="toggleSidebar()" style="display: none;">
             ☰
         </button>
         <div class="brand">
             <div class="brand-icon">&#x1F4CB;</div>
-            <span>نظام إدارة الضمانات</span>
+            <span class="brand-text">نظام إدارة الضمانات</span>
         </div>
     </div>
 
@@ -59,30 +59,34 @@ $isProductionMode = $headerSettings->isProductionMode();
         <nav class="global-actions">
             <a href="<?= $basePath ?>index.php"
                 class="btn-global <?= isActive('index', $currentPage, $currentDir) ? 'active' : '' ?>">
-                <span>🏠 الرئيسية</span>
-                <!-- Mobile Icon fallback handled by CSS -->
+                <span class="nav-icon">🏠</span>
+                <span class="nav-label">الرئيسية</span>
             </a>
             <a href="<?= $basePath ?>views/batches.php"
                 class="btn-global <?= isActive('batches', $currentPage, $currentDir) ? 'active' : '' ?>">
-                <span>📦 الدفعات</span>
+                <span class="nav-icon">📦</span>
+                <span class="nav-label">الدفعات</span>
             </a>
             <a href="<?= $basePath ?>views/statistics.php"
                 class="btn-global <?= isActive('statistics', $currentPage, $currentDir) ? 'active' : '' ?>">
-                📊 إحصائيات
+                <span class="nav-icon">📊</span>
+                <span class="nav-label">إحصائيات</span>
             </a>
             <a href="<?= $basePath ?>views/settings.php"
                 class="btn-global <?= isActive('settings', $currentPage, $currentDir) ? 'active' : '' ?>">
-                ⚙ إعدادات
+                <span class="nav-icon">⚙</span>
+                <span class="nav-label">إعدادات</span>
             </a>
             <?php if (!$isProductionMode): ?>
             <a href="<?= $basePath ?>views/maintenance.php"
                 class="btn-global <?= isActive('maintenance', $currentPage, $currentDir) ? 'active' : '' ?>">
-                🛠️ صيانة
+                <span class="nav-icon">🛠️</span>
+                <span class="nav-label">صيانة</span>
             </a>
             <?php endif; ?>
         </nav>
         
-        <!-- Mobile Toggle (Right - Timeline) -->
+        <!-- Mobile Toggle (Left in RTL - Opens Timeline) -->
         <button class="mobile-toggle-btn" onclick="toggleTimeline()" style="display: none;">
             ⏱️
         </button>
