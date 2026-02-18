@@ -26,18 +26,10 @@
     }
 
     /* Hide text labels, show icons only */
-    .brand-text {
-        display: none !important;
-    }
-
-    .header-search-container {
-        display: none;
-        /* Hide large search bar */
-    }
-
+    .brand-text,
+    .header-search-container,
     .nav-label {
         display: none !important;
-        /* Hide menu text */
     }
 
     .global-actions {
@@ -55,7 +47,6 @@
         position: fixed;
         top: var(--height-top-bar);
         right: -100%;
-        /* Hidden by default (Right side) */
         left: auto;
         bottom: 0;
         width: 85%;
@@ -64,7 +55,6 @@
         transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         box-shadow: -4px 0 15px rgba(0, 0, 0, 0.1);
         background: #f8fafc;
-        /* Ensure bg is opaque */
     }
 
     .sidebar.active {
@@ -77,7 +67,6 @@
         position: fixed;
         top: var(--height-top-bar);
         left: -100%;
-        /* Hidden by default (Left side) */
         right: auto;
         bottom: 0;
         width: 85%;
@@ -87,7 +76,6 @@
         box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
         display: flex;
         background: #ffffff;
-        /* Ensure bg is opaque */
     }
 
     .timeline-sidebar.active,
@@ -100,14 +88,13 @@
         width: 100%;
         min-height: calc(100vh - var(--height-top-bar));
         overflow-x: hidden;
-        /* Vital for preventing A4 overflow */
     }
 
     .main-content {
         padding: 12px;
     }
 
-    /* 6. Mobile Toggles (Visible only on mobile) */
+    /* 6. Mobile Toggles */
     .mobile-toggle-btn {
         display: flex !important;
         align-items: center;
@@ -126,7 +113,7 @@
         background: rgba(0, 0, 0, 0.05);
     }
 
-    /* 7. Overlay for Drawers */
+    /* 7. Overlay */
     .mobile-overlay {
         position: fixed;
         inset: 0;
@@ -143,7 +130,7 @@
         pointer-events: auto;
     }
 
-    /* 8. Card Adjustments */
+    /* 8. Card & Form Adjustments */
     .fields-grid {
         grid-template-columns: 1fr !important;
         /* Force stack */
@@ -178,7 +165,6 @@
 
     .record-title h1 {
         font-size: 18px;
-        /* Smaller font */
         margin: 0;
     }
 
@@ -188,16 +174,33 @@
         margin-top: 8px;
     }
 
-    /* Decision Card optimizations */
+    /* Decision Card Optimizations */
     .decision-card {
-        padding: 16px;
-        /* Reduce padding */
+        padding: 12px !important;
     }
 
-    /* Suggestion Chips Stack */
+    /* Ensure Inputs take full width */
+    .field-row {
+        flex-direction: column;
+        /* Stack label and input */
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .field-label {
+        min-width: auto;
+        /* Allow flexible width */
+        font-size: 13px;
+    }
+
+    .field-input {
+        width: 100%;
+        /* Full width inputs */
+    }
+
+    /* Chips & Hints */
     .chips-row {
         margin-right: 0;
-        /* Removing the offset for labels */
         margin-top: 8px;
         gap: 6px;
     }
@@ -205,32 +208,66 @@
     .field-hint {
         margin-right: 0;
         flex-wrap: wrap;
+        font-size: 11px;
     }
 
-    /* 9. Letter Preview Scaling (Crucial Fix) */
+    /* Action Buttons Stack */
+    .primary-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        /* Two columns for main actions */
+        gap: 8px;
+        width: 100%;
+    }
+
+    .primary-actions .btn {
+        width: 100%;
+        justify-content: center;
+        padding: 12px;
+    }
+
+    /* 9. Guarantee Information Grid (Info Grid) - THE FIX */
+    .info-grid {
+        display: grid;
+        /* Switch from desktop 6 cols to 2 cols for readability */
+        grid-template-columns: 1fr 1fr !important;
+        gap: 12px !important;
+        padding: 12px !important;
+    }
+
+    .info-item {
+        background: white;
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid #f1f5f9;
+        /* Optional: slightly distinct look for items */
+    }
+
+    .info-label {
+        font-size: 11px;
+        color: #64748b;
+    }
+
+    .info-value {
+        font-size: 14px;
+        word-break: break-all;
+        /* Prevent overflow of long numbers */
+    }
+
+    /* 10. Letter Preview Scaling */
     .letter-preview {
         padding: 10px;
         background: #f1f5f9;
         overflow: hidden;
-        /* Hide overflow */
     }
 
-    /* 
-       We use a scaling transformation because reflowing a precise 
-       legal letter (pixels/mm) often breaks the layout.
-       Scaling ensures it looks exactly like the printed version.
-    */
     .letter-preview .letter-paper {
         transform-origin: top center;
-        /* Calculate scale: (Viewport Width - Padding) / A4 Width (approx 800px) */
-        /* Using a safe generic scale for mobile */
         transform: scale(0.45);
         margin-bottom: -50%;
-        /* Compensate for empty space after scaling */
         height: auto;
     }
 
-    /* Slightly larger scale for tablets */
     @media (min-width: 480px) and (max-width: 768px) {
         .letter-preview .letter-paper {
             transform: scale(0.65);

@@ -403,7 +403,7 @@ $formattedSuppliers = array_map(function($s) {
     
     <!-- Main Application Styles -->
     <link rel="stylesheet" href="public/css/index-main.css">
-    <link rel="stylesheet" href="public/css/mobile.css?v=<?= time() + 1 ?>"> <!-- Mobile Retrofit (Cache Busted V2) -->
+    <link rel="stylesheet" href="public/css/mobile.css?v=<?= time() + 2 ?>"> <!-- Mobile Retrofit (Cache Busted V3) -->
     
     <!-- Mobile Logic -->
     <script src="public/js/mobile.js"></script>
