@@ -23,6 +23,10 @@
         top: 0;
         z-index: 50;
         justify-content: space-between;
+        background: #ffffff;
+        /* Ensure solid background */
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        /* Subtle shadow */
     }
 
     /* Hide text labels, show icons only */
@@ -33,13 +37,29 @@
     }
 
     .global-actions {
-        gap: 8px;
+        gap: 4px;
+        /* Tighter gap */
     }
 
+    /* FIX 1: Cleanup Header Icons */
     .btn-global {
-        padding: 6px 8px;
-        font-size: 16px;
+        padding: 8px;
+        font-size: 18px;
         /* Larger icons */
+        background: transparent !important;
+        /* Remove blocky background */
+        border: none !important;
+        /* Remove borders */
+        color: #64748b;
+        /* Neutral color */
+        border-radius: 50%;
+        /* Circular touch target */
+    }
+
+    .btn-global.active {
+        color: var(--accent-primary);
+        background: rgba(59, 130, 246, 0.1) !important;
+        /* Subtle active state */
     }
 
     /* 3. Sidebar (Off-Canvas Drawer - RIGHT for RTL) */
@@ -133,7 +153,6 @@
     /* 8. Card & Form Adjustments */
     .fields-grid {
         grid-template-columns: 1fr !important;
-        /* Force stack */
         gap: 0;
         margin-bottom: 12px;
     }
@@ -146,35 +165,52 @@
         margin-bottom: 16px;
     }
 
+    /* FIX 2: Record Header Alignment */
     .record-header {
         flex-direction: column;
         align-items: flex-start;
-        gap: 12px;
-        padding-bottom: 12px;
+        gap: 16px;
+        padding-bottom: 16px;
         height: auto;
+        background: white;
+        /* Clean background */
+        border-bottom: 1px solid #f1f5f9;
+        margin-bottom: 16px;
     }
 
     .record-title {
         width: 100%;
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: flex-start;
+        /* Align start */
         flex-wrap: wrap;
         gap: 8px;
     }
 
+    /* Ensure title is bold but fitted */
     .record-title h1 {
         font-size: 18px;
         margin: 0;
+        flex: 1;
+        /* Take available space */
+        min-width: 200px;
+    }
+
+    /* Wrapper for badge and buttons to keep them together */
+    .record-title .badge-wrapper {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
     }
 
     .navigation-controls {
         width: 100%;
         justify-content: space-between;
-        margin-top: 8px;
+        padding-top: 4px;
     }
 
-    /* Decision Card Optimizations */
+    /* FIX 3: Action Buttons & Decision Card */
     .decision-card {
         padding: 12px !important;
     }
@@ -182,27 +218,30 @@
     /* Ensure Inputs take full width */
     .field-row {
         flex-direction: column;
-        /* Stack label and input */
         align-items: flex-start;
-        gap: 4px;
+        gap: 6px;
     }
 
     .field-label {
         min-width: auto;
-        /* Allow flexible width */
         font-size: 13px;
+        color: #64748b;
+        font-weight: 500;
     }
 
     .field-input {
         width: 100%;
-        /* Full width inputs */
+        padding: 10px;
+        /* Larger touch area */
     }
 
     /* Chips & Hints */
     .chips-row {
         margin-right: 0;
         margin-top: 8px;
-        gap: 6px;
+        gap: 8px;
+        flex-wrap: wrap;
+        /* Ensure chips wrap */
     }
 
     .field-hint {
@@ -215,8 +254,7 @@
     .primary-actions {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        /* Two columns for main actions */
-        gap: 8px;
+        gap: 10px;
         width: 100%;
     }
 
@@ -224,12 +262,13 @@
         width: 100%;
         justify-content: center;
         padding: 12px;
+        height: 44px;
+        /* Standard touch height */
     }
 
-    /* 9. Guarantee Information Grid (Info Grid) - THE FIX */
+    /* 9. Guarantee Information Grid (Info Grid) */
     .info-grid {
         display: grid;
-        /* Switch from desktop 6 cols to 2 cols for readability */
         grid-template-columns: 1fr 1fr !important;
         gap: 12px !important;
         padding: 12px !important;
@@ -237,41 +276,45 @@
 
     .info-item {
         background: white;
-        padding: 8px;
-        border-radius: 6px;
+        padding: 10px;
+        border-radius: 8px;
         border: 1px solid #f1f5f9;
-        /* Optional: slightly distinct look for items */
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
     }
 
     .info-label {
         font-size: 11px;
-        color: #64748b;
+        color: #94a3b8;
     }
 
     .info-value {
         font-size: 14px;
         word-break: break-all;
-        /* Prevent overflow of long numbers */
     }
 
-    /* 10. Letter Preview Scaling */
+    /* 10. Letter Preview Scaling - FIX 4: Whitespace removal */
     .letter-preview {
-        padding: 10px;
+        padding: 8px;
         background: #f1f5f9;
         overflow: hidden;
+        border-radius: 8px;
+        margin-top: 16px;
     }
 
     .letter-preview .letter-paper {
         transform-origin: top center;
-        transform: scale(0.45);
-        margin-bottom: -50%;
+        transform: scale(0.42);
+        /* Slightly smaller to fit safely */
+        margin-bottom: -58%;
+        /* Aggressive negative margin to remove bottom whitespace */
         height: auto;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
 
     @media (min-width: 480px) and (max-width: 768px) {
         .letter-preview .letter-paper {
             transform: scale(0.65);
-            margin-bottom: -30%;
+            margin-bottom: -35%;
         }
     }
 }
