@@ -99,6 +99,8 @@
     .center-section {
         width: 100%;
         min-height: calc(100vh - var(--height-top-bar));
+        overflow-x: hidden;
+        /* Vital for preventing A4 overflow */
     }
 
     .main-content {
@@ -146,6 +148,7 @@
         grid-template-columns: 1fr !important;
         /* Force stack */
         gap: 0;
+        margin-bottom: 12px;
     }
 
     .fields-grid>.field-group:first-child {
@@ -166,11 +169,72 @@
 
     .record-title {
         width: 100%;
+        display: flex;
+        align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .record-title h1 {
+        font-size: 18px;
+        /* Smaller font */
+        margin: 0;
     }
 
     .navigation-controls {
         width: 100%;
         justify-content: space-between;
+        margin-top: 8px;
+    }
+
+    /* Decision Card optimizations */
+    .decision-card {
+        padding: 16px;
+        /* Reduce padding */
+    }
+
+    /* Suggestion Chips Stack */
+    .chips-row {
+        margin-right: 0;
+        /* Removing the offset for labels */
+        margin-top: 8px;
+        gap: 6px;
+    }
+
+    .field-hint {
+        margin-right: 0;
+        flex-wrap: wrap;
+    }
+
+    /* 9. Letter Preview Scaling (Crucial Fix) */
+    .letter-preview {
+        padding: 10px;
+        background: #f1f5f9;
+        overflow: hidden;
+        /* Hide overflow */
+    }
+
+    /* 
+       We use a scaling transformation because reflowing a precise 
+       legal letter (pixels/mm) often breaks the layout.
+       Scaling ensures it looks exactly like the printed version.
+    */
+    .letter-preview .letter-paper {
+        transform-origin: top center;
+        /* Calculate scale: (Viewport Width - Padding) / A4 Width (approx 800px) */
+        /* Using a safe generic scale for mobile */
+        transform: scale(0.45);
+        margin-bottom: -50%;
+        /* Compensate for empty space after scaling */
+        height: auto;
+    }
+
+    /* Slightly larger scale for tablets */
+    @media (min-width: 480px) and (max-width: 768px) {
+        .letter-preview .letter-paper {
+            transform: scale(0.65);
+            margin-bottom: -30%;
+        }
     }
 }
