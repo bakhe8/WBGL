@@ -30,6 +30,7 @@
 
     /* Hide text labels, show icons only */
     .brand-text,
+    .brand-icon,
     .header-search-container,
     .nav-label {
         display: none !important;
