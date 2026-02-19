@@ -5,6 +5,7 @@
 /storage/database/*.sqlite
 /storage/database/*.db
 /storage/attachments/*
+/Emails/
 server.pid
 server.port
 server.log
