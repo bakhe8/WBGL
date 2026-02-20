@@ -495,8 +495,8 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                 let data = { guarantee_ids: ids };
                 
                 if (type === 'extend') {
-                    data.new_expiry = new Date(new Date().setFullYear(new Date().getFullYear() + 1))
-                        .toISOString().split('T')[0];
+                    // Let server resolve +1 year from old expiry
+                    data.new_expiry = null;
                 } else if (type === 'release') {
                     data.reason = 'إفراج جماعي';
                 }
@@ -504,7 +504,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                 const res = await API.post(type, data);
                 
                 Toast.show(
-                    type === 'extend' ? `تم تمديد ${res.extended} ضمان` : `تم إفراج ${res.released} ضمان`, 
+                    type === 'extend' ? `تم تمديد ${res.extended_count} ضمان` : `تم إفراج ${res.released_count} ضمان`, 
                     'success'
                 );
                 setTimeout(() => location.reload(), 1000);

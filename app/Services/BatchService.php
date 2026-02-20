@@ -55,6 +55,7 @@ class BatchService
                    d.supplier_id,
                    d.bank_id,
                    d.active_action,
+                   d.active_action_set_at,
                    d.is_locked,
                    d.locked_reason
             FROM guarantees g
@@ -144,14 +145,8 @@ class BatchService
                     ];
                     continue;
                 }
-                if (!empty($g['active_action'])) {
-                    $blocked[] = [
-                        'guarantee_id' => $g['id'],
-                        'guarantee_number' => $g['guarantee_number'],
-                        'reason' => 'تم تنفيذ إجراء سابق'
-                    ];
-                    continue;
-                }
+                // No longer checking for active_action lock
+
                 if (($g['status'] ?? '') !== 'ready' || !$g['supplier_id']) {
                     $blocked[] = [
                         'guarantee_id' => $g['id'],
@@ -205,8 +200,7 @@ class BatchService
                     $raw['expiry_date'] = $newExpiry;
                     $guaranteeRepo->updateRawData($g['id'], json_encode($raw));
                     
-                    // 3. Set Active Action
-                    $decisionRepo->setActiveAction($g['id'], 'extension');
+                    // Locked action setter removed per user request
 
                     // 3.1 Track user-driven decision source
                     $decisionUpdate = $this->db->prepare("
@@ -329,14 +323,8 @@ class BatchService
                     ];
                     continue;
                 }
-                if (!empty($g['active_action'])) {
-                    $blocked[] = [
-                        'guarantee_id' => $g['id'],
-                        'guarantee_number' => $g['guarantee_number'],
-                        'reason' => 'تم تنفيذ إجراء سابق'
-                    ];
-                    continue;
-                }
+                // No longer checking for active_action lock
+
                 if (($g['status'] ?? '') !== 'ready' || !$g['supplier_id'] || !$g['bank_id']) {
                     $blocked[] = [
                         'guarantee_id' => $g['id'],
@@ -367,8 +355,7 @@ class BatchService
                     ");
                     $statusStmt->execute([$userId, $userId, $g['id']]);
                     
-                    // 3. Set Active Action
-                    $decisionRepo->setActiveAction($g['id'], 'release');
+                    // Locked action setter removed per user request
                     
                     // 4. Record in Timeline
                     $eventId = \App\Services\TimelineRecorder::recordReleaseEvent($g['id'], $oldSnapshot, $reason);
@@ -488,14 +475,8 @@ class BatchService
                     ];
                     continue;
                 }
-                if (!empty($g['active_action'])) {
-                    $blocked[] = [
-                        'guarantee_id' => $g['id'],
-                        'guarantee_number' => $g['guarantee_number'],
-                        'reason' => 'تم تنفيذ إجراء سابق'
-                    ];
-                    continue;
-                }
+                // No longer checking for active_action lock
+
                 if (($g['status'] ?? '') !== 'ready') {
                     $blocked[] = [
                         'guarantee_id' => $g['id'],
@@ -546,7 +527,8 @@ class BatchService
                     $raw['amount'] = (float)$targetAmount;
                     $guaranteeRepo->updateRawData($g['id'], json_encode($raw));
 
-                    $decisionRepo->setActiveAction($g['id'], 'reduction');
+                    // Locked action setter removed per user request
+
                     $decisionUpdate = $this->db->prepare("
                         UPDATE guarantee_decisions
                         SET decision_source = 'manual',

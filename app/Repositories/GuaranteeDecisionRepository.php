@@ -133,67 +133,6 @@ class GuaranteeDecisionRepository
     }
     
     /**
-     * Set active action for guarantee
-     * Phase 3: Active Action State
-     * 
-     * @param int $guaranteeId
-     * @param string|null $action One of: 'extension', 'reduction', 'release', or NULL
-     * @throws \InvalidArgumentException if action is invalid
-     */
-    public function setActiveAction(int $guaranteeId, ?string $action): void
-    {
-        // Validate action value
-        $allowedActions = ['extension', 'reduction', 'release', null];
-        
-        if (!in_array($action, $allowedActions, true)) {
-            throw new \InvalidArgumentException(
-                "Invalid action: {$action}. Allowed: extension, reduction, release, or NULL"
-            );
-        }
-        
-        $stmt = $this->db->prepare("
-            UPDATE guarantee_decisions
-            SET active_action = ?,
-                active_action_set_at = CURRENT_TIMESTAMP
-            WHERE guarantee_id = ?
-        ");
-        
-        $stmt->execute([$action, $guaranteeId]);
-    }
-    
-    /**
-     * Get active action for guarantee
-     * Phase 3: Active Action State
-     * 
-     * @param int $guaranteeId
-     * @return string|null 'extension', 'reduction', 'release', or NULL
-     */
-    public function getActiveAction(int $guaranteeId): ?string
-    {
-        $stmt = $this->db->prepare("
-            SELECT active_action 
-            FROM guarantee_decisions 
-            WHERE guarantee_id = ?
-        ");
-        
-        $stmt->execute([$guaranteeId]);
-        $result = $stmt->fetchColumn();
-        
-        return $result !== false ? $result : null;
-    }
-    
-    /**
-     * Clear active action (set to NULL)
-     * Useful for "cancel action" feature
-     * 
-     * @param int $guaranteeId
-     */
-    public function clearActiveAction(int $guaranteeId): void
-    {
-        $this->setActiveAction($guaranteeId, null);
-    }
-    
-    /**
      * Get historical supplier selections aggregated by supplier
      * Used by HistoricalSignalFeeder
      * 

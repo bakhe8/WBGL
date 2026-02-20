@@ -90,7 +90,8 @@ try {
     $guaranteeRepo->updateRawData($guaranteeId, json_encode($raw));
 
     // 3. NEW (Phase 3): Set Active Action
-    $decisionRepo->setActiveAction($guaranteeId, 'extension');
+    // Locked action setter removed per user request
+
     
     // 3.1 Track manual decision source for user-triggered action
     $decisionUpdate = $db->prepare("

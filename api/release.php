@@ -84,8 +84,7 @@ try {
     ");
     $statusStmt->execute([$decidedBy, $decidedBy, $guaranteeId]);
 
-    // 3. NEW (Phase 3): Set Active Action
-    $decisionRepo->setActiveAction($guaranteeId, 'release');
+    // Locked action setter removed per user request
 
     // 4. RECORD: Strict Event Recording (UE-04 Release)
     \App\Services\TimelineRecorder::recordReleaseEvent($guaranteeId, $oldSnapshot, $reason);
@@ -97,7 +96,7 @@ try {
     $raw = $guarantee->rawData;
     
     // Get supplier name (Arabic) from suppliers table
-    $supplierRepo = new SupplierRepository($db);
+    $supplierRepo = new SupplierRepository();
     $supplier_name = $raw['supplier'] ?? ''; // Default to Excel name
     if ($decision && $decision->supplierId) {
         try {

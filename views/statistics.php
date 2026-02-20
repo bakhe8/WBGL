@@ -243,13 +243,15 @@ try {
     
     $busiestDay = $db->query("
         SELECT 
-            CASE CAST(strftime('%w', created_at) AS INTEGER)
+            CASE CAST(strftime('%w', h.created_at) AS INTEGER)
                 WHEN 0 THEN 'الأحد' WHEN 1 THEN 'الإثنين' WHEN 2 THEN 'الثلاثاء'
                 WHEN 3 THEN 'الأربعاء' WHEN 4 THEN 'الخميس' WHEN 5 THEN 'الجمعة' WHEN 6 THEN 'السبت'
             END as weekday,
             COUNT(*) as count
-        FROM guarantee_history
-        GROUP BY strftime('%w', created_at)
+        FROM guarantee_history h
+        JOIN guarantees g ON h.guarantee_id = g.id
+        $whereG
+        GROUP BY strftime('%w', h.created_at)
         ORDER BY count DESC
         LIMIT 1
     ")->fetch(PDO::FETCH_ASSOC);
@@ -289,6 +291,7 @@ try {
         SELECT strftime('%Y-%m', json_extract(raw_data, '$.expiry_date')) as month, COUNT(*) as count
         FROM guarantees
         WHERE json_extract(raw_data, '$.expiry_date') >= date('now')
+        $andD
         GROUP BY month
         ORDER BY count DESC
         LIMIT 1
@@ -299,6 +302,7 @@ try {
         SELECT strftime('%Y-%m', json_extract(raw_data, '$.expiry_date')) as month, COUNT(*) as count
         FROM guarantees
         WHERE json_extract(raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+1 year')
+        $andD
         GROUP BY month
         ORDER BY month ASC
     ")->fetchAll(PDO::FETCH_ASSOC);
@@ -333,7 +337,9 @@ try {
                   CAST(COUNT(DISTINCT d.guarantee_id) AS REAL) * 100, 0) as probability
         FROM suppliers s
         JOIN guarantee_decisions d ON s.id = d.supplier_id
+        JOIN guarantees g ON d.guarantee_id = g.id
         LEFT JOIN guarantee_history h ON d.guarantee_id = h.guarantee_id AND h.event_subtype = 'extension'
+        $whereG
         GROUP BY s.id
         HAVING COUNT(DISTINCT d.guarantee_id) >= 3
         ORDER BY probability DESC
@@ -341,9 +347,11 @@ try {
     ")->fetchAll(PDO::FETCH_ASSOC);
     
     $topEventTypes = $db->query("
-        SELECT event_type, COUNT(*) as count
-        FROM guarantee_history
-        GROUP BY event_type
+        SELECT h.event_type, COUNT(*) as count
+        FROM guarantee_history h
+        JOIN guarantees g ON h.guarantee_id = g.id
+        $whereG
+        GROUP BY h.event_type
         ORDER BY count DESC
         LIMIT 5
     ")->fetchAll(PDO::FETCH_ASSOC);
@@ -355,7 +363,7 @@ try {
     $aiStats = $db->query("
         SELECT
             COUNT(*) as total,
-            COUNT(CASE WHEN d.decision_source IN ('auto', 'auto_match', 'ai_match', 'ai_quick', 'direct_match') THEN 1 END) as ai_matches,
+            COUNT(CASE WHEN d.decision_source IN ('auto', 'auto_match', 'ai_match', 'ai_quick', 'direct_match', 'auto_create_on_save', 'auto_match_bank', 'auto_bank_resolve') THEN 1 END) as ai_matches,
             COUNT(CASE WHEN d.decision_source = 'manual' OR d.decision_source IS NULL THEN 1 END) as manual
         FROM guarantee_decisions d
         JOIN guarantees g ON d.guarantee_id = g.id
