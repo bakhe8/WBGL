@@ -84,7 +84,14 @@ try {
     ");
     $statusStmt->execute([$decidedBy, $decidedBy, $guaranteeId]);
 
-    // Locked action setter removed per user request
+    // Locked action setter re-enabled per user request to fix Batch Detail discrepancy
+    $actionStmt = $db->prepare("
+        UPDATE guarantee_decisions
+        SET active_action = 'release',
+            active_action_set_at = CURRENT_TIMESTAMP
+        WHERE guarantee_id = ?
+    ");
+    $actionStmt->execute([$guaranteeId]);
 
     // 4. RECORD: Strict Event Recording (UE-04 Release)
     \App\Services\TimelineRecorder::recordReleaseEvent($guaranteeId, $oldSnapshot, $reason);

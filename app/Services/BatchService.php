@@ -200,7 +200,14 @@ class BatchService
                     $raw['expiry_date'] = $newExpiry;
                     $guaranteeRepo->updateRawData($g['id'], json_encode($raw));
                     
-                    // Locked action setter removed per user request
+                    // Locked action setter re-enabled per user request to fix Batch Detail discrepancy
+                    $actionStmt = $this->db->prepare("
+                        UPDATE guarantee_decisions
+                        SET active_action = 'extension',
+                            active_action_set_at = CURRENT_TIMESTAMP
+                        WHERE guarantee_id = ?
+                    ");
+                    $actionStmt->execute([$g['id']]);
 
                     // 3.1 Track user-driven decision source
                     $decisionUpdate = $this->db->prepare("
@@ -355,7 +362,14 @@ class BatchService
                     ");
                     $statusStmt->execute([$userId, $userId, $g['id']]);
                     
-                    // Locked action setter removed per user request
+                    // Locked action setter re-enabled per user request to fix Batch Detail discrepancy
+                    $actionStmt = $this->db->prepare("
+                        UPDATE guarantee_decisions
+                        SET active_action = 'release',
+                            active_action_set_at = CURRENT_TIMESTAMP
+                        WHERE guarantee_id = ?
+                    ");
+                    $actionStmt->execute([$g['id']]);
                     
                     // 4. Record in Timeline
                     $eventId = \App\Services\TimelineRecorder::recordReleaseEvent($g['id'], $oldSnapshot, $reason);

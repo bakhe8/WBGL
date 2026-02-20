@@ -45,11 +45,11 @@ $stmt = $db->prepare("
     -- 1. Decision row (single-row per guarantee)
     LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
     LEFT JOIN guarantee_history h ON h.id = (
-        SELECT h2.id
-        FROM guarantee_history h2
-        WHERE h2.guarantee_id = g.id
-          AND (h2.event_subtype IN ('extension', 'reduction', 'release') OR h2.event_type = 'release')
-        ORDER BY h2.created_at DESC, h2.id DESC
+        SELECT h_sub.id
+        FROM guarantee_history h_sub
+        WHERE h_sub.guarantee_id = g.id
+          AND (h_sub.event_subtype IN ('extension', 'reduction', 'release') OR h_sub.event_type = 'release')
+        ORDER BY h_sub.created_at DESC, h_sub.id DESC
         LIMIT 1
     )
     
@@ -104,15 +104,15 @@ $actionableCount = count(array_filter($guarantees, fn($g) =>
     ($g['decision_status'] ?? '') === 'ready' && 
     $g['supplier_id'] && 
     $g['bank_id'] && 
-    empty($g['active_action'])
+    empty($g['last_action'])
 ));
 
-// 2. Print Ready Count: Matched AND has active action
+// 2. Print Ready Count: Matched AND has action (from history)
 $printReadyCount = count(array_filter($guarantees, fn($g) => 
     in_array($g['decision_status'] ?? '', ['ready', 'released']) && 
     $g['supplier_id'] && 
     $g['bank_id'] && 
-    !empty($g['active_action'])
+    !empty($g['last_action'])
 ));
 ?>
 <!DOCTYPE html>
@@ -293,9 +293,9 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                                 <td><?= htmlspecialchars($g['supplier_name']) ?></td>
                                 <td><?= htmlspecialchars($g['bank_name']) ?></td>
                                 <td class="text-center">
-                                    <?php if ($g['active_action'] == 'release'): ?>
+                                    <?php if ($g['last_action'] == 'release'): ?>
                                         <span class="badge badge-success">إفراج</span>
-                                    <?php elseif ($g['active_action'] == 'extension'): ?>
+                                    <?php elseif ($g['last_action'] == 'extension'): ?>
                                         <span class="badge badge-info">تمديد</span>
                                     <?php else: ?>
                                         <span class="text-muted">-</span>
@@ -551,7 +551,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
 
         function printReadyGuarantees() {
             const guarantees = <?= json_encode($guarantees) ?>;
-            const ready = guarantees.filter(g => g.supplier_id && g.bank_id && g.active_action);
+            const ready = guarantees.filter(g => g.supplier_id && g.bank_id && g.last_action);
             
             if (ready.length === 0) {
                 Toast.show('لا توجد ضمانات جاهزة للطباعة', 'warning');
