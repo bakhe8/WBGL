@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Listen for Xdebug",
+            "type": "php",
+            "request": "launch",
+            "port": 9003
+        },
+        {
+            "name": "Launch Built-in Server",
+            "type": "php",
+            "request": "launch",
+            "program": "server.php",
+            "cwd": "${workspaceRoot}",
+            "port": 8181,
+            "runtimeArgs": [
+                "-S",
+                "localhost:8181"
+            ]
+        }
+    ]
+}

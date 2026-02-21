@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<ruleset name="WBGL Standard">
+    <description>The coding standard for WBGL project.</description>
+    <arg name="colors"/>
+    <arg name="extensions" value="php"/>
+    <arg name="parallel" value="8"/>
+    <arg value="ps"/>
+
+    <!-- Use PSR-12 as the base standard -->
+    <rule ref="PSR12"/>
+
+    <!-- Paths to check -->
+    <file>app</file>
+    <file>api</file>
+    <file>public</file>
+    <file>tests</file>
+
+    <!-- Exclude vendor directory -->
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+    <exclude-pattern>*/storage/*</exclude-pattern>
+</ruleset>

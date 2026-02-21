@@ -1,0 +1,47 @@
+{
+    "phpcs.executablePath": "vendor/bin/phpcs",
+    "php-cs-fixer.executablePath": "vendor/bin/php-cs-fixer",
+    "php.suggest.basic": false,
+    "intelephense.phpVersion": "8.3.0",
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "bmewburn.vscode-intelephense-client",
+    "[php]": {
+        "editor.defaultFormatter": "bmewburn.vscode-intelephense-client"
+    },
+    "files.associations": {
+        "*.php": "php"
+    },
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "**/vendor": false
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/bower_components": true,
+        "**/vendor": true
+    },
+    "editor.unicodeHighlight.allowedCharacters": {
+        " ": true
+    },
+    "editor.language.brackets": [
+        ["(", ")"],
+        ["[", "]"],
+        ["{", "}"]
+    ],
+    "editor.rtl": true,
+    "cSpell.language": "en,ar",
+    "cSpell.words": [
+        "bakhe",
+        "wbgl",
+        "phpoffice",
+        "phpspreadsheet",
+        "squizlabs",
+        "codesniffer",
+        "friendsofphp"
+    ]
+}

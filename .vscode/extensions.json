@@ -1,0 +1,11 @@
+{
+    "recommendations": [
+        "bmewburn.vscode-intelephense-client",
+        "xdebug.php-debug",
+        "alexcvzz.vscode-sqlite",
+        "EditorConfig.EditorConfig",
+        "junstyle.php-cs-fixer",
+        "batalelo.antigravity-rtl-patcher",
+        "streetsidesoftware.code-spell-checker-arabic"
+    ]
+}
