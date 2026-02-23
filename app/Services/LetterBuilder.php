@@ -5,12 +5,12 @@ namespace App\Services;
 
 /**
  * LetterBuilder - Single Source of Truth for Letter Construction
- * 
+ *
  * Centralized service for building guarantee letters.
  * - No code duplication
  * - Easily extensible for future actions
  * - Uses PreviewFormatter for helper functions
- * 
+ *
  * @author WBGL System
  * @version 1.0.0
  */
@@ -18,7 +18,7 @@ class LetterBuilder
 {
     /**
      * Build complete letter data structure from guarantee
-     * 
+     *
      * @param array $guaranteeData Full guarantee data including relations
      * @param string $action 'extension', 'reduction', 'release', etc.
      * @return array Structured data ready for template rendering
@@ -94,7 +94,7 @@ class LetterBuilder
 
     /**
      * Build content: Paragraphs, address box, etc.
-     * 
+     *
      * ✨ Extensible: Add new action cases to the switch statement
      */
     private static function buildContent(array $data, string $action, string $relatedTo): array
@@ -135,7 +135,7 @@ class LetterBuilder
 
     /**
      * Content for Extension / Reduction letters
-     * 
+     *
      * Uses PreviewFormatter::getIntroPhrase() to build the opening sentence
      * based on guarantee type (Final, Advance Payment, Preliminary, etc.)
      */
@@ -175,7 +175,7 @@ class LetterBuilder
 
     /**
      * Get signature based on action type
-     * 
+     *
      * ✨ Extensible: Add custom signatures for new actions
      */
     private static function getSignature(string $action): array
@@ -191,15 +191,15 @@ class LetterBuilder
 
         // Default signature (for extension, reduction, etc.)
         return [
-            'title' => 'مُدير الإدارة العامَّة للعمليَّات المحاسبيَّة',
-            'name' => 'سَامي بن عبَّاس الفايز',
+            'title' => 'نائب المدير العام للشؤون المالية',
+            'name' => 'دلال بنت صالح العجروش',
             'margin_top' => '3em',
         ];
     }
 
     /**
      * Build CC section (only for release action)
-     * 
+     *
      * @return array|null CC data or null if not applicable
      */
     private static function buildCC(array $data, string $action, string $relatedTo): ?array
@@ -223,7 +223,7 @@ class LetterBuilder
 
     /**
      * Render letter HTML using template
-     * 
+     *
      * @param array $letterData Data from prepare() method
      * @return string Rendered HTML
      */
