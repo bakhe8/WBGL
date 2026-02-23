@@ -119,6 +119,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
-    }
+    // --- Phase 3: Workflow Action Handler ---
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-action="workflow-advance"]');
+        if (!btn) return;
+
+        const guaranteeId = document.querySelector('[data-record-id]')?.dataset.recordId;
+        if (!guaranteeId) {
+            showToast('معرف الضمان غير موجود', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '... جاري التنفيذ';
+
+        try {
+            const response = await fetch('/api/workflow-advance.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ guarantee_id: guaranteeId })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                showToast(data.message, 'success');
+
+                // Refresh the current state to reflect changes (badge, button, timeline)
+                if (window.timelineController) {
+                    await window.timelineController.loadCurrentState();
+
+                    // Also refresh the timeline area to show the new event
+                    // Assuming there is a global way to refresh the sidebar
+                    // If not, a simple reload is a safe fallback
+                    setTimeout(() => location.reload(), 800);
+                } else {
+                    location.reload();
+                }
+            } else {
+                showToast('خطأ: ' + (data.error || data.message || 'فشل تنفيذ الإجراء'), 'error');
+                btn.disabled = false;
+                btn.innerHTML = '⚡ تنفيذ الإجراء';
+            }
+        } catch (err) {
+            console.error('Workflow error:', err);
+            showToast('حدث خطأ في الشبكة', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '⚡ تنفيذ الإجراء';
+        }
+    });
 
 });

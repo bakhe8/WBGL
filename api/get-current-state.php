@@ -1,9 +1,10 @@
 <?php
+
 /**
  * API Endpoint: Get Current State
  * Returns current (non-historical) state of a guarantee as HTML partial
  * Used by timeline controller when clicking "العودة للوضع الحالي"
- * 
+ *
  * Architecture: Server-Driven
  * - No client-side state
  * - Server is the single source of truth
@@ -33,15 +34,13 @@ if (!$guaranteeId || !is_numeric($guaranteeId)) {
 
 try {
     // Connect to database
-    // Connect to database
     $db = Database::connect();
     $guaranteeRepo = new GuaranteeRepository($db);
     $decisionRepo = new GuaranteeDecisionRepository($db);
     $learningRepo = new SupplierLearningRepository($db);
     $supplierRepo = new SupplierRepository();
-    // Removed deprecated LearningService
     $bankRepo = new BankRepository();
-    
+
     // Load guarantee
     $guarantee = $guaranteeRepo->find($guaranteeId);
     if (!$guarantee) {
@@ -52,10 +51,10 @@ try {
         ]);
         exit;
     }
-    
-    // Build record data (same logic as index.php lines 135-210)
+
+    // Build record data
     $raw = $guarantee->rawData;
-    
+
     $record = [
         'id' => $guarantee->id,
         'session_id' => $raw['session_id'] ?? 0,
@@ -77,9 +76,12 @@ try {
         'decided_at' => null,
         'decided_by' => null,
         'is_locked' => false,
-        'locked_reason' => null
+        'locked_reason' => null,
+        // Phase 3: Workflow
+        'workflow_step' => 'draft',
+        'signatures_received' => 0
     ];
-    
+
     // Load decision if exists
     $decision = $decisionRepo->findByGuarantee($guarantee->id);
     if ($decision) {
@@ -92,7 +94,10 @@ try {
         $record['decided_by'] = $decision->decidedBy;
         $record['is_locked'] = (bool)$decision->isLocked;
         $record['locked_reason'] = $decision->lockedReason;
-        
+        // Phase 3: Workflow
+        $record['workflow_step'] = $decision->workflowStep;
+        $record['signatures_received'] = $decision->signaturesReceived;
+
         // Get official supplier name
         if ($decision->supplierId) {
             try {
@@ -101,10 +106,9 @@ try {
                     $record['supplier_name'] = $supplier->officialName;
                 }
             } catch (\Exception $e) {
-                // Keep Excel name
             }
         }
-        
+
         // Get official bank name
         if ($decision->bankId) {
             try {
@@ -115,93 +119,33 @@ try {
                     $record['bank_name'] = $bank['official_name'];
                 }
             } catch (\Exception $e) {
-                // Keep Excel name
             }
         }
     }
 
-    // ADR-007: Timeline is audit-only, not UI data source
-    $latestSubtype = null; // Removed Timeline read
-    
-    $supplierMatch = null;
-    if (empty($record['supplier_id']) && $record['supplier_name']) {
-        // ✅ PHASE 4: Using UnifiedLearningAuthority
-        $authority = \App\Services\Learning\AuthorityFactory::create();
-        $suggestionDTOs = $authority->getSuggestions($record['supplier_name']);
-
-        $suggestions = array_map(function($dto) {
-            return [
-                'id' => $dto->supplier_id,
-                'name' => $dto->official_name,
-                'score' => $dto->confidence
-            ];
-        }, $suggestionDTOs);
-
-        $supplierMatch = [
-            'suggestions' => $suggestions,
-            'score' => 0
-        ];
-
-        if (!empty($suggestions)) {
-            $supplierMatch['score'] = $suggestions[0]['score'] ?? 0;
-        }
-    }
-    
-    // Get bank match - if decision exists, use it
-    $bankName = '';
-    $bankId = null;
-    if ($decision) {
-        $bankId = $decision->bankId ?? null;
-        if ($bankId) {
-            $bankStmt = $db->prepare("SELECT arabic_name FROM banks WHERE id = ?");
-            $bankStmt->execute([$bankId]);
-            $bankRow = $bankStmt->fetch(PDO::FETCH_ASSOC);
-            $bankName = $bankRow['arabic_name'] ?? '';
-        }
-    }
-    
-    // Get supplier name from decision
-    $supplierName = '';
-    $supplierId = null;
-    if ($decision) {
-        $supplierId = $decision->supplierId ?? null;
-        if ($supplierId) {
-            $supplierStmt = $db->prepare("SELECT official_name FROM suppliers WHERE id = ?");
-            $supplierStmt->execute([$supplierId]);
-            $supplierRow = $supplierStmt->fetch(PDO::FETCH_ASSOC);
-            $supplierName = $supplierRow['official_name'] ?? '';
-        }
-    }
-    
     // Create current state snapshot
     $snapshot = [
-        'supplier_name' => $supplierName,
-        'supplier_id' => $supplierId,
-        'bank_name' => $bankName,
-        'bank_id' => $bankId,
+        'supplier_name' => $record['supplier_name'],
+        'supplier_id' => $record['supplier_id'],
+        'bank_name' => $record['bank_name'],
+        'bank_id' => $record['bank_id'],
         'amount' => $record['amount'],
         'expiry_date' => $record['expiry_date'],
         'issue_date' => $record['issue_date'],
         'guarantee_number' => $record['guarantee_number'],
         'contract_number' => $record['contract_number'],
         'type' => $record['type'],
-        'status' => $decision->status ?? 'pending',
-        'raw_supplier_name' => $raw['supplier'] ?? '' // Fallback for unmatched guarantees
+        'status' => $record['status'],
+        'raw_supplier_name' => $raw['supplier'] ?? '',
+        // Phase 3: Workflow
+        'workflow_step' => $record['workflow_step'],
+        'signatures_received' => $record['signatures_received']
     ];
-    
-    // Return success with snapshot data
-    $response = [
+
+    echo json_encode([
         'success' => true,
-        'snapshot' => $snapshot,
-        'latest_event_subtype' => $latestSubtype // Send to frontend
-    ];
-
-    if ($supplierMatch !== null) {
-        $response['supplierMatch'] = $supplierMatch;
-    }
-
-    echo json_encode($response);
-    
+        'snapshot' => $snapshot
+    ]);
 } catch (\Exception $e) {
     http_response_code(500);
     echo json_encode([

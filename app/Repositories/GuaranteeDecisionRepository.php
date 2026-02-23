@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Repositories;
@@ -9,18 +10,18 @@ use PDO;
 
 /**
  * GuaranteeDecisionRepository (V3)
- * 
+ *
  * Manages guarantee_decisions table - current state & decisions
  */
 class GuaranteeDecisionRepository
 {
     private PDO $db;
-    
+
     public function __construct(?PDO $db = null)
     {
         $this->db = $db ?? Database::connect();
     }
-    
+
     /**
      * Find by guarantee ID
      */
@@ -31,27 +32,27 @@ class GuaranteeDecisionRepository
         ");
         $stmt->execute([$guaranteeId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        
+
         return $row ? $this->hydrate($row) : null;
     }
-    
+
     /**
      * Create or update decision
      */
     public function createOrUpdate(GuaranteeDecision $decision): GuaranteeDecision
     {
         $existing = $this->findByGuarantee($decision->guaranteeId);
-        
+
         if ($existing) {
             $this->update($decision);
             $decision->id = $existing->id;
         } else {
             $this->create($decision);
         }
-        
+
         return $decision;
     }
-    
+
     /**
      * Create new decision
      * ✅ TYPE SAFETY: Ensure IDs are integers or NULL (not empty strings)
@@ -60,15 +61,15 @@ class GuaranteeDecisionRepository
     {
         $supplierIdSafe = $decision->supplierId ? (int)$decision->supplierId : null;
         $bankIdSafe = $decision->bankId ? (int)$decision->bankId : null;
-        
+
         $stmt = $this->db->prepare("
             INSERT INTO guarantee_decisions (
                 guarantee_id, status, supplier_id, bank_id,
                 decision_source, confidence_score, decided_at, decided_by,
-                manual_override, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                manual_override, workflow_step, signatures_received, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ");
-        
+
         $stmt->execute([
             $decision->guaranteeId,
             $decision->status,
@@ -78,12 +79,14 @@ class GuaranteeDecisionRepository
             $decision->confidenceScore,
             $decision->decidedAt ?? date('Y-m-d H:i:s'),
             $decision->decidedBy,
-            $decision->manualOverride ? 1 : 0
+            $decision->manualOverride ? 1 : 0,
+            $decision->workflowStep,
+            $decision->signaturesReceived
         ]);
-        
+
         $decision->id = (int)$this->db->lastInsertId();
     }
-    
+
     /**
      * Update existing decision
      */
@@ -100,10 +103,12 @@ class GuaranteeDecisionRepository
                 decided_by = ?,
                 last_modified_at = CURRENT_TIMESTAMP,
                 last_modified_by = ?,
-                manual_override = ?
+                manual_override = ?,
+                workflow_step = ?,
+                signatures_received = ?
             WHERE guarantee_id = ?
         ");
-        
+
         $stmt->execute([
             $decision->status,
             $decision->supplierId,
@@ -114,10 +119,12 @@ class GuaranteeDecisionRepository
             $decision->decidedBy,
             $decision->lastModifiedBy,
             $decision->manualOverride ? 1 : 0,
+            $decision->workflowStep,
+            $decision->signaturesReceived,
             $decision->guaranteeId
         ]);
     }
-    
+
     /**
      * Lock a decision
      */
@@ -128,14 +135,14 @@ class GuaranteeDecisionRepository
             SET is_locked = 1, locked_reason = ?
             WHERE guarantee_id = ?
         ");
-        
+
         $stmt->execute([$reason, $guaranteeId]);
     }
-    
+
     /**
      * Get historical supplier selections aggregated by supplier
      * Used by HistoricalSignalFeeder
-     * 
+     *
      * @param string $normalizedInput Normalized supplier name
      * @return array<int, array{supplier_id:int, count:int}>
      */
@@ -144,7 +151,7 @@ class GuaranteeDecisionRepository
         // Query guarantee_decisions joined with guarantees
         // Using indexed normalized_supplier_name column for fast lookup
         // REPLACED: Fragile JSON LIKE query (Learning Merge 2026-01-04)
-        
+
         $stmt = $this->db->prepare("
             SELECT gd.supplier_id, COUNT(*) as count
             FROM guarantees g
@@ -152,12 +159,12 @@ class GuaranteeDecisionRepository
             WHERE g.normalized_supplier_name = ?
             GROUP BY gd.supplier_id
         ");
-        
+
         $stmt->execute([$normalizedInput]);
-        
+
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
-    
+
     /**
      * Get all decisions with filters
      */
@@ -165,7 +172,7 @@ class GuaranteeDecisionRepository
     {
         $where = [];
         $params = [];
-        
+
         if (!empty($filters['status'])) {
             if ($filters['status'] === 'pending') {
                 $where[] = '(status IS NULL OR status = "pending")';
@@ -174,30 +181,30 @@ class GuaranteeDecisionRepository
                 $params[] = $filters['status'];
             }
         }
-        
+
         $whereClause = empty($where) ? '' : 'WHERE ' . implode(' AND ', $where);
-        
+
         $sql = "
             SELECT * FROM guarantee_decisions
             {$whereClause}
             ORDER BY decided_at DESC
             LIMIT ? OFFSET ?
         ";
-        
+
         $params[] = $limit;
         $params[] = $offset;
-        
+
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        
+
         $decisions = [];
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $decisions[] = $this->hydrate($row);
         }
-        
+
         return $decisions;
     }
-    
+
     /**
      * Hydrate from DB row
      */
@@ -223,6 +230,9 @@ class GuaranteeDecisionRepository
             // Phase 3: Active Action State
             activeAction: $row['active_action'] ?? null,
             activeActionSetAt: $row['active_action_set_at'] ?? null,
+            // Phase 3: Workflow & RBAC
+            workflowStep: $row['workflow_step'] ?? 'draft',
+            signaturesReceived: (int)($row['signatures_received'] ?? 0),
         );
     }
 }

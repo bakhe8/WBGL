@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Services;
@@ -10,24 +11,26 @@ use PDO;
  * Core functions for tracking guarantee history events
  * Formerly TimelineHelper
  */
-class TimelineRecorder {
-    
+class TimelineRecorder
+{
+
     /**
      * Create snapshot from Database (Server = Source Of Truth)
-     * 
+     *
      * If $decisionData provided, use it. Else, fetch from DB.
      * This snapshot represents the "current state" at the time of calling.
      */
-    public static function createSnapshot($guaranteeId, $decisionData = null) {
+    public static function createSnapshot($guaranteeId, $decisionData = null)
+    {
         $db = \App\Support\Database::connection();
-        
+
         if (!$decisionData) {
             // Fetch latest decision + raw data
             $stmt = $db->prepare("
-                SELECT 
-                    g.raw_data, 
-                    d.supplier_id, 
-                    d.bank_id, 
+                SELECT
+                    g.raw_data,
+                    d.supplier_id,
+                    d.bank_id,
                     d.status,
                     s.official_name as supplier_name,
                     b.arabic_name as bank_name
@@ -39,21 +42,21 @@ class TimelineRecorder {
             ");
             $stmt->execute([$guaranteeId]);
             $data = $stmt->fetch(PDO::FETCH_ASSOC);
-            
+
             if (!$data) {
                 return null;
             }
         } else {
             $data = $decisionData;
         }
-        
+
         $rawData = json_decode($data['raw_data'], true);
-        
+
         // 🔥 FIX: Fallback to raw_data if decision fields are null
         // This ensures snapshots ALWAYS have bank/supplier names
         $supplierName = $data['supplier_name'] ?? $rawData['supplier'] ?? '';
         $bankName = $data['bank_name'] ?? $rawData['bank'] ?? '';
-        
+
         return [
             'guarantee_number' => $rawData['guarantee_number'] ?? '',
             'contract_number' => $rawData['document_reference'] ?? '',
@@ -70,26 +73,27 @@ class TimelineRecorder {
             'status' => $data['status'] ?? 'pending'
         ];
     }
-    
+
     /**
      * ADR-007: Generate Immutable Letter HTML Snapshot
      * Renders the complete formatted letter HTML for historical accuracy
-     * 
+     *
      * ✅ UPDATED: Now uses unified LetterBuilder system instead of preview-section.php
-     * 
+     *
      * @param int $guaranteeId
      * @param string $actionType 'extension', 'reduction', or 'release'
      * @param array $actionData Additional action-specific data (e.g., new_expiry, new_amount)
      * @return string|null Complete letter HTML or null if guarantee not found
      */
-    public static function generateLetterSnapshot($guaranteeId, $actionType, $actionData = []) {
+    public static function generateLetterSnapshot($guaranteeId, $actionType, $actionData = [])
+    {
         $db = \App\Support\Database::connection();
-        
+
         error_log("🔍 generateLetterSnapshot (LetterBuilder): GID=$guaranteeId Type=$actionType");
-        
+
         // Fetch current guarantee state
         $stmt = $db->prepare("
-            SELECT 
+            SELECT
                 g.raw_data,
                 g.guarantee_number,
                 d.supplier_id,
@@ -104,31 +108,31 @@ class TimelineRecorder {
         ");
         $stmt->execute([$guaranteeId]);
         $data = $stmt->fetch(PDO::FETCH_ASSOC);
-        
+
         if (!$data) {
             error_log("❌ generateLetterSnapshot: Guarantee not found! GID=$guaranteeId");
             return null;
         }
-        
+
         $rawData = json_decode($data['raw_data'], true);
-        
+
         // ✅ Fetch dynamic bank details if bank_id exists
         $bankCenter = '';
         $bankPoBox = '';
         $bankEmail = '';
-        
+
         if (!empty($data['bank_id'])) {
             // Use BankRepository to get bank details
             $bankRepo = new \App\Repositories\BankRepository();
             $bankDetails = $bankRepo->getBankDetails((int)$data['bank_id']);
-            
+
             if ($bankDetails) {
                 $bankCenter = $bankDetails['department'] ?? '';
                 $bankPoBox = $bankDetails['po_box'] ?? '';
                 $bankEmail = $bankDetails['email'] ?? '';
             }
         }
-        
+
         // Build guarantee data array for LetterBuilder
         $guaranteeData = [
             'guarantee_number' => $data['guarantee_number'] ?? $rawData['guarantee_number'] ?? '',
@@ -143,12 +147,12 @@ class TimelineRecorder {
             'bank_po_box' => $bankPoBox,
             'bank_email' => $bankEmail
         ];
-        
+
         // ✅ Use unified LetterBuilder system
         try {
             $letterData = \App\Services\LetterBuilder::prepare($guaranteeData, $actionType);
             $letterHtml = \App\Services\LetterBuilder::render($letterData);
-            
+
             error_log("✅ generateLetterSnapshot: HTML generated via LetterBuilder (" . strlen($letterHtml) . " bytes)");
             return $letterHtml;
         } catch (\Exception $e) {
@@ -164,20 +168,21 @@ class TimelineRecorder {
     /**
      * Record Extension Event (UE-02)
      * Strictly monitors expiry_date change
-     * 
+     *
      * @param int $guaranteeId
      * @param array $oldSnapshot
      * @param string $newExpiry
      * @param int|null $actionId
      * @param array|null $letterSnapshot Optional letter snapshot (generated if not provided)
      */
-    public static function recordExtensionEvent($guaranteeId, $oldSnapshot, $newExpiry, $actionId = null, $letterSnapshot = null) {
+    public static function recordExtensionEvent($guaranteeId, $oldSnapshot, $newExpiry, $actionId = null, $letterSnapshot = null)
+    {
         // Validate change
         $oldExpiry = $oldSnapshot['expiry_date'] ?? null;
         if ($oldExpiry === $newExpiry) {
             return false; // No actual change
         }
-        
+
         // ADR-007: Generate letter snapshot if not provided
         if (!$letterSnapshot) {
             // ✨ FIX: Pass actionData as array with proper key
@@ -200,21 +205,22 @@ class TimelineRecorder {
     /**
      * Record Reduction Event (UE-03)
      * Strictly monitors amount change
-     * 
+     *
      * @param int $guaranteeId
      * @param array $oldSnapshot
      * @param float $newAmount
      * @param float|null $previousAmount
      * @param array|null $letterSnapshot Optional letter snapshot
      */
-    public static function recordReductionEvent($guaranteeId, $oldSnapshot, $newAmount, $previousAmount = null, $letterSnapshot = null) {
+    public static function recordReductionEvent($guaranteeId, $oldSnapshot, $newAmount, $previousAmount = null, $letterSnapshot = null)
+    {
         // Use previousAmount if explicitly passed (for restore hacks), otherwise from snapshot
         $oldAmount = $previousAmount ?? ($oldSnapshot['amount'] ?? 0);
-        
+
         if ((float)$oldAmount === (float)$newAmount) {
-            return false; 
+            return false;
         }
-        
+
         // ADR-007: Generate letter snapshot if not provided
         if (!$letterSnapshot) {
             $letterSnapshot = self::generateLetterSnapshot($guaranteeId, 'reduction', ['new_amount' => $newAmount]);
@@ -233,18 +239,19 @@ class TimelineRecorder {
     /**
      * Record Release Event (UE-04)
      * Strictly monitors status change to released
-     * 
+     *
      * @param int $guaranteeId
      * @param array $oldSnapshot
      * @param string|null $reason
      * @param array|null $letterSnapshot Optional letter snapshot
      */
-    public static function recordReleaseEvent($guaranteeId, $oldSnapshot, $reason = null, $letterSnapshot = null) {
+    public static function recordReleaseEvent($guaranteeId, $oldSnapshot, $reason = null, $letterSnapshot = null)
+    {
         // ADR-007: Generate letter snapshot if not provided
         if (!$letterSnapshot) {
             $letterSnapshot = self::generateLetterSnapshot($guaranteeId, 'release', []);
         }
-        
+
         $changes = [[
             'field' => 'status',
             'old_value' => $oldSnapshot['status'] ?? 'pending',
@@ -255,16 +262,20 @@ class TimelineRecorder {
         // Add reason to event details if present
         $extraDetails = $reason ? ['reason_text' => $reason] : [];
 
-        return self::recordEvent($guaranteeId, 'release', $oldSnapshot, $changes, 'User', $extraDetails, 'release', $letterSnapshot);
+        $currentUser = \App\Support\AuthService::getCurrentUser();
+        $creatorName = $currentUser ? $currentUser->fullName : 'المستخدم';
+
+        return self::recordEvent($guaranteeId, 'release', $oldSnapshot, $changes, $creatorName, $extraDetails, 'release', $letterSnapshot);
     }
 
     /**
      * Record Decision Event (UE-01 or SY-03)
      * Monitors Supplier/Bank changes
      */
-    public static function recordDecisionEvent($guaranteeId, $oldSnapshot, $newData, $isAuto = false, $confidence = null, $subtype = null) {
+    public static function recordDecisionEvent($guaranteeId, $oldSnapshot, $newData, $isAuto = false, $confidence = null, $subtype = null)
+    {
         $changes = [];
-        
+
         // Check Supplier
         if (isset($newData['supplier_id'])) {
             $old = $oldSnapshot['supplier_id'] ?? null;
@@ -297,7 +308,12 @@ class TimelineRecorder {
             return false;
         }
 
-        $creator = $isAuto ? 'System' : 'User';
+        $creator = 'System';
+        if (!$isAuto) {
+            $currentUser = \App\Support\AuthService::getCurrentUser();
+            $creator = $currentUser ? $currentUser->fullName : 'المستخدم';
+        }
+
         $extra = $confidence ? ['confidence' => $confidence] : [];
 
         $subtype = $subtype ?? ($isAuto ? 'ai_match' : 'manual_edit');
@@ -309,39 +325,39 @@ class TimelineRecorder {
      * Enforces Closed Event Contract
      */
     private static function recordEvent(
-        $guaranteeId, 
-        $type, 
-        $snapshot, 
-        $changes, 
-        $creator, 
+        $guaranteeId,
+        $type,
+        $snapshot,
+        $changes,
+        $creator,
         $extraDetails = [],
         $subtype = null,  // 🆕 event_subtype
         $letterSnapshot = null  // ADR-007: letter snapshot
     ) {
         $db = \App\Support\Database::connection();
-        
-        // Note: We do NOT calculate status change here anymore. 
+
+        // Note: We do NOT calculate status change here anymore.
         // Status transitions (SE-01/02) must be recorded via recordStatusTransitionEvent separately.
-        
+
         $eventDetails = array_merge([
             'changes' => $changes
         ], $extraDetails);
 
-        // Map Creator to Display Text
-        $creatorText = match($creator) {
-            'User' => 'بواسطة المستخدم',
-            'System' => 'بواسطة النظام',
-            default => 'بواسطة النظام'
+        // Map Creator to Display Text (If it's a known generic, map it, otherwise use it)
+        $creatorText = match ($creator) {
+            'User', 'user' => 'بواسطة المستخدم',
+            'System', 'system' => 'بواسطة النظام',
+            default => 'بواسطة ' . $creator
         };
 
         error_log("🔍 recording event: Type=$type Subtype=$subtype GID=$guaranteeId");
-        
+
         $stmt = $db->prepare("
-            INSERT INTO guarantee_history 
+            INSERT INTO guarantee_history
             (guarantee_id, event_type, event_subtype, snapshot_data, event_details, letter_snapshot, created_at, created_by)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ");
-        
+
         try {
             $stmt->execute([
                 $guaranteeId,
@@ -366,7 +382,8 @@ class TimelineRecorder {
      * Detect Changes - Generalized Helper
      * Kept for backward compatibility or generic use, but specific methods preferred
      */
-    public static function detectChanges($oldSnapshot, $newData) {
+    public static function detectChanges($oldSnapshot, $newData)
+    {
         if (!$oldSnapshot || !is_array($newData)) {
             return $newData ?: [];
         }
@@ -387,17 +404,18 @@ class TimelineRecorder {
 
         return $changes;
     }
-    
+
     /**
      * Calculate status based on supplier and bank presence
-     * 
+     *
      * DEPRECATED: Delegates to StatusEvaluator for authority
      * Kept for backward compatibility with existing calls
-     * 
+     *
      * @param int $guaranteeId Guarantee ID
      * @return string Status: 'approved' or 'pending'
      */
-    public static function calculateStatus($guaranteeId) {
+    public static function calculateStatus($guaranteeId)
+    {
         return \App\Services\StatusEvaluator::evaluateFromDatabase($guaranteeId);
     }
 
@@ -410,17 +428,18 @@ class TimelineRecorder {
      * Record Import Event (LE-00)
      * The ONLY entry point.
      */
-    public static function recordImportEvent($guaranteeId, $source = 'excel', $explicitRawData = null) {
+    public static function recordImportEvent($guaranteeId, $source = 'excel', $explicitRawData = null)
+    {
         $db = \App\Support\Database::connection();
         // Check if import event already exists (prevent duplicates)
         $stmt = $db->prepare("SELECT id FROM guarantee_history WHERE guarantee_id = ? AND event_type = 'import' LIMIT 1");
         $stmt->execute([$guaranteeId]);
         if ($stmt->fetch()) {
-             return false; // Already has import event
+            return false; // Already has import event
         }
 
         $rawData = [];
-        
+
         if ($explicitRawData) {
             $rawData = $explicitRawData;
         } else {
@@ -428,7 +447,7 @@ class TimelineRecorder {
             $stmt = $db->prepare("SELECT raw_data FROM guarantees WHERE id = ?");
             $stmt->execute([$guaranteeId]);
             $rawDataJson = $stmt->fetchColumn();
-            
+
             if (!$rawDataJson) {
                 // Keep error log for fallback cases
                 error_log("❌ TimelineRecorder: No raw_data found for guarantee ID $guaranteeId during import event creation.");
@@ -437,7 +456,7 @@ class TimelineRecorder {
                 $rawData = json_decode($rawDataJson, true) ?? [];
             }
         }
-        
+
         // Create snapshot from RAW data (whether explicit or from DB)
         // Ensure keys exist to avoid warnings
         $snapshot = [
@@ -455,7 +474,7 @@ class TimelineRecorder {
         ];
 
         $eventDetails = ['source' => $source];
-        
+
         // Use recordEvent with subtype
         return self::recordEvent(
             $guaranteeId,
@@ -473,20 +492,21 @@ class TimelineRecorder {
      * Called when user attempts to import/paste a guarantee that already exists
      * Creates a timeline event for transparency without modifying guarantee data
      */
-    public static function recordDuplicateImportEvent($guaranteeId, $source = 'excel') {
+    public static function recordDuplicateImportEvent($guaranteeId, $source = 'excel')
+    {
         $db = \App\Support\Database::connection();
-        
+
         // Fetch current raw_data for snapshot
         $stmt = $db->prepare("SELECT raw_data FROM guarantees WHERE id = ?");
         $stmt->execute([$guaranteeId]);
         $rawDataJson = $stmt->fetchColumn();
-        
+
         if (!$rawDataJson) {
             return false;
         }
-        
+
         $rawData = json_decode($rawDataJson, true) ?? [];
-        
+
         // Create snapshot from current data
         $snapshot = [
             'supplier_name' => $rawData['supplier'] ?? '',
@@ -501,7 +521,7 @@ class TimelineRecorder {
             'message' => 'محاولة استيراد مكرر - الضمان موجود بالفعل',
             'action' => 'duplicate_detected'
         ];
-        
+
         // Use 'import' type with 'duplicate' subtype
         return self::recordEvent(
             $guaranteeId,
@@ -514,37 +534,39 @@ class TimelineRecorder {
         );
     }
 
-    public static function recordStatusTransitionEvent($guaranteeId, $oldSnapshot, $newStatus, $reason = 'auto_logic') {
+    public static function recordStatusTransitionEvent($guaranteeId, $oldSnapshot, $newStatus, $reason = 'auto_logic')
+    {
         $db = \App\Support\Database::connection();
-        
+
         $oldStatus = $oldSnapshot['status'] ?? 'pending';
-        
+
         if ($oldStatus === $newStatus) {
             return false;
         }
-        
-        // ✅ FIX: Fetch fresh snapshot to capture the state AFTER the change 
+
+        // ✅ FIX: Fetch fresh snapshot to capture the state AFTER the change
         // This ensures 'Status Change' events reflect matched supplier/bank names
         $currentSnapshot = self::createSnapshot($guaranteeId);
-        
+
         $changes = [[
             'field' => 'status',
             'old_value' => $oldStatus,
             'new_value' => $newStatus,
             'trigger' => $reason
         ]];
-        
+
         // Metadata (Conflict is Reason, NOT Event)
         $extra = ['reason' => $reason];
 
         // SE events are System attributed usually.
         return self::recordEvent($guaranteeId, 'status_change', $currentSnapshot, $changes, 'System', $extra, 'status_change');
     }
-    
+
     /**
      * saveReimportEvent (LE-00 Equivalent for duplicates, but strictly separate type)
      */
-    public static function recordReimportEvent($guaranteeId, $source = 'excel') {
+    public static function recordReimportEvent($guaranteeId, $source = 'excel')
+    {
         $db = \App\Support\Database::connection();
         $snapshot = self::createSnapshot($guaranteeId);
         $eventDetails = ['source' => $source, 'reason' => 'duplicate_guarantee_number'];
@@ -552,25 +574,42 @@ class TimelineRecorder {
         $stmt->execute([$guaranteeId, json_encode($snapshot), json_encode($eventDetails), date('Y-m-d H:i:s'), 'النظام']);
         return $db->lastInsertId();
     }
-    
+
     // ... [Keep getEventDisplayLabel as per previous fix, but ensure it handles new structure] ...
 
-    public static function getTimeline($guaranteeId) {
+    public static function getTimeline($guaranteeId)
+    {
         $db = \App\Support\Database::connection();
         $stmt = $db->prepare("SELECT * FROM guarantee_history WHERE guarantee_id = ? ORDER BY created_at DESC, id DESC");
         $stmt->execute([$guaranteeId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
-    
+
     public static function getEventDisplayLabel(array $event): string
     {
         $subtype = $event['event_subtype'] ?? '';
         $type = $event['event_type'] ?? '';
-        
-        // ✅ CRITICAL: Parse event_details first to detect bank-only changes
+
+        // ✅ CRITICAL: Parse event_details first to detect transitions
         $details = json_decode($event['event_details'] ?? '{}', true);
         $changes = $details['changes'] ?? [];
-        
+
+        // Helper functions for logic
+        $hasField = function ($field) use ($changes) {
+            foreach ($changes as $change) {
+                if (($change['field'] ?? '') === $field) return true;
+                if (($change['trigger'] ?? '') === $field) return true;
+            }
+            return false;
+        };
+
+        $hasTrigger = function ($trigger) use ($changes) {
+            foreach ($changes as $change) {
+                if (($change['trigger'] ?? '') === $trigger) return true;
+            }
+            return false;
+        };
+
         // Check if changes contain ONLY bank (not supplier)
         $hasOnlyBank = false;
         $hasSupplier = false;
@@ -582,12 +621,30 @@ class TimelineRecorder {
                 $hasSupplier = true;
             }
         }
-        
+
         // ✅ If ONLY bank changed → always automatic (overrides subtype)
         if ($hasOnlyBank && !$hasSupplier) {
             return 'تطابق تلقائي';
         }
-        
+
+        // ✅ Check if it's a workflow_advance trigger inside changes
+        if ($hasTrigger('workflow_advance')) {
+            // Check for specific target steps in changes
+            foreach ($changes as $change) {
+                if (($change['field'] ?? '') === 'workflow_step') {
+                    return match ($change['new_value'] ?? '') {
+                        'audited' => 'تم التدقيق',
+                        'analyzed' => 'تم التحليل',
+                        'supervised' => 'تم الإشراف',
+                        'approved' => 'تم الاعتماد',
+                        'signed' => 'تم التوقيع',
+                        default => 'تحديث المرحلة'
+                    };
+                }
+            }
+            return 'تحديث المرحلة';
+        }
+
         // 🆕 Prioritize event_subtype if available (unified timeline)
         if ($subtype) {
             return match ($subtype) {
@@ -597,32 +654,17 @@ class TimelineRecorder {
                 'release' => 'إفراج',
                 'supplier_change' => 'تطابق يدوي',  // Supplier only
                 'bank_change' => 'تطابق تلقائي',     // ✅ Bank is always auto now
-                'bank_match' => 'تطابق تلقائي',      // ✅ Bank auto-match event  
+                'bank_match' => 'تطابق تلقائي',      // ✅ Bank auto-match event
                 'auto_match' => 'تطابق تلقائي',      // ✅ NEW: Retroactive auto-match
                 'manual_edit' => 'تطابق يدوي',       // Mixed or supplier-only events
                 'ai_match' => 'تطابق تلقائي',
                 'status_change' => 'تغيير حالة',
                 'reopened' => 'إعادة فتح',
                 'correction' => 'تصحيح بيانات',
+                'workflow_advance' => 'تحديث مسار العمل',
                 default => 'تحديث'
             };
         }
-
-        // Helper functions for fallback logic
-        $hasField = function($field) use ($changes) {
-            foreach ($changes as $change) {
-                if (($change['field'] ?? '') === $field) return true;
-                if (($change['trigger'] ?? '') === $field) return true; 
-            }
-            return false;
-        };
-        
-        $hasTrigger = function($trigger) use ($changes) {
-            foreach ($changes as $change) {
-                if (($change['trigger'] ?? '') === $trigger) return true;
-            }
-            return false;
-        };
 
         if ($type === 'import') return 'استيراد';
         if ($type === 'reimport') return 'استيراد مكرر';
@@ -632,20 +674,20 @@ class TimelineRecorder {
         if ($type === 'modified') {
             if ($hasField('expiry_date') || $hasTrigger('extension_action')) return 'تمديد';
             if ($hasField('amount') || $hasTrigger('reduction_action')) return 'تخفيض';
-           // Decision event: Based on what changed
-        $categorizeDecision = function($data) use ($hasField) {
-            // If supplier changed = user selected supplier (manual action)
-            // البنك الآن تلقائي، فالقرار اليدوي = اختيار المورد فقط
-            if ($hasField('supplier_id') || $hasField('bank_id')) return 'اختيار القرار';
-            return 'تحديث';
-        };
+            // Decision event: Based on what changed
+            $categorizeDecision = function ($data) use ($hasField) {
+                // If supplier changed = user selected supplier (manual action)
+                // البنك الآن تلقائي، فالقرار اليدوي = اختيار المورد فقط
+                if ($hasField('supplier_id') || $hasField('bank_id')) return 'اختيار القرار';
+                return 'تحديث';
+            };
             return $categorizeDecision($changes); // Pass changes to the categorizer
         }
 
         if ($type === 'released' || $type === 'release') return 'إفراج';
 
         if ($type === 'status_change') {
-             return 'تغيير حالة';
+            return 'تغيير حالة';
         }
 
         return 'تحديث';
@@ -666,9 +708,43 @@ class TimelineRecorder {
             'تغيير حالة' => '🔄',
             'إعادة فتح' => '🔓',
             'تصحيح بيانات' => '🛠️',
+            'تحديث المرحلة' => '⚡',
+            'تم التدقيق' => '🔍',
+            'تم التحليل' => '📝',
+            'تم الإشراف' => '🛂',
+            'تم الاعتماد' => '✅',
+            'تم التوقيع' => '✒️',
             default => '📝'
         };
     }
 
-    private static function getCurrentUser(): string { return 'User'; }
+    /**
+     * Record Workflow Stage Transition Event (Phase 3)
+     */
+    public static function recordWorkflowEvent($guaranteeId, $oldStep, $newStep, $userName)
+    {
+        $snapshot = self::createSnapshot($guaranteeId);
+
+        $changes = [[
+            'field' => 'workflow_step',
+            'old_value' => $oldStep,
+            'new_value' => $newStep,
+            'trigger' => 'workflow_advance'
+        ]];
+
+        return self::recordEvent(
+            $guaranteeId,
+            'status_change',
+            $snapshot,
+            $changes,
+            $userName,
+            [],
+            'workflow_advance'
+        );
+    }
+
+    private static function getCurrentUser(): string
+    {
+        return 'User';
+    }
 }

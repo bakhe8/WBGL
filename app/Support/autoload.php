@@ -1,21 +1,29 @@
 <?php
+
 declare(strict_types=1);
 
 // Set timezone from Settings (dynamic)
 date_default_timezone_set('Asia/Riyadh'); // Will be overridden below after Settings loads
 
+// ✅ Safely start session for web requests only
+if (php_sapi_name() !== 'cli') {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+}
+
 spl_autoload_register(function ($class) {
     $prefix = 'App\\';
     $baseDir = __DIR__ . '/../';
-    
+
     $len = strlen($prefix);
     if (strncmp($prefix, $class, $len) !== 0) {
         return;
     }
-    
+
     $relativeClass = substr($class, $len);
     $file = $baseDir . str_replace('\\', '/', $relativeClass) . '.php';
-    
+
     if (file_exists($file)) {
         require $file;
     }

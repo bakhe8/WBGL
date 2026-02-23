@@ -1,11 +1,12 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Models;
 
 /**
  * GuaranteeDecision Model (V3)
- * 
+ *
  * Represents the current state/decision for a guarantee
  */
 class GuaranteeDecision
@@ -30,11 +31,14 @@ class GuaranteeDecision
         // Phase 3: Active Action State
         public ?string $activeAction = null,
         public ?string $activeActionSetAt = null,
+        // Phase 3: Workflow & RBAC
+        public string $workflowStep = 'draft',
+        public int $signaturesReceived = 0,
     ) {}
-    
+
     /**
      * Check if decision is ready (has both supplier and bank)
-     * 
+     *
      * Status Values:
      * - 'pending': Not yet decided
      * - 'ready': Decision ready (has supplier_id AND bank_id)
@@ -42,11 +46,11 @@ class GuaranteeDecision
     public function isApproved(): bool
     {
         // Use 'ready' as the canonical term for completed decisions
-        return $this->status === 'ready' 
-            && $this->supplierId !== null 
+        return $this->status === 'ready'
+            && $this->supplierId !== null
             && $this->bankId !== null;
     }
-    
+
     /**
      * Check if can be modified
      */
@@ -54,7 +58,7 @@ class GuaranteeDecision
     {
         return !$this->isLocked;
     }
-    
+
     /**
      * To array for API responses
      */
@@ -72,6 +76,8 @@ class GuaranteeDecision
             'confidence_score' => $this->confidenceScore,
             'decided_at' => $this->decidedAt,
             'manual_override' => $this->manualOverride,
+            'workflow_step' => $this->workflowStep,
+            'signatures_received' => $this->signaturesReceived,
         ];
     }
 }
