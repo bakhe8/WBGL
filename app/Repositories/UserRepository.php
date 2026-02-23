@@ -88,6 +88,51 @@ class UserRepository
         return $stmt->execute([$id]);
     }
 
+    /**
+     * Get granular overrides for a user
+     */
+    public function getPermissionsOverrides(int $userId): array
+    {
+        $stmt = $this->db->prepare("
+            SELECT p.id, p.slug, up.override_type
+            FROM user_permissions up
+            JOIN permissions p ON p.id = up.permission_id
+            WHERE up.user_id = ?
+        ");
+        $stmt->execute([$userId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Sync granular overrides for a user
+     */
+    public function syncPermissionsOverrides(int $userId, array $overrides): void
+    {
+        $this->db->beginTransaction();
+        try {
+            // Clear existing
+            $stmt = $this->db->prepare("DELETE FROM user_permissions WHERE user_id = ?");
+            $stmt->execute([$userId]);
+
+            // Insert new
+            $insert = $this->db->prepare("
+                INSERT INTO user_permissions (user_id, permission_id, override_type)
+                VALUES (?, ?, ?)
+            ");
+
+            foreach ($overrides as $ov) {
+                if (isset($ov['permission_id']) && isset($ov['type'])) {
+                    $insert->execute([$userId, $ov['permission_id'], $ov['type']]);
+                }
+            }
+
+            $this->db->commit();
+        } catch (\Exception $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
     private function hydrate(array $row): User
     {
         return new User(

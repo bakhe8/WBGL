@@ -37,10 +37,35 @@ try {
     $stmtRoles = $db->query("SELECT id, name FROM roles ORDER BY id ASC");
     $roles = $stmtRoles->fetchAll(PDO::FETCH_ASSOC);
 
+    // Fetch all available permissions for the override UI
+    $stmtPerms = $db->query("SELECT id, name, slug FROM permissions ORDER BY id ASC");
+    $permissions = $stmtPerms->fetchAll(PDO::FETCH_ASSOC);
+
+    // Fetch all user overrides
+    $stmtOverrides = $db->query("
+        SELECT user_id, permission_id, override_type
+        FROM user_permissions
+    ");
+    $overridesRaw = $stmtOverrides->fetchAll(PDO::FETCH_ASSOC);
+
+    $userOverrides = [];
+    foreach ($overridesRaw as $ov) {
+        $uid = $ov['user_id'];
+        if (!isset($userOverrides[$uid])) {
+            $userOverrides[$uid] = [];
+        }
+        $userOverrides[$uid][] = [
+            'permission_id' => $ov['permission_id'],
+            'type' => $ov['override_type']
+        ];
+    }
+
     echo json_encode([
         'success' => true,
         'users' => $users,
-        'roles' => $roles
+        'roles' => $roles,
+        'permissions' => $permissions,
+        'overrides' => $userOverrides
     ]);
 } catch (\Exception $e) {
     http_response_code(500);

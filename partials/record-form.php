@@ -102,6 +102,7 @@ $disabledTitle = !$isReady ? 'title="غير متاح قبل اكتمال بيا�
             <?php
 
             use App\Services\WorkflowService;
+            use App\Support\Guard;
             use App\Models\GuaranteeDecision;
 
             // Mock object for logic check
@@ -115,6 +116,20 @@ $disabledTitle = !$isReady ? 'title="غير متاح قبل اكتمال بيا�
             $canAdvance = WorkflowService::canAdvance($decisionModel);
             $actionLabel = WorkflowService::getActionLabel($record['workflow_step'] ?? 'draft');
             $workflowStep = $record['workflow_step'] ?? 'draft';
+
+            // ✅ PHASE 12: Contextual Role Reinforcement
+            $currentResponsibility = '';
+            $stagePermissionsMap = [
+                'draft' => ['p' => 'audit_data', 'l' => 'مدقق (Auditor)'],
+                'audited' => ['p' => 'analyze_guarantee', 'l' => 'محلل (Analyst)'],
+                'analyzed' => ['p' => 'supervise_analysis', 'l' => 'مشرف (Supervisor)'],
+                'supervised' => ['p' => 'approve_decision', 'l' => 'معتمد (Manager)'],
+                'approved' => ['p' => 'sign_letters', 'l' => 'موقع (Signatory)'],
+            ];
+            $req = $stagePermissionsMap[$workflowStep] ?? null;
+            if ($req && Guard::has($req['p'])) {
+                $currentResponsibility = $req['l'];
+            }
             ?>
             <div style="flex: 1; display: flex; justify-content: flex-end; align-items: center; gap: 12px;">
                 <div class="workflow-status-badge" style="background: #f1f5f9; padding: 4px 12px; border-radius: 20px; font-size: 11px; border: 1px solid #e2e8f0; color: #64748b;">
@@ -125,8 +140,11 @@ $disabledTitle = !$isReady ? 'title="غير متاح قبل اكتمال بيا�
                     <button class="btn btn-primary btn-sm"
                         data-action="workflow-advance"
                         data-step="<?= $workflowStep ?>"
-                        style="background: #2563eb; font-weight: bold; padding-left: 16px; padding-right: 16px;">
-                        ⚡ <?= $actionLabel ?>
+                        style="background: #2563eb; font-weight: bold; padding: 6px 16px; min-width: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2;">
+                        <span style="font-size: 13px;">⚡ <?= $actionLabel ?></span>
+                        <?php if ($currentResponsibility): ?>
+                            <span style="font-size: 9px; opacity: 0.7; font-weight: 500;"><?= $currentResponsibility ?></span>
+                        <?php endif; ?>
                     </button>
                 <?php endif; ?>
             </div>

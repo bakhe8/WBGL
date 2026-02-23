@@ -119,6 +119,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
+    }
+
     // --- Phase 3: Workflow Action Handler ---
     document.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-action="workflow-advance"]');

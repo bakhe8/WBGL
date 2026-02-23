@@ -199,7 +199,10 @@ class TimelineRecorder
             'action_id' => $actionId
         ]];
 
-        return self::recordEvent($guaranteeId, 'modified', $oldSnapshot, $changes, 'User', [], 'extension', $letterSnapshot);
+        $currentUser = \App\Support\AuthService::getCurrentUser();
+        $creatorName = $currentUser ? $currentUser->fullName : 'المستخدم';
+
+        return self::recordEvent($guaranteeId, 'modified', null, $changes, $creatorName, [], 'extension', $letterSnapshot);
     }
 
     /**
@@ -233,7 +236,10 @@ class TimelineRecorder
             'trigger' => 'reduction_action'
         ]];
 
-        return self::recordEvent($guaranteeId, 'modified', $oldSnapshot, $changes, 'User', [], 'reduction', $letterSnapshot);
+        $currentUser = \App\Support\AuthService::getCurrentUser();
+        $creatorName = $currentUser ? $currentUser->fullName : 'المستخدم';
+
+        return self::recordEvent($guaranteeId, 'modified', null, $changes, $creatorName, [], 'reduction', $letterSnapshot);
     }
 
     /**
@@ -265,7 +271,7 @@ class TimelineRecorder
         $currentUser = \App\Support\AuthService::getCurrentUser();
         $creatorName = $currentUser ? $currentUser->fullName : 'المستخدم';
 
-        return self::recordEvent($guaranteeId, 'release', $oldSnapshot, $changes, $creatorName, $extraDetails, 'release', $letterSnapshot);
+        return self::recordEvent($guaranteeId, 'release', null, $changes, $creatorName, $extraDetails, 'release', $letterSnapshot);
     }
 
     /**
@@ -316,8 +322,62 @@ class TimelineRecorder
 
         $extra = $confidence ? ['confidence' => $confidence] : [];
 
+        // 🛡️ Anchor Point: Mapping decisions (supplier/bank) are major milestones.
+        // Store a full snapshot to ensure this mapping can be audited instantly and reliably.
+        $anchorSnapshot = self::createSnapshot($guaranteeId);
+
         $subtype = $subtype ?? ($isAuto ? 'ai_match' : 'manual_edit');
-        return self::recordEvent($guaranteeId, 'modified', $oldSnapshot, $changes, $creator, $extra, $subtype);
+        return self::recordEvent($guaranteeId, 'modified', $anchorSnapshot, $changes, $creator, [], $subtype);
+    }
+
+    /**
+     * Record Manual Admin Edit (Audit Milestone)
+     * Stores a FULL snapshot as a safety anchor
+     */
+    public static function recordManualEditEvent($guaranteeId, array $newRawData)
+    {
+        $creatorName = self::getCurrentUser();
+
+        // Create a proper snapshot from the new data
+        $snapshot = self::createSnapshot($guaranteeId, ['raw_data' => json_encode($newRawData)]);
+
+        $eventDetails = [
+            'action' => 'Manual Administrative Edit',
+            'reason' => 'Admin override via maintenance dashboard'
+        ];
+
+        return self::recordEvent(
+            $guaranteeId,
+            'modified',
+            $snapshot,
+            [], // Snapshot is primary here
+            $creatorName,
+            $eventDetails,
+            'manual_edit'
+        );
+    }
+
+    /**
+     * Create JSON Patch (RFC 6902-ish) for audit
+     */
+    public static function createPatch($old, $new): array
+    {
+        $patch = [];
+        $keys = array_unique(array_merge(array_keys($old), array_keys($new)));
+
+        foreach ($keys as $key) {
+            $oldExists = array_key_exists($key, $old);
+            $newExists = array_key_exists($key, $new);
+
+            if (!$oldExists && $newExists) {
+                $patch[] = ['op' => 'add', 'path' => '/' . $key, 'value' => $new[$key]];
+            } elseif ($oldExists && !$newExists) {
+                $patch[] = ['op' => 'remove', 'path' => '/' . $key];
+            } elseif ($oldExists && $newExists && $old[$key] != $new[$key]) {
+                $patch[] = ['op' => 'replace', 'path' => '/' . $key, 'value' => $new[$key]];
+            }
+        }
+        return $patch;
     }
 
     /**
@@ -339,14 +399,29 @@ class TimelineRecorder
         // Note: We do NOT calculate status change here anymore.
         // Status transitions (SE-01/02) must be recorded via recordStatusTransitionEvent separately.
 
+        // 🛡️ LEDGER LOGIC: Periodic Auto-Anchors
+        // To ensure high-speed reconstruction and 100% audit integrity,
+        // we force a full snapshot every 10 events if one wasn't provided (Anchor).
+        if ($snapshot === null) {
+            $countStmt = $db->prepare("SELECT COUNT(*) FROM guarantee_history WHERE guarantee_id = ?");
+            $countStmt->execute([$guaranteeId]);
+            $historyCount = (int)$countStmt->fetchColumn();
+
+            if ($historyCount > 0 && ($historyCount + 1) % 10 === 0) {
+                $snapshot = self::createSnapshot($guaranteeId);
+                $extraDetails['ledger_auto_anchor'] = true;
+                $extraDetails['checkpoint_reason'] = 'periodic_maintenance_anchor';
+            }
+        }
+
         $eventDetails = array_merge([
             'changes' => $changes
         ], $extraDetails);
 
-        // Map Creator to Display Text (If it's a known generic, map it, otherwise use it)
+        // Map Creator to Display Text (If it's a known generic/internal ID, map it, otherwise use it)
         $creatorText = match ($creator) {
-            'User', 'user' => 'بواسطة المستخدم',
-            'System', 'system' => 'بواسطة النظام',
+            'User', 'user', 'web_user' => 'بواسطة المستخدم',
+            'System', 'system', 'System AI' => 'بواسطة النظام',
             default => 'بواسطة ' . $creator
         };
 
@@ -363,7 +438,7 @@ class TimelineRecorder
                 $guaranteeId,
                 $type,
                 $subtype,
-                json_encode($snapshot),
+                $snapshot ? json_encode($snapshot) : null, // ✅ NEW: Optional snapshot
                 json_encode($eventDetails),
                 $letterSnapshot,  // ✨ Store HTML directly (no json_encode)
                 date('Y-m-d H:i:s'),
@@ -458,12 +533,11 @@ class TimelineRecorder
         }
 
         // Create snapshot from RAW data (whether explicit or from DB)
-        // Ensure keys exist to avoid warnings
         $snapshot = [
             'supplier_name' => $rawData['supplier'] ?? '',
             'bank_name' => $rawData['bank'] ?? '',
-            'supplier_id' => null,  // Not matched yet
-            'bank_id' => null,      // Not matched yet
+            'supplier_id' => null,
+            'bank_id' => null,
             'amount' => $rawData['amount'] ?? 0,
             'expiry_date' => $rawData['expiry_date'] ?? '',
             'issue_date' => $rawData['issue_date'] ?? '',
@@ -475,15 +549,15 @@ class TimelineRecorder
 
         $eventDetails = ['source' => $source];
 
-        // Use recordEvent with subtype
+        // 🛡️ Anchor Point: Import ALWAYS stores a full snapshot
         return self::recordEvent(
             $guaranteeId,
             'import',
             $snapshot,
-            [],  // no changes for import
+            [],
             'النظام',
             $eventDetails,
-            $source  // event_subtype (excel/manual/smart_paste)
+            $source
         );
     }
 
@@ -526,7 +600,7 @@ class TimelineRecorder
         return self::recordEvent(
             $guaranteeId,
             'import',
-            $snapshot,
+            null,
             [],  // no changes
             'النظام',
             $eventDetails,
@@ -558,7 +632,8 @@ class TimelineRecorder
         // Metadata (Conflict is Reason, NOT Event)
         $extra = ['reason' => $reason];
 
-        // SE events are System attributed usually.
+        // 🛡️ Anchor Point: Status transitions (SE-01/02) are critical strategic milestones.
+        // Store the fresh snapshot created above as the anchor for this transition.
         return self::recordEvent($guaranteeId, 'status_change', $currentSnapshot, $changes, 'System', $extra, 'status_change');
     }
 
@@ -735,7 +810,7 @@ class TimelineRecorder
         return self::recordEvent(
             $guaranteeId,
             'status_change',
-            $snapshot,
+            $snapshot, // 🛡️ Anchor Point: Workflow stage transitions
             $changes,
             $userName,
             [],
@@ -743,8 +818,29 @@ class TimelineRecorder
         );
     }
 
+    /**
+     * Record Reopen Event (manual_override)
+     */
+    public static function recordReopenEvent($guaranteeId, $oldSnapshot)
+    {
+        $creatorName = self::getCurrentUser();
+
+        $changes = [[
+            'field' => 'status',
+            'old_value' => $oldSnapshot['status'] ?? 'ready',
+            'new_value' => 'pending',
+            'trigger' => 'manual_correction'
+        ]];
+
+        return self::recordEvent($guaranteeId, 'manual_override', null, $changes, $creatorName, [
+            'action' => 'Re-opened for correction',
+            'reason' => 'User requested manual correction of record data'
+        ], 'reopened');
+    }
+
     private static function getCurrentUser(): string
     {
-        return 'User';
+        $user = \App\Support\AuthService::getCurrentUser();
+        return $user ? $user->fullName : 'المستخدم';
     }
 }

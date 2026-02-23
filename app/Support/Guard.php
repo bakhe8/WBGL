@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Repositories\RoleRepository;
+use PDO;
 
 /**
  * Guard
@@ -13,6 +14,7 @@ use App\Repositories\RoleRepository;
 class Guard
 {
     private static ?array $permissions = null;
+    private static ?array $userOverrides = null;
 
     /**
      * Check if the current user has a specific permission
@@ -36,7 +38,29 @@ class Guard
 
             // Cache permissions for the current request
             if (self::$permissions === null) {
-                self::$permissions = $roleRepo->getPermissions($user->roleId);
+                $rolePerms = $roleRepo->getPermissions($user->roleId);
+
+                // 🛡️ GRANULAR OVERRIDES:
+                // Fetch user-specific overrides (allow/deny)
+                $stmt = $db->prepare("
+                    SELECT p.slug, up.override_type
+                    FROM user_permissions up
+                    JOIN permissions p ON p.id = up.permission_id
+                    WHERE up.user_id = ?
+                ");
+                $stmt->execute([$user->id]);
+                $overrides = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                $allow = [];
+                $deny = [];
+                foreach ($overrides as $ov) {
+                    if ($ov['override_type'] === 'allow') $allow[] = $ov['slug'];
+                    if ($ov['override_type'] === 'deny') $deny[] = $ov['slug'];
+                }
+
+                // Logic: (Role Perms + Allowed) - Denied
+                self::$permissions = array_diff(array_unique(array_merge($rolePerms, $allow)), $deny);
+                self::$userOverrides = ['allow' => $allow, 'deny' => $deny];
             }
 
             return in_array($permissionSlug, self::$permissions);

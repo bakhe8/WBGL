@@ -45,6 +45,7 @@ $db = Database::connect();
 
 // Get filter parameter for status filtering (Defined EARLY)
 $statusFilter = $_GET['filter'] ?? 'all'; // all, ready, pending
+$stageFilter = $_GET['stage'] ?? null;    // specific workflow stage
 $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : null;
 
 // Production Mode: Auto-exclude test data
@@ -170,7 +171,29 @@ if (!$currentRecord) {
             if ($statusFilter === 'ready') {
                 $defaultRecordQuery .= ' AND d.status = "ready"';
             } elseif ($statusFilter === 'actionable') {
-                $defaultRecordQuery .= ' AND d.status = "ready" AND (d.active_action IS NULL OR d.active_action = "")';
+                // ✅ PHASE 11: Real Interaction - Filter by user permissions
+                $allowedStages = ['\'dummy\'']; // Prevent empty IN clause
+                $stagePermissions = [
+                    'draft' => 'audit_data',
+                    'audited' => 'analyze_guarantee',
+                    'analyzed' => 'supervise_analysis',
+                    'supervised' => 'approve_decision',
+                    'approved' => 'sign_letters',
+                ];
+
+                foreach ($stagePermissions as $stage => $permission) {
+                    if (\App\Support\Guard::has($permission)) {
+                        $allowedStages[] = "'" . $stage . "'";
+                    }
+                }
+
+                $stagesCsv = implode(',', $allowedStages);
+                $defaultRecordQuery .= " AND d.status = 'ready' AND (d.active_action IS NULL OR d.active_action = '') AND d.workflow_step IN ($stagesCsv)";
+
+                // ✅ PHASE 12: Stage-specific filter
+                if (!empty($stageFilter)) {
+                    $defaultRecordQuery .= " AND d.workflow_step = " . $db->quote($stageFilter);
+                }
             } elseif ($statusFilter === 'pending') {
                 $defaultRecordQuery .= ' AND (d.id IS NULL OR d.status = "pending")';
             } elseif ($statusFilter === 'expiring_30') {
@@ -222,8 +245,31 @@ $nextId = $navInfo['nextId'];
 // Get import statistics (ready vs pending vs released)
 // Note: Stats always show ALL counts regardless of filter
 $importStats = \App\Services\StatsService::getImportStats($db);
+$workflowStats = \App\Services\StatsService::getWorkflowStats($db);
+
+// ✅ PHASE 11: Task Guidance - Calculate personally actionable tasks
+$currentUser = \App\Support\AuthService::getCurrentUser();
+$personalTaskCount = 0;
+$personalTaskLabel = '';
+
+if ($currentUser) {
+    // Fetch real-time count from centralized service
+    $personalTaskCount = \App\Services\StatsService::getPersonalTaskCount($db);
+
+    // Set friendly labels based on priority
+    if ($personalTaskCount > 0) {
+        if (\App\Support\Guard::has('audit_data')) $personalTaskLabel = 'بانتظار تدقيقك';
+        elseif (\App\Support\Guard::has('analyze_guarantee')) $personalTaskLabel = 'بانتظار تحليلك';
+        elseif (\App\Support\Guard::has('supervise_analysis')) $personalTaskLabel = 'بانتظار مراجعتك';
+        elseif (\App\Support\Guard::has('approve_decision')) $personalTaskLabel = 'بانتظار اعتمادك';
+        elseif (\App\Support\Guard::has('sign_letters')) $personalTaskLabel = 'بانتظار توقيعك';
+        else $personalTaskLabel = 'مهام في انتظارك';
+    }
+}
+
 // Update total to exclude released for display consistency with filters
 $displayTotal = $importStats['ready'] + $importStats['pending'];
+
 
 
 // If we have a record, prepare it
@@ -712,6 +758,42 @@ $formattedSuppliers = array_map(function ($s) {
 
         <!-- Sidebar (Left) -->
         <aside class="sidebar">
+
+            <!-- ✅ PHASE 12: Granular Task Breakdown -->
+            <?php
+            $personalTaskBreakdown = \App\Services\StatsService::getPersonalTaskBreakdown($db);
+            if (!empty($personalTaskBreakdown)):
+            ?>
+                <div class="personal-tasks-section" style="margin-bottom: 24px;">
+                    <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
+                        <span>🎯</span> المهام حسب الدور (Roles)
+                    </div>
+                    <?php foreach ($personalTaskBreakdown as $bucket): ?>
+                        <?php
+                        $isActive = ($statusFilter === 'actionable' && $stageFilter === $bucket['stage']);
+                        $bg = $isActive ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' : '#ffffff';
+                        $color = $isActive ? 'white' : '#334155';
+                        $shadow = $isActive ? '0 4px 12px rgba(37, 99, 235, 0.3)' : '0 1px 3px rgba(0,0,0,0.05)';
+                        $border = $isActive ? 'none' : '1px solid #e2e8f0';
+                        ?>
+                        <a href="/?filter=actionable&stage=<?= $bucket['stage'] ?>"
+                            class="personal-task-link"
+                            style="display: flex; align-items: center; justify-content: space-between; background: <?= $bg ?>; padding: 10px 14px; border-radius: 10px; text-decoration: none; color: <?= $color ?>; margin-bottom: 8px; border: <?= $border ?>; box-shadow: <?= $shadow ?>; transition: all 0.2s;">
+                            <span style="font-size: 13px; font-weight: 600;"><?= $bucket['label'] ?></span>
+                            <span style="font-size: 12px; font-weight: 800; background: <?= $isActive ? 'rgba(255,255,255,0.2)' : '#f1f5f9' ?>; color: <?= $isActive ? 'white' : '#2563eb' ?>; min-width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; padding: 0 6px;">
+                                <?= $bucket['count'] ?>
+                            </span>
+                        </a>
+                    <?php endforeach; ?>
+
+                    <?php if (count($personalTaskBreakdown) > 1): ?>
+                        <a href="/?filter=actionable"
+                            style="display: block; text-align: center; font-size: 11px; color: #64748b; text-decoration: none; margin-top: 4px; padding: 4px; border: 1px dashed #cbd5e1; border-radius: 6px; <?= ($statusFilter === 'actionable' && !$stageFilter) ? 'background:#f8fafc; font-weight:bold;' : '' ?>">
+                            عرض كافة مهامي (<?= $personalTaskCount ?>)
+                        </a>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
 
             <!-- Input Actions (New Proposal) -->
             <div class="input-toolbar">

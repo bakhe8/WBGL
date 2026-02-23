@@ -137,13 +137,18 @@ $currentUser = AuthService::getCurrentUser();
         }
 
         .btn-add {
-            background: var(--color-primary);
+            background: #2563eb;
             color: white;
+            padding: 12px 24px;
+            font-size: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border: 2px solid transparent;
         }
 
         .btn-add:hover {
-            opacity: 0.9;
-            transform: translateY(-1px);
+            background: #1d4ed8;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
         }
 
         .btn-edit {
@@ -181,7 +186,8 @@ $currentUser = AuthService::getCurrentUser();
         .modal-content {
             background: white;
             width: 100%;
-            max-width: 500px;
+            max-width: 800px;
+            /* Wider for permissions */
             padding: 32px;
             border-radius: 24px;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
@@ -278,6 +284,63 @@ $currentUser = AuthService::getCurrentUser();
             align-items: center;
             font-weight: 800;
         }
+
+        /* 🛡️ Permission Toggle Styles */
+        .perm-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .perm-info b {
+            display: block;
+            font-size: 14px;
+        }
+
+        .perm-info small {
+            color: #64748b;
+            font-size: 12px;
+        }
+
+        .toggle-group {
+            display: flex;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 8px;
+            gap: 4px;
+        }
+
+        .toggle-btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            color: #64748b;
+            transition: all 0.2s;
+        }
+
+        .toggle-btn.active[data-type="auto"] {
+            background: white;
+            color: #475569;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .toggle-btn.active[data-type="allow"] {
+            background: #dcfce7;
+            color: #166534;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .toggle-btn.active[data-type="deny"] {
+            background: #fee2e2;
+            color: #991b1b;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
     </style>
 </head>
 
@@ -285,7 +348,7 @@ $currentUser = AuthService::getCurrentUser();
 
     <div id="loadingOverlay" class="loading-overlay">... جاري التنفيذ</div>
 
-    <!-- User Modal -->
+    <!-- Unified User & Permissions Modal -->
     <div id="userModal" class="modal">
         <div class="modal-content text-right">
             <div class="modal-header">
@@ -293,30 +356,45 @@ $currentUser = AuthService::getCurrentUser();
             </div>
             <form id="userForm">
                 <input type="hidden" id="userIdField">
-                <div class="form-group">
-                    <label>الاسم الكامل</label>
-                    <input type="text" id="fullNameField" class="form-control" placeholder="مثل: أحمد محمد" required>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                    <!-- Basic Info -->
+                    <div>
+                        <div class="form-group">
+                            <label>الاسم الكامل</label>
+                            <input type="text" id="fullNameField" class="form-control" placeholder="مثل: أحمد محمد" required>
+                        </div>
+                        <div class="form-group">
+                            <label>اسم المستخدم</label>
+                            <input type="text" id="usernameField" class="form-control" placeholder="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label>البريد الإلكتروني (اختياري)</label>
+                            <input type="email" id="emailField" class="form-control" placeholder="user@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label>الدور الوظيفي</label>
+                            <select id="roleField" class="form-control" required>
+                                <!-- Loaded via JS -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label id="passwordLabel">كلمة المرور</label>
+                            <input type="password" id="passwordField" class="form-control" placeholder="كلمة المرور">
+                        </div>
+                    </div>
+
+                    <!-- Permissions Overrides -->
+                    <div style="border-right: 1px solid #f1f5f9; padding-right: 30px;">
+                        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #1e293b;">تخصيص الصلاحيات (تحكم متقدم)</h3>
+                        <div id="permissionsList" style="max-height: 400px; overflow-y: auto; border: 1px solid #f1f5f9; border-radius: 12px; background: #fafafa;">
+                            <!-- Loaded via JS -->
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label>اسم المستخدم</label>
-                    <input type="text" id="usernameField" class="form-control" placeholder="username" required>
-                </div>
-                <div class="form-group">
-                    <label>البريد الإلكتروني (اختياري)</label>
-                    <input type="email" id="emailField" class="form-control" placeholder="user@example.com">
-                </div>
-                <div class="form-group">
-                    <label>الدور الوظيفي</label>
-                    <select id="roleField" class="form-control" required>
-                        <!-- Loaded via JS -->
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label id="passwordLabel">كلمة المرور</label>
-                    <input type="password" id="passwordField" class="form-control" placeholder="اتركها فارغة لعدم التغيير في حال التعديل">
-                </div>
+
                 <div class="modal-actions">
-                    <button type="submit" class="btn-save">حفظ</button>
+                    <button type="submit" class="btn-save">حفظ البيانات والصلاحيات</button>
                     <button type="button" class="btn-cancel" onclick="closeModal()">إلغاء</button>
                 </div>
             </form>
@@ -395,8 +473,8 @@ $currentUser = AuthService::getCurrentUser();
                     <td style="color:#666">${user.last_login || 'لم يدخل بعد'}</td>
                     <td>
                         <div style="display: flex; gap: 8px;">
-                            <button class="btn-action btn-edit" onclick="openEditModal(${user.id})">✏️</button>
-                            <button class="btn-action btn-delete" onclick="deleteUser(${user.id})">🗑️</button>
+                            <button class="btn-action btn-edit" title="تعديل البيانات والصلاحيات" onclick="openEditModal(${user.id})">✏️ إدارة</button>
+                            <button class="btn-action btn-delete" title="حذف المستخدم" onclick="deleteUser(${user.id})">🗑️</button>
                         </div>
                     </td>
                 </tr>
@@ -409,6 +487,7 @@ $currentUser = AuthService::getCurrentUser();
             document.getElementById('userForm').reset();
             document.getElementById('passwordField').required = true;
             document.getElementById('passwordLabel').innerText = 'كلمة المرور';
+            renderPermissionsList([]); // Empty overrides
             document.getElementById('userModal').style.display = 'flex';
         }
 
@@ -416,7 +495,7 @@ $currentUser = AuthService::getCurrentUser();
             const user = allUsers.find(u => u.id == userId);
             if (!user) return;
 
-            document.getElementById('modalTitle').innerText = 'تعديل بيانات المستخدم';
+            document.getElementById('modalTitle').innerText = 'تعديل بيانات المستخدم وصلاحياته';
             document.getElementById('userIdField').value = user.id;
             document.getElementById('fullNameField').value = user.full_name;
             document.getElementById('usernameField').value = user.username;
@@ -425,6 +504,9 @@ $currentUser = AuthService::getCurrentUser();
             document.getElementById('passwordField').required = false;
             document.getElementById('passwordField').value = '';
             document.getElementById('passwordLabel').innerText = 'كلمة المرور (اتركها فارغة لعدم التغيير)';
+
+            const userOverrides = allOverrides[userId] || [];
+            renderPermissionsList(userOverrides);
 
             document.getElementById('userModal').style.display = 'flex';
         }
@@ -438,13 +520,27 @@ $currentUser = AuthService::getCurrentUser();
             const userId = document.getElementById('userIdField').value;
             const isEdit = userId !== '';
 
+            // Collect overrides
+            const overrides = [];
+            document.querySelectorAll('.perm-row').forEach(row => {
+                const permId = row.dataset.permId;
+                const type = row.querySelector('.toggle-btn.active').dataset.type;
+                if (type !== 'auto') {
+                    overrides.push({
+                        permission_id: permId,
+                        type: type
+                    });
+                }
+            });
+
             const payload = {
                 user_id: userId,
                 full_name: document.getElementById('fullNameField').value,
                 username: document.getElementById('usernameField').value,
                 email: document.getElementById('emailField').value,
                 role_id: document.getElementById('roleField').value,
-                password: document.getElementById('passwordField').value
+                password: document.getElementById('passwordField').value,
+                permissions_overrides: overrides
             };
 
             const url = isEdit ? '../api/users/update.php' : '../api/users/create.php';
@@ -505,7 +601,64 @@ $currentUser = AuthService::getCurrentUser();
             document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
         }
 
-        document.addEventListener('DOMContentLoaded', loadUsers);
+        // 🛡️ GRANULAR PERMISSIONS LOGIC
+        let allPermissions = [];
+        let allOverrides = {};
+
+        async function loadContext() {
+            try {
+                const response = await fetch('../api/users/list.php');
+                const data = await response.json();
+
+                if (!data.success) throw new Error(data.error);
+
+                rolesData = data.roles;
+                allUsers = data.users;
+                allPermissions = data.permissions;
+                allOverrides = data.overrides;
+            } catch (err) {
+                console.error('Fetch context error:', err);
+                alert('فشل تحميل بيانات الصلاحيات والأدوار');
+            }
+        }
+
+        function renderPermissionsList(userOverrides) {
+            const listEl = document.getElementById('permissionsList');
+
+            listEl.innerHTML = allPermissions.map(p => {
+                const override = userOverrides.find(o => o.permission_id == p.id);
+                const type = override ? override.type : 'auto';
+
+                return `
+                    <div class="perm-row" data-perm-id="${p.id}">
+                        <div class="perm-info">
+                            <b>${p.name}</b>
+                            <small>${p.slug}</small>
+                        </div>
+                        <div class="toggle-group">
+                            <button type="button" class="toggle-btn ${type=='auto'?'active':''}" data-type="auto" onclick="setOverride(${p.id}, 'auto')">تلقائي</button>
+                            <button type="button" class="toggle-btn ${type=='allow'?'active':''}" data-type="allow" onclick="setOverride(${p.id}, 'allow')">سماح</button>
+                            <button type="button" class="toggle-btn ${type=='deny'?'active':''}" data-type="deny" onclick="setOverride(${p.id}, 'deny')">منع</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function setOverride(permId, type) {
+            const row = document.querySelector(`.perm-row[data-perm-id="${permId}"]`);
+            row.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
+            row.querySelector(`.toggle-btn[data-type="${type}"]`).classList.add('active');
+        }
+
+        async function init() {
+            showLoading(true);
+            await loadContext();
+            loadUsers();
+            showLoading(false);
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 

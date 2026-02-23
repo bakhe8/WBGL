@@ -94,6 +94,25 @@ if ($currentUser && $currentUser->roleId) {
     .btn-logout-header:hover {
         opacity: 0.8;
     }
+
+    .header-badge {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        background: #ef4444;
+        color: white;
+        font-size: 10px;
+        font-weight: 800;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid white;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        z-index: 10;
+    }
 </style>
 
 <header class="top-bar">
@@ -125,10 +144,24 @@ if ($currentUser && $currentUser->roleId) {
 
     <div style="display: flex; align-items: center; gap: 8px;">
         <nav class="global-actions">
+            <?php
+            // ✅ PHASE 11: Task Guidance - Global Badge (Enforced)
+            $badgeDisplay = '';
+            if ($currentUser) {
+                // Fetch real-time count from centralized service
+                $db = \App\Support\Database::connect();
+                $count = \App\Services\StatsService::getPersonalTaskCount($db);
+                if ($count > 0) {
+                    $badgeDisplay = '<span class="header-badge">' . $count . '</span>';
+                }
+            }
+            ?>
             <a href="<?= $basePath ?>index.php"
-                class="btn-global <?= isActive('index', $currentPage, $currentDir) ? 'active' : '' ?>">
+                class="btn-global <?= isActive('index', $currentPage, $currentDir) ? 'active' : '' ?>"
+                style="position: relative;">
                 <span class="nav-icon">🏠</span>
                 <span class="nav-label">الرئيسية</span>
+                <?= $badgeDisplay ?>
             </a>
             <a href="<?= $basePath ?>views/batches.php"
                 class="btn-global <?= isActive('batches', $currentPage, $currentDir) ? 'active' : '' ?>">

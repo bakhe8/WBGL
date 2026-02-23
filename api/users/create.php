@@ -59,7 +59,12 @@ try {
         date('Y-m-d H:i:s')
     );
 
-    $repo->create($newUser);
+    $user = $repo->create($newUser);
+
+    // Sync overrides if provided
+    if (isset($input['permissions_overrides']) && is_array($input['permissions_overrides'])) {
+        $repo->syncPermissionsOverrides($user->id, $input['permissions_overrides']);
+    }
 
     echo json_encode(['success' => true, 'message' => 'تم إنشاء المستخدم بنجاح']);
 } catch (\Exception $e) {

@@ -66,6 +66,7 @@ $eventCount = count($timeline);
                         data-event-type="<?= $event['event_type'] ?? 'unknown' ?>"
                         data-event-subtype="<?= $event['event_subtype'] ?? '' ?>"
                         data-snapshot='<?= htmlspecialchars($event['snapshot_data'] ?? '{}', ENT_QUOTES, 'UTF-8') ?>'
+                        data-event-details='<?= htmlspecialchars($event['event_details'] ?? '{}', ENT_QUOTES, 'UTF-8') ?>'
                         data-letter-snapshot='<?= htmlspecialchars($event['letter_snapshot'] ?? 'null', ENT_QUOTES, 'UTF-8') ?>'
                         data-is-latest="<?= $isLatest ? '1' : '0' ?>"
                         style="position: relative; padding-right: 12px; margin-bottom: 10px; cursor: pointer;">
@@ -75,8 +76,11 @@ $eventCount = count($timeline);
                             <div style="position: absolute; right: 3px; top: 14px; bottom: -10px; width: 2px; background: #e2e8f0;"></div>
                         <?php endif; ?>
 
+                        <?php
+                        $hasSnapshot = !empty($event['snapshot_data']) && $event['snapshot_data'] !== '{}' && $event['snapshot_data'] !== 'null';
+                        ?>
                         <!-- Dot -->
-                        <div style="position: absolute; right: -2px; top: 8px; width: 10px; height: 10px; border-radius: 50%; background: <?= $colors['border'] ?>; border: 2px solid white; box-shadow: 0 0 0 1px #e2e8f0; z-index: 1;"></div>
+                        <div class="timeline-dot <?= $hasSnapshot ? 'timeline-dot-anchor' : '' ?>" style="position: absolute; right: -2px; top: 8px; width: 10px; height: 10px; border-radius: 50%; background: <?= $colors['border'] ?>; border: 2px solid white; box-shadow: 0 0 0 1px #e2e8f0; z-index: 1;"></div>
 
                         <!-- Event Card -->
                         <div class="timeline-event-card" style="background: white; border: 1px solid #e2e8f0; border-right: 3px solid <?= $colors['border'] ?>; border-radius: 4px; padding: 10px 12px; margin-right: 16px; transition: all 0.2s;"

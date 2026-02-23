@@ -65,7 +65,10 @@ try {
         $user->passwordHash = password_hash($password, PASSWORD_BCRYPT);
     }
 
-    $repo->update($user);
+    // Sync overrides if provided
+    if (isset($input['permissions_overrides']) && is_array($input['permissions_overrides'])) {
+        $repo->syncPermissionsOverrides((int)$userId, $input['permissions_overrides']);
+    }
 
     echo json_encode(['success' => true, 'message' => 'تم تحديث البيانات بنجاح']);
 } catch (\Exception $e) {
