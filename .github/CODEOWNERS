@@ -1,0 +1,19 @@
+# Replace @bakheet with your exact GitHub username/org team if needed.
+
+* @bakheet
+
+# High-risk areas
+/api/** @bakheet
+/app/** @bakheet
+/partials/** @bakheet
+/templates/** @bakheet
+/views/** @bakheet
+/public/js/** @bakheet
+/public/css/** @bakheet
+/maint/** @bakheet
+
+# Governance and tests
+/docs/** @bakheet
+/tests/** @bakheet
+/phpunit.xml @bakheet
+/composer.json @bakheet

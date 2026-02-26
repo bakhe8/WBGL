@@ -1,0 +1,90 @@
+name: Change Gate (WBGL)
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  gate:
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read PR body
+        id: pr
+        run: |
+          body="$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")"
+          {
+            echo "body<<'EOF'"
+            echo "$body"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate required PR fields
+        env:
+          PR_BODY: ${{ steps.pr.outputs.body }}
+        run: |
+          set -euo pipefail
+          missing=0
+          required=("PLAN-REF:" "GAP-REF:" "LAYER:" "RISK:" "ROLLBACK:" "TEST-EVIDENCE:" "IMPACTED FEATURES:" "DOC-UPDATES:")
+          for key in "${required[@]}"; do
+            if ! grep -qi "$key" <<<"$PR_BODY"; then
+              echo "Missing required field: $key"
+              missing=1
+            fi
+          done
+
+          if ! grep -Eqi 'PLAN-REF:.*WBGL_MASTER_UPGRADE_PLAN' <<<"$PR_BODY"; then
+            echo "PLAN-REF must reference WBGL_MASTER_UPGRADE_PLAN."
+            missing=1
+          fi
+
+          if ! grep -Eqi 'GAP-REF:.*(FINAL_MISSING_FEATURES_MATRIX|final_missing_features_matrix|WBGL_BG_Full_Feature_Census|differential_analysis)' <<<"$PR_BODY"; then
+            echo "GAP-REF must reference the comparison corpus (matrix/census/differential)."
+            missing=1
+          fi
+
+          valid_layers='(Architectural|Structural|Logical|Operational|Security|Governance|UX|Data)'
+          if ! grep -Eqi "LAYER:.*$valid_layers" <<<"$PR_BODY"; then
+            echo "LAYER must include one or more valid values: Architectural/Structural/Logical/Operational/Security/Governance/UX/Data."
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Collect changed files
+        id: changes
+        run: |
+          set -euo pipefail
+          git fetch origin "${{ github.base_ref }}:${{ github.base_ref }}"
+          files="$(git diff --name-only "${{ github.base_ref }}...HEAD")"
+          printf "%s\n" "$files"
+          {
+            echo "files<<'EOF'"
+            echo "$files"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require docs updates for sensitive changes
+        env:
+          CHANGED_FILES: ${{ steps.changes.outputs.files }}
+        run: |
+          set -euo pipefail
+          sensitive='^(api/|app/|partials/|templates/|views/|public/js/|public/css/|maint/)'
+          if grep -Eq "$sensitive" <<<"$CHANGED_FILES"; then
+            if ! grep -Eq '^docs/' <<<"$CHANGED_FILES"; then
+              echo "Sensitive code changed, but no docs/ updates detected."
+              echo "Please update docs/ with behavior/contract/risk changes."
+              exit 1
+            fi
+          fi
