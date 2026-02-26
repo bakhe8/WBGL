@@ -23,7 +23,7 @@ jobs:
         run: |
           body="$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")"
           {
-            echo "body<<'EOF'"
+            echo "body<<EOF"
             echo "$body"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -70,7 +70,7 @@ jobs:
           files="$(git diff --name-only "${{ github.base_ref }}...HEAD")"
           printf "%s\n" "$files"
           {
-            echo "files<<'EOF'"
+            echo "files<<EOF"
             echo "$files"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
