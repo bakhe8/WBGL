@@ -1,0 +1,165 @@
+{
+    "generated_at": "2026-02-27T18:54:24+03:00",
+    "driver": "pgsql",
+    "summary": {
+        "events_total": 2908,
+        "events_with_snapshot": 0,
+        "events_with_resolved_snapshot": 2908,
+        "events_with_change": 2319,
+        "before_match_ratio": 0.9948,
+        "after_match_ratio": 0.1259
+    },
+    "by_event": {
+        "auto_matched::bank_match": {
+            "events": 539,
+            "with_change": 539,
+            "before_match": 530,
+            "after_match": 290,
+            "neither": 9,
+            "fields": {
+                "bank_name": {
+                    "n": 539,
+                    "before": 530,
+                    "after": 290,
+                    "neither": 9
+                }
+            }
+        },
+        "modified::manual_edit": {
+            "events": 403,
+            "with_change": 403,
+            "before_match": 403,
+            "after_match": 0,
+            "neither": 0,
+            "fields": {
+                "supplier_id": {
+                    "n": 403,
+                    "before": 403,
+                    "after": 0,
+                    "neither": 0
+                }
+            }
+        },
+        "status_change::status_change": {
+            "events": 552,
+            "with_change": 552,
+            "before_match": 551,
+            "after_match": 0,
+            "neither": 1,
+            "fields": {
+                "status": {
+                    "n": 552,
+                    "before": 551,
+                    "after": 0,
+                    "neither": 1
+                }
+            }
+        },
+        "modified::bank_match": {
+            "events": 2,
+            "with_change": 2,
+            "before_match": 2,
+            "after_match": 0,
+            "neither": 0,
+            "fields": {
+                "bank_id": {
+                    "n": 2,
+                    "before": 2,
+                    "after": 0,
+                    "neither": 0
+                }
+            }
+        },
+        "release::release": {
+            "events": 155,
+            "with_change": 155,
+            "before_match": 155,
+            "after_match": 0,
+            "neither": 0,
+            "fields": {
+                "status": {
+                    "n": 155,
+                    "before": 155,
+                    "after": 0,
+                    "neither": 0
+                }
+            }
+        },
+        "modified::extension": {
+            "events": 518,
+            "with_change": 518,
+            "before_match": 516,
+            "after_match": 2,
+            "neither": 0,
+            "fields": {
+                "expiry_date": {
+                    "n": 518,
+                    "before": 516,
+                    "after": 2,
+                    "neither": 0
+                }
+            }
+        },
+        "auto_matched::ai_match": {
+            "events": 121,
+            "with_change": 121,
+            "before_match": 121,
+            "after_match": 0,
+            "neither": 0,
+            "fields": {
+                "supplier_id": {
+                    "n": 121,
+                    "before": 121,
+                    "after": 0,
+                    "neither": 0
+                }
+            }
+        },
+        "manual_override::reopened": {
+            "events": 1,
+            "with_change": 1,
+            "before_match": 1,
+            "after_match": 0,
+            "neither": 0,
+            "fields": {
+                "status": {
+                    "n": 1,
+                    "before": 1,
+                    "after": 0,
+                    "neither": 0
+                }
+            }
+        },
+        "modified::correction": {
+            "events": 1,
+            "with_change": 1,
+            "before_match": 1,
+            "after_match": 0,
+            "neither": 0,
+            "fields": {
+                "supplier_id": {
+                    "n": 1,
+                    "before": 1,
+                    "after": 0,
+                    "neither": 0
+                }
+            }
+        },
+        "modified::ai_match": {
+            "events": 27,
+            "with_change": 27,
+            "before_match": 27,
+            "after_match": 0,
+            "neither": 0,
+            "fields": {
+                "supplier_id": {
+                    "n": 27,
+                    "before": 27,
+                    "after": 0,
+                    "neither": 0
+                }
+            }
+        }
+    },
+    "error": ""
+}

@@ -1,0 +1,59 @@
+{
+    "generated_at": "2026-02-27T04:02:35+03:00",
+    "mode": {
+        "apply_migrations": false,
+        "skip_connectivity": false
+    },
+    "target": {
+        "driver": "pgsql",
+        "host": "127.0.0.1",
+        "port": 5432,
+        "database": "wbgl",
+        "user": "wbgl_user",
+        "sslmode": "prefer"
+    },
+    "checks": {
+        "extensions": {
+            "pdo_pgsql": true,
+            "pgsql": true
+        },
+        "driver_status": {
+            "ok": true,
+            "exit_code": 0,
+            "driver": "pgsql",
+            "connectivity": true,
+            "error": ""
+        },
+        "portability": {
+            "ok": true,
+            "exit_code": 0,
+            "high_blockers": 0,
+            "medium_issues": 0
+        },
+        "migrate": {
+            "ok": true,
+            "exit_code": 0,
+            "mode": "dry-run",
+            "stderr": ""
+        },
+        "migration_status": {
+            "ok": true,
+            "exit_code": 0,
+            "stderr": ""
+        },
+        "fingerprint": {
+            "ok": true,
+            "exit_code": 0,
+            "driver": "pgsql",
+            "tables_count": 34,
+            "stderr": ""
+        }
+    },
+    "summary": {
+        "extensions_ready": true,
+        "portability_ready": true,
+        "connectivity_ready": true,
+        "execution_ready": true,
+        "ready_for_pg_activation": true
+    }
+}

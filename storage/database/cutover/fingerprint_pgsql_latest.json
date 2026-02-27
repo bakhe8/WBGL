@@ -1,0 +1,579 @@
+{
+    "generated_at": "2026-02-27T04:02:35+03:00",
+    "driver": "pgsql",
+    "configuration": {
+        "driver": "pgsql",
+        "host": "127.0.0.1",
+        "port": 5432,
+        "database": "wbgl",
+        "sslmode": "prefer"
+    },
+    "tables_count": 34,
+    "fingerprint": "962eb9d8fecaf3779aef251b0dac1075e2eaf2907bd20b32b2942ec77a711056",
+    "tables": [
+        {
+            "table": "api_access_tokens",
+            "row_count": 0,
+            "columns": [
+                "id",
+                "user_id",
+                "token_name",
+                "token_hash",
+                "token_prefix",
+                "abilities_json",
+                "expires_at",
+                "last_used_at",
+                "revoked_at",
+                "created_at",
+                "updated_at"
+            ],
+            "schema_hash": "dd41cd8adf30bce485b25e504f83e5ac8ccd05b20c77b07bd2efe321db1921c5"
+        },
+        {
+            "table": "audit_trail_events",
+            "row_count": 43,
+            "columns": [
+                "id",
+                "event_type",
+                "actor_user_id",
+                "actor_display",
+                "target_type",
+                "target_id",
+                "action",
+                "severity",
+                "details_json",
+                "ip_address",
+                "user_agent",
+                "created_at"
+            ],
+            "schema_hash": "959f01dedc7f200a04bd91862d6507b9770c7488d345355dddb14a60913e6bb3"
+        },
+        {
+            "table": "bank_alternative_names",
+            "row_count": 266,
+            "columns": [
+                "id",
+                "bank_id",
+                "alternative_name",
+                "normalized_name",
+                "created_at"
+            ],
+            "schema_hash": "1dc9647c74cad0be174ca3948610f86a20a8cbcd92c558c406f298749656547a"
+        },
+        {
+            "table": "banks",
+            "row_count": 37,
+            "columns": [
+                "id",
+                "arabic_name",
+                "english_name",
+                "short_name",
+                "created_at",
+                "updated_at",
+                "department",
+                "address_line1",
+                "contact_email",
+                "normalized_name"
+            ],
+            "schema_hash": "c5c31277b35d9305bb3cd8d0071b482fac2bf19b463efbee806b369ca4f532ed"
+        },
+        {
+            "table": "batch_actions",
+            "row_count": 23,
+            "columns": [
+                "id",
+                "batch_identifier",
+                "guarantee_id",
+                "action_type",
+                "action_payload",
+                "action_at",
+                "action_by"
+            ],
+            "schema_hash": "c556db4480ebe35ed5f90dc696836b995d086f566012d6df89711c846314523a"
+        },
+        {
+            "table": "batch_audit_events",
+            "row_count": 0,
+            "columns": [
+                "id",
+                "import_source",
+                "event_type",
+                "reason",
+                "initiated_by",
+                "payload_json",
+                "created_at"
+            ],
+            "schema_hash": "58c8700d044cf8db7fd337979aff0707c8d7e3109f1d89d7d3ca9eeb86e9c83e"
+        },
+        {
+            "table": "batch_metadata",
+            "row_count": 16,
+            "columns": [
+                "id",
+                "import_source",
+                "batch_name",
+                "batch_notes",
+                "status",
+                "created_at"
+            ],
+            "schema_hash": "a1dbd3ce9edae9c827e2d195ccd86285eee740711f100b15ec3bc7d9be49d7c2"
+        },
+        {
+            "table": "break_glass_events",
+            "row_count": 0,
+            "columns": [
+                "id",
+                "action_name",
+                "target_type",
+                "target_id",
+                "requested_by",
+                "reason",
+                "ticket_ref",
+                "ttl_minutes",
+                "expires_at",
+                "payload_json",
+                "created_at"
+            ],
+            "schema_hash": "c2372ca58c9b434c1855595ce62d0f949cf64e7b589ce1747596b936247f17a2"
+        },
+        {
+            "table": "guarantee_attachments",
+            "row_count": 19,
+            "columns": [
+                "id",
+                "guarantee_id",
+                "file_name",
+                "file_path",
+                "file_size",
+                "file_type",
+                "uploaded_by",
+                "created_at"
+            ],
+            "schema_hash": "a5836b39000043fb5f637da63c3ee8b4c5595e46b52e8cad574e629bb7937ebe"
+        },
+        {
+            "table": "guarantee_decisions",
+            "row_count": 552,
+            "columns": [
+                "id",
+                "guarantee_id",
+                "status",
+                "is_locked",
+                "locked_reason",
+                "supplier_id",
+                "bank_id",
+                "decision_source",
+                "confidence_score",
+                "decided_at",
+                "decided_by",
+                "last_modified_at",
+                "last_modified_by",
+                "manual_override",
+                "active_action",
+                "active_action_set_at",
+                "created_at",
+                "updated_at",
+                "workflow_step",
+                "signatures_received"
+            ],
+            "schema_hash": "ab4d0b766f725a6d9c79b22892e9ba217a36bbbc79614351ae82afa94c061c9b"
+        },
+        {
+            "table": "guarantee_history",
+            "row_count": 2908,
+            "columns": [
+                "id",
+                "guarantee_id",
+                "event_type",
+                "event_subtype",
+                "snapshot_data",
+                "event_details",
+                "created_at",
+                "created_by",
+                "letter_snapshot",
+                "history_version",
+                "patch_data",
+                "anchor_snapshot",
+                "is_anchor",
+                "anchor_reason",
+                "letter_context",
+                "template_version"
+            ],
+            "schema_hash": "7416c9939cd464677bb226598e28af3dd594c47ba6bdddeb280dd34667d98588"
+        },
+        {
+            "table": "guarantee_history_archive",
+            "row_count": 0,
+            "columns": [
+                "id",
+                "original_history_id",
+                "guarantee_id",
+                "event_type",
+                "event_subtype",
+                "snapshot_data",
+                "event_details",
+                "letter_snapshot",
+                "history_version",
+                "patch_data",
+                "anchor_snapshot",
+                "is_anchor",
+                "anchor_reason",
+                "letter_context",
+                "template_version",
+                "created_at",
+                "created_by",
+                "archived_at",
+                "archived_by",
+                "archive_reason",
+                "source_table"
+            ],
+            "schema_hash": "095d7d58941de7bd3ba44f6e16afc05ab02583ab117893f00614831fd869b05c"
+        },
+        {
+            "table": "guarantee_notes",
+            "row_count": 1,
+            "columns": [
+                "id",
+                "guarantee_id",
+                "content",
+                "created_by",
+                "created_at",
+                "updated_at"
+            ],
+            "schema_hash": "0bc04494bbadd158247b03a817de5ce5cff553d35628abfc24013ba462554266"
+        },
+        {
+            "table": "guarantee_occurrences",
+            "row_count": 563,
+            "columns": [
+                "id",
+                "guarantee_id",
+                "batch_identifier",
+                "batch_type",
+                "occurred_at",
+                "raw_hash"
+            ],
+            "schema_hash": "471ad3b4b89f9ddc1a8954a0f2ff431d7bb89d39ba62b0de8221c56cabeaa5a4"
+        },
+        {
+            "table": "guarantees",
+            "row_count": 577,
+            "columns": [
+                "id",
+                "guarantee_number",
+                "raw_data",
+                "import_source",
+                "imported_at",
+                "imported_by",
+                "normalized_supplier_name",
+                "test_batch_id",
+                "test_note",
+                "is_test_data"
+            ],
+            "schema_hash": "e0a2919060e4452de8b8522c045f0c3fbd5eb670c5c41d801fe206b748acaedc"
+        },
+        {
+            "table": "learning_confirmations",
+            "row_count": 93,
+            "columns": [
+                "id",
+                "raw_supplier_name",
+                "normalized_supplier_name",
+                "supplier_id",
+                "confidence",
+                "matched_anchor",
+                "anchor_type",
+                "action",
+                "decision_time_seconds",
+                "guarantee_id",
+                "created_at",
+                "updated_at"
+            ],
+            "schema_hash": "cf95632c9dd4cd80dcf302a92cfeffa07c921d6aba50f379a70e7a04d818fadf"
+        },
+        {
+            "table": "login_rate_limits",
+            "row_count": 0,
+            "columns": [
+                "id",
+                "identifier",
+                "username",
+                "ip_address",
+                "attempt_count",
+                "window_started_at",
+                "locked_until",
+                "last_attempt_at",
+                "created_at",
+                "updated_at"
+            ],
+            "schema_hash": "bba59fc62d90fc9315d61ebed728492ac17ef34ff1da73ce2dda79d0ccfd7ba2"
+        },
+        {
+            "table": "notifications",
+            "row_count": 10,
+            "columns": [
+                "id",
+                "recipient_username",
+                "type",
+                "title",
+                "message",
+                "data_json",
+                "dedupe_key",
+                "is_read",
+                "read_at",
+                "created_at",
+                "updated_at"
+            ],
+            "schema_hash": "384594dade78f4e1ffe8751f86af3aaf3d9b3583c20988e83d01e04089f36ccb"
+        },
+        {
+            "table": "permissions",
+            "row_count": 12,
+            "columns": [
+                "id",
+                "name",
+                "slug",
+                "description",
+                "created_at"
+            ],
+            "schema_hash": "c3075226d73ef6f25d099dcaed1eec7606416b0a784195507d0c7a3c4f3c1010"
+        },
+        {
+            "table": "print_events",
+            "row_count": 1,
+            "columns": [
+                "id",
+                "guarantee_id",
+                "batch_identifier",
+                "event_type",
+                "context",
+                "channel",
+                "source_page",
+                "initiated_by",
+                "payload_json",
+                "created_at"
+            ],
+            "schema_hash": "a2160a3643a8281e6687132fec50e15b3bfe40dad6dad42c849fa9e1354f2405"
+        },
+        {
+            "table": "role_permissions",
+            "row_count": 25,
+            "columns": [
+                "role_id",
+                "permission_id"
+            ],
+            "schema_hash": "2eb91da05343ad00bd5669344f6196e2326cb67fb04b1ce27e2fbeaef97bc6e2"
+        },
+        {
+            "table": "roles",
+            "row_count": 7,
+            "columns": [
+                "id",
+                "name",
+                "slug",
+                "description",
+                "created_at"
+            ],
+            "schema_hash": "c3075226d73ef6f25d099dcaed1eec7606416b0a784195507d0c7a3c4f3c1010"
+        },
+        {
+            "table": "scheduler_dead_letters",
+            "row_count": 0,
+            "columns": [
+                "id",
+                "job_name",
+                "run_token",
+                "last_run_id",
+                "attempts",
+                "max_attempts",
+                "exit_code",
+                "failure_reason",
+                "error_text",
+                "output_text",
+                "status",
+                "resolution_note",
+                "resolved_by",
+                "resolved_at",
+                "created_at",
+                "updated_at"
+            ],
+            "schema_hash": "4d5723a057625c1e3c713c7bf0b7344265708a8e175c9ba821ca15f53aebc9cd"
+        },
+        {
+            "table": "scheduler_job_runs",
+            "row_count": 2,
+            "columns": [
+                "id",
+                "run_token",
+                "job_name",
+                "attempt",
+                "max_attempts",
+                "status",
+                "exit_code",
+                "command_text",
+                "output_text",
+                "error_text",
+                "duration_ms",
+                "started_at",
+                "finished_at"
+            ],
+            "schema_hash": "c5b6106af3a2dbb6cf23297387454228c39d69365759ed04532ecf276cae69bd"
+        },
+        {
+            "table": "schema_migrations",
+            "row_count": 14,
+            "columns": [
+                "id",
+                "migration",
+                "checksum",
+                "applied_at"
+            ],
+            "schema_hash": "cc861f14e1c18e4762f7ef2b76c608eb257705d5296b3e0de9bf33e6ff591f78"
+        },
+        {
+            "table": "settings_audit_logs",
+            "row_count": 0,
+            "columns": [
+                "id",
+                "change_set_token",
+                "setting_key",
+                "old_value_json",
+                "new_value_json",
+                "changed_by",
+                "source_ip",
+                "user_agent",
+                "changed_at"
+            ],
+            "schema_hash": "026bf5f8aa7faf3167e6f333935a97f9c7eaa2cab57292750db956568339facf"
+        },
+        {
+            "table": "supplier_alternative_names",
+            "row_count": 197,
+            "columns": [
+                "id",
+                "supplier_id",
+                "alternative_name",
+                "normalized_name",
+                "source",
+                "usage_count",
+                "created_at"
+            ],
+            "schema_hash": "49617c22abd6399fe01084162ed98606f47d7a18c9534a822feaa61dcfc5da40"
+        },
+        {
+            "table": "supplier_decisions_log",
+            "row_count": 73,
+            "columns": [
+                "id",
+                "guarantee_id",
+                "raw_input",
+                "normalized_input",
+                "chosen_supplier_id",
+                "chosen_supplier_name",
+                "decision_source",
+                "confidence_score",
+                "was_top_suggestion",
+                "decided_at"
+            ],
+            "schema_hash": "0abaae904703f0711199cebc0dc6d15faf53e2cee340aa80a7876f312f124500"
+        },
+        {
+            "table": "supplier_learning_cache",
+            "row_count": 0,
+            "columns": [
+                "id",
+                "normalized_input",
+                "supplier_id",
+                "fuzzy_score",
+                "source_weight",
+                "usage_count",
+                "block_count",
+                "last_used_at"
+            ],
+            "schema_hash": "741f8e33572a8a7df759b948438e02a6497d80c5901c54c8df2b9748fae5633b"
+        },
+        {
+            "table": "supplier_overrides",
+            "row_count": 0,
+            "columns": [
+                "id",
+                "raw_name",
+                "normalized_name",
+                "supplier_id",
+                "reason",
+                "is_active",
+                "created_by",
+                "updated_by",
+                "created_at",
+                "updated_at"
+            ],
+            "schema_hash": "03d2e6e48a7693c118dca23d89220d645d5a6e69abbfe75e6457f5df150c01d1"
+        },
+        {
+            "table": "suppliers",
+            "row_count": 335,
+            "columns": [
+                "id",
+                "official_name",
+                "display_name",
+                "normalized_name",
+                "supplier_normalized_key",
+                "is_confirmed",
+                "created_at",
+                "english_name"
+            ],
+            "schema_hash": "3038b69ee320eb887921dd5156104c80023b94ebd4943debcf6a4fba94d0d74c"
+        },
+        {
+            "table": "undo_requests",
+            "row_count": 0,
+            "columns": [
+                "id",
+                "guarantee_id",
+                "reason",
+                "status",
+                "requested_by",
+                "approved_by",
+                "rejected_by",
+                "executed_by",
+                "decision_note",
+                "approved_at",
+                "rejected_at",
+                "executed_at",
+                "created_at",
+                "updated_at"
+            ],
+            "schema_hash": "86e9a1f81dd8c3a160b7aa3eb4cb2bd176c80068794e6aed9cd93e315a3f8b2f"
+        },
+        {
+            "table": "user_permissions",
+            "row_count": 0,
+            "columns": [
+                "id",
+                "user_id",
+                "permission_id",
+                "override_type",
+                "created_at"
+            ],
+            "schema_hash": "9695980fd9225d5143fa782103b90c3ddf4ac97210a23e07cf45fca9c4c39296"
+        },
+        {
+            "table": "users",
+            "row_count": 6,
+            "columns": [
+                "id",
+                "username",
+                "password_hash",
+                "full_name",
+                "email",
+                "role_id",
+                "last_login",
+                "created_at",
+                "preferred_language",
+                "preferred_theme",
+                "preferred_direction"
+            ],
+            "schema_hash": "ed2b6b725b1c5bba70102fe309e7fee2f73c6e8f21f3b2ef1eed46378290812f"
+        }
+    ]
+}

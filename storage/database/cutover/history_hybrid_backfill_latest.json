@@ -1,0 +1,21 @@
+{
+    "generated_at": "2026-02-27T18:54:24+03:00",
+    "driver": "pgsql",
+    "mode": "dry-run",
+    "scope": {
+        "guarantee_id": null,
+        "limit": null,
+        "strip_snapshot": true
+    },
+    "summary": {
+        "events_scanned": 2908,
+        "guarantees_scanned": 567,
+        "events_rewritten": 0,
+        "anchors_marked": 1815,
+        "patch_only_events": 1093,
+        "snapshots_trimmed": 0,
+        "storage_bytes_before": 677232,
+        "storage_bytes_after": 677232
+    },
+    "error": ""
+}

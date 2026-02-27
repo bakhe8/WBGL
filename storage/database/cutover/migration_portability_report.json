@@ -1,0 +1,110 @@
+{
+    "summary": {
+        "generated_at": "2026-02-27T04:02:34+03:00",
+        "total_migrations": 14,
+        "portable_migrations": 14,
+        "high_blockers": 0,
+        "medium_issues": 0,
+        "ready_for_pgsql_cutover": true
+    },
+    "results": [
+        {
+            "migration": "20260226_000001_add_history_timeline_indexes.sql",
+            "transform_applied": false,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000002_add_login_rate_limits.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000003_create_undo_requests_table.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000004_create_notifications_table.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000005_add_hybrid_history_columns.sql",
+            "transform_applied": false,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000006_create_supplier_overrides_table.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000007_create_print_events_table.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000008_create_scheduler_job_runs_table.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000009_create_settings_audit_logs_table.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000010_create_scheduler_dead_letters_table.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000011_add_api_tokens_and_user_language.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000012_break_glass_and_batch_governance.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260226_000013_add_ui_preferences_and_audit_trail.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        },
+        {
+            "migration": "20260227_000014_create_guarantee_history_archive.sql",
+            "transform_applied": true,
+            "issues": [],
+            "portable": true,
+            "high_blockers": []
+        }
+    ]
+}

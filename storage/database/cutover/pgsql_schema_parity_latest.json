@@ -1,0 +1,604 @@
+{
+    "generated_at": "2026-02-27T21:08:42+03:00",
+    "source": {
+        "sqlite": "C:\\Users\\Bakheet\\Documents\\Projects\\Work\\WBGL\/storage\/database\/app.sqlite"
+    },
+    "target": {
+        "host": "127.0.0.1",
+        "port": 5432,
+        "database": "wbgl",
+        "user": "wbgl_user",
+        "sslmode": "prefer"
+    },
+    "waivers": {
+        "file": "C:\\Users\\Bakheet\\Documents\\Projects\\Work\\WBGL\/docs\/PGSQL_PARITY_WAIVERS.json",
+        "loaded": true,
+        "error": "",
+        "row_count_entries": 5,
+        "type_mismatch_entries": 2
+    },
+    "summary": {
+        "tables_in_sqlite": 34,
+        "tables_in_pgsql": 34,
+        "missing_tables_in_pgsql": 0,
+        "extra_tables_in_pgsql": 0,
+        "missing_columns_in_pgsql": 0,
+        "type_mismatches": 0,
+        "type_mismatches_waived": 2,
+        "row_count_mismatches": 3,
+        "row_count_mismatches_waived": 4,
+        "migration_files": 16,
+        "migration_pending_in_pgsql": 0,
+        "waiver_active": true,
+        "schema_parity_ok": true,
+        "migration_parity_ok": true,
+        "runtime_ready": false
+    },
+    "tables": {
+        "missing_in_pgsql": [],
+        "extra_in_pgsql": [],
+        "common": [
+            {
+                "table": "api_access_tokens",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 0,
+                    "pgsql": 0,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "audit_trail_events",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 87,
+                    "pgsql": 87,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "bank_alternative_names",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 266,
+                    "pgsql": 266,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "banks",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [
+                    {
+                        "column": "created_at",
+                        "sqlite_type": "numeric",
+                        "pgsql_type": "text",
+                        "waiver_reason": "Legacy SQLite NUM affinity is accepted as TEXT in PostgreSQL target contract."
+                    },
+                    {
+                        "column": "updated_at",
+                        "sqlite_type": "numeric",
+                        "pgsql_type": "text",
+                        "waiver_reason": "Legacy SQLite NUM affinity is accepted as TEXT in PostgreSQL target contract."
+                    }
+                ],
+                "row_count": {
+                    "sqlite": 37,
+                    "pgsql": 37,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "batch_actions",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 23,
+                    "pgsql": 23,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "batch_audit_events",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 0,
+                    "pgsql": 0,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "batch_metadata",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 16,
+                    "pgsql": 16,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "break_glass_events",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 0,
+                    "pgsql": 0,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "guarantee_attachments",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 19,
+                    "pgsql": 19,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "guarantee_decisions",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 558,
+                    "pgsql": 552,
+                    "match": false,
+                    "delta": 6,
+                    "waived": true,
+                    "waiver": {
+                        "reason": "SQLite source contains orphan rows that are intentionally rejected by PostgreSQL FK constraints.",
+                        "max_delta": 100
+                    }
+                }
+            },
+            {
+                "table": "guarantee_history",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 2934,
+                    "pgsql": 2908,
+                    "match": false,
+                    "delta": 26,
+                    "waived": true,
+                    "waiver": {
+                        "reason": "SQLite source contains orphan timeline rows that are intentionally rejected by PostgreSQL FK constraints.",
+                        "max_delta": 300
+                    }
+                }
+            },
+            {
+                "table": "guarantee_history_archive",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 0,
+                    "pgsql": 0,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "guarantee_notes",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 1,
+                    "pgsql": 1,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "guarantee_occurrences",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 590,
+                    "pgsql": 563,
+                    "match": false,
+                    "delta": 27,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "guarantees",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 577,
+                    "pgsql": 577,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "learning_confirmations",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 103,
+                    "pgsql": 93,
+                    "match": false,
+                    "delta": 10,
+                    "waived": true,
+                    "waiver": {
+                        "reason": "Legacy source rows violate integer contract for decision_time_seconds and are skipped in PostgreSQL transfer.",
+                        "max_delta": 50
+                    }
+                }
+            },
+            {
+                "table": "login_rate_limits",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 0,
+                    "pgsql": 0,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "notifications",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 12,
+                    "pgsql": 15,
+                    "match": false,
+                    "delta": 3,
+                    "waived": true,
+                    "waiver": {
+                        "reason": "Notification queue is operational and can drift between environments during live smoke\/integration runs.",
+                        "max_delta": 200
+                    }
+                }
+            },
+            {
+                "table": "permissions",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 12,
+                    "pgsql": 12,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "print_events",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 1,
+                    "pgsql": 1,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "role_permissions",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 25,
+                    "pgsql": 25,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "roles",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 7,
+                    "pgsql": 7,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "scheduler_dead_letters",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 0,
+                    "pgsql": 0,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "scheduler_job_runs",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 2,
+                    "pgsql": 2,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "schema_migrations",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 14,
+                    "pgsql": 16,
+                    "match": false,
+                    "delta": 2,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "settings_audit_logs",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 0,
+                    "pgsql": 0,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "supplier_alternative_names",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 197,
+                    "pgsql": 197,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "supplier_decisions_log",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 73,
+                    "pgsql": 73,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "supplier_learning_cache",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 0,
+                    "pgsql": 0,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "supplier_overrides",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 0,
+                    "pgsql": 0,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "suppliers",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 335,
+                    "pgsql": 335,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "undo_requests",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 0,
+                    "pgsql": 0,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "user_permissions",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 0,
+                    "pgsql": 0,
+                    "match": true,
+                    "delta": 0,
+                    "waived": false,
+                    "waiver": null
+                }
+            },
+            {
+                "table": "users",
+                "missing_columns_in_pgsql": [],
+                "extra_columns_in_pgsql": [],
+                "type_mismatches": [],
+                "type_mismatches_waived": [],
+                "row_count": {
+                    "sqlite": 7,
+                    "pgsql": 6,
+                    "match": false,
+                    "delta": 1,
+                    "waived": false,
+                    "waiver": null
+                }
+            }
+        ]
+    },
+    "migrations": {
+        "applied": [
+            "20260226_000001_add_history_timeline_indexes.sql",
+            "20260226_000002_add_login_rate_limits.sql",
+            "20260226_000003_create_undo_requests_table.sql",
+            "20260226_000004_create_notifications_table.sql",
+            "20260226_000005_add_hybrid_history_columns.sql",
+            "20260226_000006_create_supplier_overrides_table.sql",
+            "20260226_000007_create_print_events_table.sql",
+            "20260226_000008_create_scheduler_job_runs_table.sql",
+            "20260226_000009_create_settings_audit_logs_table.sql",
+            "20260226_000010_create_scheduler_dead_letters_table.sql",
+            "20260226_000011_add_api_tokens_and_user_language.sql",
+            "20260226_000012_break_glass_and_batch_governance.sql",
+            "20260226_000013_add_ui_preferences_and_audit_trail.sql",
+            "20260227_000014_create_guarantee_history_archive.sql",
+            "20260227_000015_normalize_is_test_data_nulls.sql",
+            "20260227_000016_enforce_zero_history_snapshot_data.sql"
+        ],
+        "pending": []
+    },
+    "artifacts": {
+        "timestamped_report": "C:\\Users\\Bakheet\\Documents\\Projects\\Work\\WBGL\/storage\/database\/cutover\\pgsql_schema_parity_20260227_210842.json",
+        "latest_report": "C:\\Users\\Bakheet\\Documents\\Projects\\Work\\WBGL\/storage\/database\/cutover\\pgsql_schema_parity_latest.json"
+    },
+    "error": ""
+}
