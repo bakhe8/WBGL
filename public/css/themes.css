@@ -1,0 +1,125 @@
+/*
+ * WBGL Theme Tokens + Directional Overrides
+ * Loaded at runtime by public/js/theme.js
+ */
+
+:root {
+    --semantic-primary: var(--accent-primary);
+    --semantic-success: var(--accent-success);
+    --semantic-warning: var(--accent-warning);
+    --semantic-danger: var(--accent-danger);
+
+    /* Backward compatible aliases used by older views */
+    --color-primary: var(--accent-primary);
+    --color-success: var(--accent-success);
+    --color-danger: var(--accent-danger);
+}
+
+:root[data-theme='light'] {
+    color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+    color-scheme: dark;
+    --bg-body: #0b1220;
+    --bg-card: #111b2f;
+    --bg-secondary: #19263d;
+    --bg-neutral: #1c2a43;
+    --bg-hover: #23344f;
+
+    --border-primary: #2f415f;
+    --border-light: #243552;
+    --border-neutral: #4f6a92;
+    --border-focus: #60a5fa;
+
+    --text-primary: #edf2ff;
+    --text-secondary: #d3def5;
+    --text-muted: #afc0e1;
+    --text-light: #90a7d0;
+
+    --accent-primary: #60a5fa;
+    --accent-primary-hover: #3b82f6;
+    --accent-primary-light: rgba(96, 165, 250, 0.2);
+
+    --accent-success: #34d399;
+    --accent-success-hover: #10b981;
+    --accent-success-light: rgba(52, 211, 153, 0.2);
+
+    --accent-warning: #fbbf24;
+    --accent-warning-hover: #f59e0b;
+    --accent-warning-light: rgba(251, 191, 36, 0.2);
+
+    --accent-danger: #f87171;
+    --accent-danger-hover: #ef4444;
+    --accent-danger-light: rgba(248, 113, 113, 0.2);
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 18px 38px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme='desert'] {
+    color-scheme: light;
+    --bg-body: #f6f0e3;
+    --bg-card: #fffaf0;
+    --bg-secondary: #f2e7d2;
+    --bg-neutral: #f9f1df;
+    --bg-hover: #f0e1c7;
+
+    --border-primary: #d6c2a0;
+    --border-light: #e7d9bd;
+    --border-neutral: #b8925c;
+    --border-focus: #b45309;
+
+    --text-primary: #3b2f1b;
+    --text-secondary: #5b4522;
+    --text-muted: #785b30;
+    --text-light: #9a7640;
+
+    --accent-primary: #c26a1b;
+    --accent-primary-hover: #a4520d;
+    --accent-primary-light: rgba(194, 106, 27, 0.18);
+
+    --accent-success: #2f855a;
+    --accent-success-hover: #276749;
+    --accent-success-light: rgba(47, 133, 90, 0.16);
+
+    --accent-warning: #d97706;
+    --accent-warning-hover: #b45309;
+    --accent-warning-light: rgba(217, 119, 6, 0.18);
+
+    --accent-danger: #b42318;
+    --accent-danger-hover: #912018;
+    --accent-danger-light: rgba(180, 35, 24, 0.18);
+}
+
+/* Direction-aware fixes for currently hardcoded LTR/RTL surfaces */
+html[dir='ltr'] .search-icon {
+    right: auto;
+    left: 12px;
+}
+
+html[dir='ltr'] .clear-search {
+    left: auto;
+    right: 10px;
+}
+
+html[dir='ltr'] .search-input {
+    padding-left: 40px;
+    padding-right: 36px;
+}
+
+html[dir='ltr'] .sidebar {
+    border-right: none;
+    border-left: 1px solid var(--border-primary);
+}
+
+html[dir='ltr'] .timeline-panel,
+html[dir='ltr'] .timeline-sidebar {
+    border-left: none;
+    border-right: 1px solid var(--border-primary);
+}
+
+.wbgl-hidden-by-policy {
+    display: none !important;
+}

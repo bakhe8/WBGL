@@ -55,6 +55,8 @@ function Test-PortAvailable {
 }
 
 function Get-TargetPort {
+    $defaultPort = 8181
+
     if ($Port -gt 0) {
         return $Port
     }
@@ -69,14 +71,15 @@ function Get-TargetPort {
         exit 1
     }
 
-    for ($candidatePort = 8000; $candidatePort -le 8100; $candidatePort++) {
-        if (Test-PortAvailable -TargetPort $candidatePort) {
-            return $candidatePort
+    if (Test-Path $portFile) {
+        $savedPortRaw = (Get-Content $portFile | Select-Object -First 1).Trim()
+        [int]$savedPort = 0
+        if ([int]::TryParse($savedPortRaw, [ref]$savedPort) -and $savedPort -ge 1024 -and $savedPort -le 65535) {
+            return $savedPort
         }
     }
 
-    Write-Info "✗ لا يوجد منفذ متاح ضمن النطاق 8000-8100" "Red"
-    exit 1
+    return $defaultPort
 }
 
 function Get-PidsOnPort {
@@ -169,6 +172,17 @@ function Start-Server {
     if (-not $phpPath) {
         Write-Info "✗ لم يتم العثور على PHP" "Red"
         exit 1
+    }
+
+    # Ensure local PHP runtime can resolve dependent DLLs (pgsql/sqlite extensions on Windows).
+    $phpDir = Split-Path -Parent $phpPath
+    if ($phpDir -and (Test-Path $phpDir)) {
+        if ($env:PATH -notlike "$phpDir*") {
+            $env:PATH = "$phpDir;$env:PATH"
+        }
+        if (-not $env:PHPRC) {
+            $env:PHPRC = $phpDir
+        }
     }
 
     if (-not (Test-PortAvailable -TargetPort $TargetPort)) {

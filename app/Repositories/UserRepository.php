@@ -39,17 +39,32 @@ class UserRepository
 
     public function create(User $user): User
     {
-        $stmt = $this->db->prepare("
-            INSERT INTO users (username, password_hash, full_name, email, role_id)
-            VALUES (?, ?, ?, ?, ?)
-        ");
-        $stmt->execute([
+        $columns = ['username', 'password_hash', 'full_name', 'email', 'role_id'];
+        $values = [
             $user->username,
             $user->passwordHash,
             $user->fullName,
             $user->email,
-            $user->roleId
-        ]);
+            $user->roleId,
+        ];
+
+        if ($this->hasPreferredLanguageColumn()) {
+            $columns[] = 'preferred_language';
+            $values[] = $this->normalizeLanguage($user->preferredLanguage);
+        }
+        if ($this->hasPreferredThemeColumn()) {
+            $columns[] = 'preferred_theme';
+            $values[] = $this->normalizeTheme($user->preferredTheme);
+        }
+        if ($this->hasPreferredDirectionColumn()) {
+            $columns[] = 'preferred_direction';
+            $values[] = $this->normalizeDirection($user->preferredDirection);
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($columns), '?'));
+        $sql = 'INSERT INTO users (' . implode(', ', $columns) . ') VALUES (' . $placeholders . ')';
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($values);
 
         $id = (int)$this->db->lastInsertId();
         return $this->find($id);
@@ -63,23 +78,80 @@ class UserRepository
 
     public function update(User $user): bool
     {
-        $stmt = $this->db->prepare("
-            UPDATE users
-            SET username = ?,
-                password_hash = ?,
-                full_name = ?,
-                email = ?,
-                role_id = ?
-            WHERE id = ?
-        ");
-        return $stmt->execute([
+        $sets = [
+            'username = ?',
+            'password_hash = ?',
+            'full_name = ?',
+            'email = ?',
+            'role_id = ?',
+        ];
+        $values = [
             $user->username,
             $user->passwordHash,
             $user->fullName,
             $user->email,
             $user->roleId,
-            $user->id
-        ]);
+        ];
+
+        if ($this->hasPreferredLanguageColumn()) {
+            $sets[] = 'preferred_language = ?';
+            $values[] = $this->normalizeLanguage($user->preferredLanguage);
+        }
+        if ($this->hasPreferredThemeColumn()) {
+            $sets[] = 'preferred_theme = ?';
+            $values[] = $this->normalizeTheme($user->preferredTheme);
+        }
+        if ($this->hasPreferredDirectionColumn()) {
+            $sets[] = 'preferred_direction = ?';
+            $values[] = $this->normalizeDirection($user->preferredDirection);
+        }
+
+        $values[] = $user->id;
+
+        $sql = 'UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?';
+        $stmt = $this->db->prepare($sql);
+        return $stmt->execute($values);
+    }
+
+    public function updatePreferredLanguage(int $userId, string $language): void
+    {
+        if (!$this->hasPreferredLanguageColumn()) {
+            return;
+        }
+        $stmt = $this->db->prepare("UPDATE users SET preferred_language = ? WHERE id = ?");
+        $stmt->execute([$this->normalizeLanguage($language), $userId]);
+    }
+
+    public function updateUiPreferences(
+        int $userId,
+        ?string $language = null,
+        ?string $theme = null,
+        ?string $direction = null
+    ): void {
+        $sets = [];
+        $values = [];
+
+        if ($language !== null && $this->hasPreferredLanguageColumn()) {
+            $sets[] = 'preferred_language = ?';
+            $values[] = $this->normalizeLanguage($language);
+        }
+        if ($theme !== null && $this->hasPreferredThemeColumn()) {
+            $sets[] = 'preferred_theme = ?';
+            $values[] = $this->normalizeTheme($theme);
+        }
+        if ($direction !== null && $this->hasPreferredDirectionColumn()) {
+            $sets[] = 'preferred_direction = ?';
+            $values[] = $this->normalizeDirection($direction);
+        }
+
+        if (empty($sets)) {
+            return;
+        }
+
+        $values[] = $userId;
+        $sql = 'UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?';
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($values);
     }
 
     public function delete(int $id): bool
@@ -142,8 +214,44 @@ class UserRepository
             $row['full_name'],
             $row['email'] ?? null,
             isset($row['role_id']) ? (int)$row['role_id'] : null,
+            $this->normalizeLanguage((string)($row['preferred_language'] ?? 'ar')),
+            $this->normalizeTheme((string)($row['preferred_theme'] ?? 'system')),
+            $this->normalizeDirection((string)($row['preferred_direction'] ?? 'auto')),
             $row['last_login'] ?? null,
             $row['created_at']
         );
+    }
+
+    private function normalizeLanguage(string $language): string
+    {
+        $language = strtolower(trim($language));
+        return in_array($language, ['ar', 'en'], true) ? $language : 'ar';
+    }
+
+    private function normalizeTheme(string $theme): string
+    {
+        $theme = strtolower(trim($theme));
+        return in_array($theme, ['system', 'light', 'dark', 'desert'], true) ? $theme : 'system';
+    }
+
+    private function normalizeDirection(string $direction): string
+    {
+        $direction = strtolower(trim($direction));
+        return in_array($direction, ['auto', 'rtl', 'ltr'], true) ? $direction : 'auto';
+    }
+
+    private function hasPreferredLanguageColumn(): bool
+    {
+        return true;
+    }
+
+    private function hasPreferredThemeColumn(): bool
+    {
+        return true;
+    }
+
+    private function hasPreferredDirectionColumn(): bool
+    {
+        return true;
     }
 }

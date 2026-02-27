@@ -191,14 +191,14 @@ $disabledTitle = !$isReady ? 'title="غير متاح قبل اكتمال بيا�
                 <?php if (!empty($supplierMatch['suggestions'])): ?>
                     <?php foreach ($supplierMatch['suggestions'] as $sugg):
                         // Skip if this suggestion is already the selected & approved supplier
-                        $isSelected = ($record['supplier_id'] == ($sugg['id'] ?? 0));
+                        $isSelected = ($record['supplier_id'] == ($sugg['supplier_id'] ?? 0));
                         $isApproved = ($record['status'] ?? '') === 'ready' || ($record['status'] ?? '') === 'issued'; // "Ready" or "Issued"
 
                         if ($isSelected && $isApproved) continue;
                     ?>
                         <?php
                         // Determine confidence level for tooltip
-                        $score = $sugg['score'] ?? 0;
+                        $score = $sugg['confidence'] ?? 0;
                         $tooltipText = 'ثقة عالية';
                         if ($score < 70) $tooltipText = 'ثقة متوسطة';
                         if ($score < 50) $tooltipText = 'ثقة منخفضة';
@@ -211,12 +211,12 @@ $disabledTitle = !$isReady ? 'title="غير متاح قبل اكتمال بيا�
                         <!-- ✅ UX UNIFICATION: Uniform display with subtle opacity + tooltip -->
                         <button class="chip chip-unified"
                             data-action="selectSupplier"
-                            data-id="<?= $sugg['id'] ?? 0 ?>"
-                            data-name="<?= htmlspecialchars($sugg['name'] ?? '') ?>"
+                            data-id="<?= $sugg['supplier_id'] ?? 0 ?>"
+                            data-name="<?= htmlspecialchars($sugg['official_name'] ?? '') ?>"
                             data-confidence="<?= $confidenceLevel ?>"
                             title="<?= $tooltipText ?>">
-                            <span class="chip-name"><?= htmlspecialchars($sugg['name'] ?? '') ?></span>
-                            <span class="chip-confidence"><?= $sugg['score'] ?? 0 ?>%</span>
+                            <span class="chip-name"><?= htmlspecialchars($sugg['official_name'] ?? '') ?></span>
+                            <span class="chip-confidence"><?= $sugg['confidence'] ?? 0 ?>%</span>
                         </button>
                     <?php endforeach; ?>
                 <?php else: ?>

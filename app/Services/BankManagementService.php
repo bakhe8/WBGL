@@ -64,7 +64,7 @@ class BankManagementService
                     arabic_name, english_name, short_name, 
                     department, address_line1, contact_email,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ");
             
             $stmt->execute([

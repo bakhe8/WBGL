@@ -4,11 +4,12 @@
  * Create single guarantee manually
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Services\ImportService;
 
-header('Content-Type: application/json; charset=utf-8');
+wbgl_api_json_headers();
+wbgl_api_require_permission('manual_entry');
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
@@ -25,7 +26,8 @@ try {
 
     // Create using ImportService
     $service = new ImportService();
-    $id = $service->createManually($input, 'web_user');
+    $createdBy = wbgl_api_current_user_display();
+    $id = $service->createManually($input, $createdBy);
 
     echo json_encode([
         'success' => true,
@@ -40,7 +42,7 @@ try {
         if (function_exists('fastcgi_finish_request')) {
             fastcgi_finish_request();
         }
-        $processor = new \App\Services\SmartProcessingService('manual', 'web_user');
+        $processor = new \App\Services\SmartProcessingService('manual', $createdBy);
         $processor->processNewGuarantees(1);
     } catch (\Throwable $e) { /* background task */ }
 

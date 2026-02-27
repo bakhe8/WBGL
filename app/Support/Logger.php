@@ -11,6 +11,7 @@ class Logger
     private const LEVEL_ERROR = 'ERROR';
 
     private static ?bool $productionMode = null;
+    private static ?string $logFormat = null;
 
     private static function getLogPath(): string
     {
@@ -46,14 +47,114 @@ class Logger
         return !self::isProductionMode();
     }
 
+    private static function resolveLogFormat(): string
+    {
+        if (self::$logFormat !== null) {
+            return self::$logFormat;
+        }
+
+        $format = 'json';
+        try {
+            $settings = new Settings();
+            $configured = strtolower(trim((string)$settings->get('LOG_FORMAT', 'json')));
+            if (in_array($configured, ['json', 'text'], true)) {
+                $format = $configured;
+            }
+        } catch (\Throwable $e) {
+            $format = 'json';
+        }
+
+        self::$logFormat = $format;
+        return self::$logFormat;
+    }
+
+    private static function resolveRequestId(): ?string
+    {
+        $candidates = [
+            $_SERVER['WBGL_REQUEST_ID'] ?? null,
+            $_SERVER['HTTP_X_REQUEST_ID'] ?? null,
+            $_SERVER['UNIQUE_ID'] ?? null,
+        ];
+
+        foreach ($candidates as $value) {
+            if (!is_string($value)) {
+                continue;
+            }
+            $trimmed = trim($value);
+            if ($trimmed !== '') {
+                return $trimmed;
+            }
+        }
+
+        return null;
+    }
+
+    private static function normalizeContext(array $context): array
+    {
+        $normalized = [];
+        foreach ($context as $key => $value) {
+            if (is_scalar($value) || $value === null) {
+                $normalized[(string)$key] = $value;
+                continue;
+            }
+            if (is_array($value)) {
+                $normalized[(string)$key] = $value;
+                continue;
+            }
+            $normalized[(string)$key] = (string)$value;
+        }
+        return $normalized;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function structuredPayload(string $level, string $message, array $context = []): array
+    {
+        $payload = [
+            'timestamp' => date('c'),
+            'level' => $level,
+            'message' => $message,
+            'request_id' => self::resolveRequestId(),
+            'method' => $_SERVER['REQUEST_METHOD'] ?? null,
+            'path' => $_SERVER['REQUEST_URI'] ?? null,
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
+            'context' => self::normalizeContext($context),
+        ];
+
+        try {
+            $user = AuthService::getCurrentUser();
+            if ($user !== null) {
+                $payload['user'] = [
+                    'id' => $user->id,
+                    'username' => $user->username,
+                    'role_id' => $user->roleId,
+                ];
+            }
+        } catch (\Throwable $e) {
+            // Non-blocking in logger context.
+        }
+
+        return $payload;
+    }
+
     private static function write(string $level, string $message, array $context = []): void
     {
         if (!self::shouldLog($level)) {
             return;
         }
 
+        if (self::resolveLogFormat() === 'json') {
+            $payload = self::structuredPayload($level, $message, $context);
+            $encoded = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $logMessage = ($encoded !== false ? $encoded : '{"level":"ERROR","message":"logger_encoding_failed"}');
+            $logMessage .= PHP_EOL;
+            file_put_contents(self::getLogPath(), $logMessage, FILE_APPEND | LOCK_EX);
+            return;
+        }
+
         $timestamp = date('Y-m-d H:i:s');
-        $contextStr = !empty($context) ? json_encode($context, JSON_UNESCAPED_UNICODE) : '';
+        $contextStr = !empty($context) ? json_encode(self::normalizeContext($context), JSON_UNESCAPED_UNICODE) : '';
         $logMessage = "[$timestamp] {$level}: $message";
         if ($contextStr) {
             $logMessage .= " | Context: $contextStr";

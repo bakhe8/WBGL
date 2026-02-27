@@ -5,25 +5,15 @@
  * Progresses a guarantee to the next workflow stage
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
-use App\Support\AuthService;
 use App\Support\Database;
-use App\Support\Guard;
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Services\WorkflowService;
 use App\Services\TimelineRecorder;
 
 header('Content-Type: application/json; charset=utf-8');
-
-// 1. Auth Check
-if (!AuthService::isLoggedIn()) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
-    exit;
-}
-
-$user = AuthService::getCurrentUser();
+wbgl_api_require_login();
 
 // 2. Input Validation
 $input = json_decode(file_get_contents('php://input'), true);
@@ -36,6 +26,7 @@ if (!$guaranteeId) {
 }
 
 try {
+    $userName = wbgl_api_current_user_display();
     $db = Database::connect();
     $decisionRepo = new GuaranteeDecisionRepository($db);
 
@@ -69,11 +60,12 @@ try {
 
     // Special Handling: Signatures (if multiple required)
     if ($nextStep === WorkflowService::STAGE_SIGNED) {
+        $oldSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
         $decision->signaturesReceived++;
         if ($decision->signaturesReceived < WorkflowService::signaturesRequired()) {
             // Stay in APPROVED stage but record signature
             $decisionRepo->createOrUpdate($decision);
-            TimelineRecorder::recordWorkflowEvent($guaranteeId, $currentStep, "signature_received_" . $decision->signaturesReceived, $user->fullName);
+            TimelineRecorder::recordWorkflowEvent($guaranteeId, $currentStep, "signature_received_" . $decision->signaturesReceived, $userName, $oldSnapshot);
             echo json_encode([
                 'success' => true,
                 'message' => 'تم تسجيل التوقيع بنجاح. بانتظار بقية التواقيع.',
@@ -85,6 +77,7 @@ try {
 
     // 6. Execute Transition
     $oldStep = $decision->workflowStep;
+    $oldSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
     $decision->workflowStep = $nextStep;
 
     // Update decision in DB
@@ -95,7 +88,8 @@ try {
         $guaranteeId,
         $oldStep,
         $nextStep,
-        $user->fullName
+        $userName,
+        $oldSnapshot
     );
 
     echo json_encode([

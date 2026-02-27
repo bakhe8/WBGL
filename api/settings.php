@@ -2,9 +2,11 @@
 header('Content-Type: application/json; charset=utf-8');
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Settings;
+use App\Services\SettingsAuditService;
+wbgl_api_require_permission('manage_users');
 
 // Handle POST request to save settings
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -60,10 +62,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $input['CANDIDATES_LIMIT'] = $value;
         }
 
-        if (isset($input['HISTORICAL_IMPORT_ENABLED'])) {
-            $input['HISTORICAL_IMPORT_ENABLED'] = (bool) $input['HISTORICAL_IMPORT_ENABLED'];
-        }
-        
         // Logical validation: AUTO >= REVIEW
         if (isset($input['MATCH_AUTO_THRESHOLD']) && isset($input['MATCH_REVIEW_THRESHOLD'])) {
             $reviewComparable = $input['MATCH_REVIEW_THRESHOLD'];
@@ -83,7 +81,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Save settings
         $settings = new Settings();
+        $beforeSettings = $settings->all();
         $saved = $settings->save($input);
+
+        try {
+            SettingsAuditService::recordChangeSet(
+                $beforeSettings,
+                $saved,
+                $input,
+                wbgl_api_current_user_display(),
+                $_SERVER['REMOTE_ADDR'] ?? null,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
+        } catch (Throwable $auditError) {
+            // Non-blocking audit trail
+        }
         
         echo json_encode(['success' => true, 'settings' => $saved]);
         

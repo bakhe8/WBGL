@@ -2,12 +2,13 @@
 /**
  * API: Save Note
  */
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Repositories\NoteRepository;
 use App\Support\Input;
 
-header('Content-Type: application/json');
+wbgl_api_json_headers();
+wbgl_api_require_login();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -31,11 +32,12 @@ if (!$guaranteeId || $content === '') {
 }
 
 try {
+    $createdBy = wbgl_api_current_user_display();
     $repo = new NoteRepository();
     $id = $repo->create([
         'guarantee_id' => $guaranteeId,
         'content' => $content,
-        'created_by' => 'User' // Should come from session
+        'created_by' => $createdBy
     ]);
     
     echo json_encode([
@@ -44,7 +46,7 @@ try {
             'id' => $id,
             'content' => $content,
             'created_at' => date('Y-m-d H:i:s'),
-            'created_by' => 'User'
+            'created_by' => $createdBy
         ]
     ]);
     

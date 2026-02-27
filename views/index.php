@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../app/Support/autoload.php';
 
 use App\Support\AuthService;

@@ -15,7 +15,8 @@ if (AuthService::isLoggedIn()) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تسجيل الدخول | WBGL</title>
+    <title data-i18n="login.title">تسجيل الدخول | WBGL</title>
+    <?php include __DIR__ . '/../partials/ui-bootstrap.php'; ?>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -179,37 +180,91 @@ if (AuthService::isLoggedIn()) {
                 transform: rotate(360deg);
             }
         }
+
+        .ui-toggle-group {
+            position: fixed;
+            top: 16px;
+            inset-inline-start: 16px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 10;
+        }
+
+        .lang-toggle {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 999px;
+            padding: 8px 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .lang-toggle:hover {
+            background: rgba(255, 255, 255, 0.14);
+        }
     </style>
 </head>
 
-<body>
+<body class="login-page" data-i18n-namespaces="common,auth">
+    <div class="ui-toggle-group">
+        <button type="button" class="lang-toggle" data-wbgl-lang-toggle data-i18n-title="nav.language">
+            <span>🌐</span>
+            <span data-i18n="nav.language">اللغة</span>
+            <span id="wbgl-lang-current">AR</span>
+        </button>
+        <button type="button" class="lang-toggle" data-wbgl-direction-toggle data-i18n-title="nav.direction">
+            <span>↔</span>
+            <span data-i18n="nav.direction">الاتجاه</span>
+            <span id="wbgl-direction-current">AUTO</span>
+        </button>
+        <button type="button" class="lang-toggle" data-wbgl-theme-toggle data-i18n-title="nav.theme">
+            <span>🎨</span>
+            <span data-i18n="nav.theme">المظهر</span>
+            <span id="wbgl-theme-current">SYS</span>
+        </button>
+    </div>
+
     <div class="login-card">
         <div class="login-header">
             <div class="brand-logo">B</div>
-            <h1 class="login-title">WBGL System</h1>
-            <p class="login-subtitle">نظام إدارة الضمانات البنكية</p>
+            <h1 class="login-title" data-i18n="login.brand_title">WBGL System</h1>
+            <p class="login-subtitle" data-i18n="login.subtitle">نظام إدارة الضمانات البنكية</p>
         </div>
 
         <div id="error-alert" class="error-message"></div>
 
         <form id="login-form">
             <div class="form-group">
-                <label class="form-label" for="username">اسم المستخدم</label>
-                <input type="text" id="username" name="username" class="form-control" placeholder="أدخل اسم المستخدم" required autocomplete="username">
+                <label class="form-label" for="username" data-i18n="login.username">اسم المستخدم</label>
+                <input type="text" id="username" name="username" class="form-control" placeholder="أدخل اسم المستخدم" data-i18n-placeholder="login.username_placeholder" required autocomplete="username">
             </div>
 
             <div class="form-group">
-                <label class="form-label" for="password">كلمة المرور</label>
+                <label class="form-label" for="password" data-i18n="login.password">كلمة المرور</label>
                 <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
             </div>
 
             <button type="submit" id="submit-btn" class="btn-login">
-                <span>دخول</span>
+                <span data-i18n="login.submit">دخول</span>
                 <div id="spinner" class="spinner"></div>
             </button>
         </form>
     </div>
 
+    <script src="/public/js/security.js"></script>
+    <script src="/public/js/i18n.js"></script>
+    <script src="/public/js/direction.js"></script>
+    <script src="/public/js/theme.js"></script>
+    <script src="/public/js/policy.js"></script>
+    <script src="/public/js/nav-manifest.js"></script>
+    <script src="/public/js/ui-runtime.js"></script>
+    <script src="/public/js/global-shortcuts.js"></script>
     <script src="/public/js/main.js"></script>
     <script>
         document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -236,12 +291,34 @@ if (AuthService::isLoggedIn()) {
                     body: JSON.stringify(data)
                 });
 
-                const result = await response.json();
+                let result = {};
+                try {
+                    result = await response.json();
+                } catch (parseError) {
+                    result = {};
+                }
 
-                if (response.ok) {
+                if (response.ok && result?.success === true) {
+                    if (result?.user?.preferences?.language && window.WBGLI18n) {
+                        await window.WBGLI18n.setLanguage(result.user.preferences.language, {
+                            persist: false
+                        });
+                    }
+                    if (result?.user?.preferences?.theme && window.WBGLTheme) {
+                        await window.WBGLTheme.setTheme(result.user.preferences.theme, {
+                            persist: false,
+                            source: 'login'
+                        });
+                    }
+                    if (result?.user?.preferences?.direction_override && window.WBGLDirection) {
+                        await window.WBGLDirection.setOverride(result.user.preferences.direction_override, {
+                            persist: false,
+                            source: 'login'
+                        });
+                    }
                     window.location.href = '/index.php';
                 } else {
-                    errorAlert.textContent = result.message || 'فشل تسجيل الدخول';
+                    errorAlert.textContent = result?.message || result?.error || 'فشل تسجيل الدخول';
                     errorAlert.style.display = 'block';
                 }
             } catch (error) {

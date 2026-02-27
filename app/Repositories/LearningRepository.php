@@ -76,7 +76,7 @@ class LearningRepository
                 raw_supplier_name, normalized_supplier_name, supplier_id, confidence, matched_anchor, 
                 anchor_type, action, decision_time_seconds, guarantee_id,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ");
         
         $stmt->execute([

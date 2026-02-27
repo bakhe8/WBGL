@@ -48,9 +48,16 @@ class TimelineDisplayService
             $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             foreach ($history as $event) {
+                $eventId = isset($event['id']) ? (int)$event['id'] : 0;
+                $resolvedSnapshot = TimelineHybridLedger::resolveEventSnapshot($db, $event);
+                $snapshotRaw = json_encode($resolvedSnapshot, JSON_UNESCAPED_UNICODE);
+                if (!is_string($snapshotRaw) || trim($snapshotRaw) === '') {
+                    $snapshotRaw = '{}';
+                }
+
                 $timeline[] = [
-                    'id' => 'history_' . $event['id'],
-                    'event_id' => $event['id'],
+                    'id' => $eventId,
+                    'event_id' => $eventId,
                     'event_type' => $event['event_type'] ?? 'unknown',
                     'event_subtype' => $event['event_subtype'] ?? null,
                     'type' => $event['event_type'] ?? 'unknown',
@@ -63,8 +70,10 @@ class TimelineDisplayService
                     'description' => json_encode(json_decode($event['event_details'] ?? '{}', true)),
                     'user' => $event['created_by'] ?? 'النظام',
                     'created_by' => $event['created_by'] ?? 'النظام', // ✅ Pass through for view compatibility
-                    'snapshot' => json_decode($event['snapshot_data'] ?? '{}', true),
-                    'snapshot_data' => $event['snapshot_data'] ?? '{}',
+                    'snapshot' => $resolvedSnapshot,
+                    'snapshot_data' => $snapshotRaw ?? '{}',
+                    'anchor_snapshot' => $event['anchor_snapshot'] ?? null,
+                    'patch_data' => $event['patch_data'] ?? null,
                     'letter_snapshot' => $event['letter_snapshot'] ?? null,
                     'source_badge' => in_array(
                         $event['created_by'] ?? 'system', 

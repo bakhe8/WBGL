@@ -7,17 +7,9 @@
 
 require_once __DIR__ . '/../app/Support/autoload.php';
 
-use App\Support\AuthService;
-use App\Support\Guard;
-use App\Support\Database;
+use App\Support\ViewPolicy;
 
-// Security Check
-if (!AuthService::isLoggedIn() || !Guard::has('manage_users')) {
-    header('Location: /views/login.php');
-    exit;
-}
-
-$currentUser = AuthService::getCurrentUser();
+ViewPolicy::guardView('users.php');
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -26,6 +18,7 @@ $currentUser = AuthService::getCurrentUser();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>إدارة المستخدمين - WBGL</title>
+    <?php include __DIR__ . '/../partials/ui-bootstrap.php'; ?>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../public/css/index-main.css">
     <style>
@@ -344,7 +337,7 @@ $currentUser = AuthService::getCurrentUser();
     </style>
 </head>
 
-<body>
+<body data-i18n-namespaces="common,users">
 
     <div id="loadingOverlay" class="loading-overlay">... جاري التنفيذ</div>
 
@@ -376,6 +369,30 @@ $currentUser = AuthService::getCurrentUser();
                             <label>الدور الوظيفي</label>
                             <select id="roleField" class="form-control" required>
                                 <!-- Loaded via JS -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>لغة الواجهة</label>
+                            <select id="preferredLanguageField" class="form-control">
+                                <option value="ar">العربية (RTL)</option>
+                                <option value="en">English (LTR)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>المظهر</label>
+                            <select id="preferredThemeField" class="form-control">
+                                <option value="system">System</option>
+                                <option value="light">Light</option>
+                                <option value="dark">Dark</option>
+                                <option value="desert">Desert</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>اتجاه الواجهة</label>
+                            <select id="preferredDirectionField" class="form-control">
+                                <option value="auto">Auto</option>
+                                <option value="rtl">RTL</option>
+                                <option value="ltr">LTR</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -423,6 +440,9 @@ $currentUser = AuthService::getCurrentUser();
                         <th>الاسم الكامل</th>
                         <th>اسم المستخدم</th>
                         <th>الدور</th>
+                        <th>اللغة</th>
+                        <th>المظهر</th>
+                        <th>الاتجاه</th>
                         <th>آخر دخول</th>
                         <th style="width: 180px;">إجراءات</th>
                     </tr>
@@ -434,6 +454,14 @@ $currentUser = AuthService::getCurrentUser();
         </div>
     </div>
 
+    <script src="../public/js/security.js?v=<?= time() ?>"></script>
+    <script src="../public/js/i18n.js?v=<?= time() ?>"></script>
+    <script src="../public/js/direction.js?v=<?= time() ?>"></script>
+    <script src="../public/js/theme.js?v=<?= time() ?>"></script>
+    <script src="../public/js/policy.js?v=<?= time() ?>"></script>
+    <script src="../public/js/nav-manifest.js?v=<?= time() ?>"></script>
+    <script src="../public/js/ui-runtime.js?v=<?= time() ?>"></script>
+    <script src="../public/js/global-shortcuts.js?v=<?= time() ?>"></script>
     <script>
         let rolesData = [];
         let allUsers = [];
@@ -470,6 +498,9 @@ $currentUser = AuthService::getCurrentUser();
                             ${user.role_name || 'بدون دور'}
                         </span>
                     </td>
+                    <td>${(user.preferred_language || 'ar').toUpperCase()}</td>
+                    <td>${(user.preferred_theme || 'system').toUpperCase()}</td>
+                    <td>${(user.preferred_direction || 'auto').toUpperCase()}</td>
                     <td style="color:#666">${user.last_login || 'لم يدخل بعد'}</td>
                     <td>
                         <div style="display: flex; gap: 8px;">
@@ -485,6 +516,9 @@ $currentUser = AuthService::getCurrentUser();
             document.getElementById('modalTitle').innerText = 'إضافة مستخدم جديد';
             document.getElementById('userIdField').value = '';
             document.getElementById('userForm').reset();
+            document.getElementById('preferredLanguageField').value = 'ar';
+            document.getElementById('preferredThemeField').value = 'system';
+            document.getElementById('preferredDirectionField').value = 'auto';
             document.getElementById('passwordField').required = true;
             document.getElementById('passwordLabel').innerText = 'كلمة المرور';
             renderPermissionsList([]); // Empty overrides
@@ -501,6 +535,9 @@ $currentUser = AuthService::getCurrentUser();
             document.getElementById('usernameField').value = user.username;
             document.getElementById('emailField').value = user.email || '';
             document.getElementById('roleField').value = user.role_id;
+            document.getElementById('preferredLanguageField').value = user.preferred_language || 'ar';
+            document.getElementById('preferredThemeField').value = user.preferred_theme || 'system';
+            document.getElementById('preferredDirectionField').value = user.preferred_direction || 'auto';
             document.getElementById('passwordField').required = false;
             document.getElementById('passwordField').value = '';
             document.getElementById('passwordLabel').innerText = 'كلمة المرور (اتركها فارغة لعدم التغيير)';
@@ -539,6 +576,9 @@ $currentUser = AuthService::getCurrentUser();
                 username: document.getElementById('usernameField').value,
                 email: document.getElementById('emailField').value,
                 role_id: document.getElementById('roleField').value,
+                preferred_language: document.getElementById('preferredLanguageField').value,
+                preferred_theme: document.getElementById('preferredThemeField').value,
+                preferred_direction: document.getElementById('preferredDirectionField').value,
                 password: document.getElementById('passwordField').value,
                 permissions_overrides: overrides
             };

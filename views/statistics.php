@@ -6,6 +6,9 @@ header("Pragma: no-cache");
 
 require_once __DIR__ . '/../app/Support/autoload.php';
 use App\Support\Database;
+use App\Support\ViewPolicy;
+
+ViewPolicy::guardView('statistics.php');
 
 header('Content-Type: text/html; charset=utf-8');
 
@@ -14,6 +17,23 @@ function formatMoney($amount) { return number_format((float)$amount, 2) . ' <spa
 function formatNumber($num) { return number_format((float)$num); }
 
 $db = Database::connect();
+$statsJsonExpiryExpr = "(g.raw_data::jsonb ->> 'expiry_date')";
+$statsJsonAmountExpr = "(g.raw_data::jsonb ->> 'amount')";
+$statsJsonRawExpiryExpr = "(raw_data::jsonb ->> 'expiry_date')";
+$statsJsonRawAmountExpr = "(raw_data::jsonb ->> 'amount')";
+$statsJsonRawTypeExpr = "(raw_data::jsonb ->> 'type')";
+$statsJsonRawExpiryDateExpr = "(NULLIF({$statsJsonRawExpiryExpr}, '')::date)";
+$statsJsonExpiryDateExpr = "(NULLIF({$statsJsonExpiryExpr}, '')::date)";
+$statsNowDateExpr = 'CURRENT_DATE';
+$statsPlus30DateExpr = "(CURRENT_DATE + INTERVAL '30 days')::date";
+$statsPlus90DateExpr = "(CURRENT_DATE + INTERVAL '90 days')::date";
+$statsPlusYearDateExpr = "(CURRENT_DATE + INTERVAL '1 year')::date";
+$statsMinus7DateExpr = "(CURRENT_DATE - INTERVAL '7 days')::date";
+$statsMinus14DateExpr = "(CURRENT_DATE - INTERVAL '14 days')::date";
+$statsDurationHoursExpr = "(EXTRACT(EPOCH FROM (CAST(d.decided_at AS timestamp) - CAST(g.imported_at AS timestamp))) / 3600.0)";
+$statsHourBucketExpr = "to_char(CAST(h.created_at AS timestamp), 'HH24')";
+$statsWeekdayBucketExpr = "CAST(EXTRACT(DOW FROM CAST(h.created_at AS timestamp)) AS INTEGER)";
+$statsMonthExpiryExpr = "to_char({$statsJsonRawExpiryDateExpr}, 'YYYY-MM')";
 
 // Initialize ROI variables to prevent undefined warnings
 $totalHoursSaved = 0;
@@ -24,10 +44,10 @@ $costSaved = 0;
 $settings = \App\Support\Settings::getInstance();
 $isProd = $settings->isProductionMode();
 // G = with alias 'g', D = direct no alias
-$whereG = $isProd ? " WHERE (g.is_test_data = 0 OR g.is_test_data IS NULL) " : " WHERE 1=1 ";
-$andG   = $isProd ? " AND (g.is_test_data = 0 OR g.is_test_data IS NULL) " : "";
-$whereD = $isProd ? " WHERE (is_test_data = 0 OR is_test_data IS NULL) " : " WHERE 1=1 ";
-$andD   = $isProd ? " AND (is_test_data = 0 OR is_test_data IS NULL) " : "";
+$whereG = $isProd ? " WHERE g.is_test_data = 0 " : " WHERE 1=1 ";
+$andG   = $isProd ? " AND g.is_test_data = 0 " : "";
+$whereD = $isProd ? " WHERE is_test_data = 0 " : " WHERE 1=1 ";
+$andD   = $isProd ? " AND is_test_data = 0 " : "";
 
 try {
     // ============================================
@@ -35,19 +55,19 @@ try {
     // ============================================
     // For subquery with JOIN, we need proper WHERE clause
     $occurrencesQuery = $isProd 
-        ? "SELECT COUNT(*) FROM guarantee_occurrences o JOIN guarantees g ON o.guarantee_id = g.id WHERE (g.is_test_data = 0 OR g.is_test_data IS NULL)"
+        ? "SELECT COUNT(*) FROM guarantee_occurrences o JOIN guarantees g ON o.guarantee_id = g.id WHERE g.is_test_data = 0"
         : "SELECT COUNT(*) FROM guarantee_occurrences o JOIN guarantees g ON o.guarantee_id = g.id";
     
     $overview = $db->query("
         SELECT 
             (SELECT COUNT(*) FROM guarantees $whereD) as total_assets,
             ($occurrencesQuery) as total_occurrences,
-            (SELECT COUNT(*) FROM guarantees WHERE json_extract(raw_data, '\$.expiry_date') >= date('now') $andD) as active_assets,
+            (SELECT COUNT(*) FROM guarantees WHERE {$statsJsonRawExpiryDateExpr} >= {$statsNowDateExpr} $andD) as active_assets,
             (SELECT COUNT(*) FROM batch_metadata WHERE status='active') as active_batches,
-            (SELECT SUM(CAST(json_extract(raw_data, '\$.amount') AS REAL)) FROM guarantees $whereD) as total_amount,
-            (SELECT AVG(CAST(json_extract(raw_data, '\$.amount') AS REAL)) FROM guarantees $whereD) as avg_amount,
-            (SELECT MAX(CAST(json_extract(raw_data, '\$.amount') AS REAL)) FROM guarantees $whereD) as max_amount,
-            (SELECT MIN(CAST(json_extract(raw_data, '\$.amount') AS REAL)) FROM guarantees $whereD) as min_amount
+            (SELECT SUM(CAST({$statsJsonRawAmountExpr} AS REAL)) FROM guarantees $whereD) as total_amount,
+            (SELECT AVG(CAST({$statsJsonRawAmountExpr} AS REAL)) FROM guarantees $whereD) as avg_amount,
+            (SELECT MAX(CAST({$statsJsonRawAmountExpr} AS REAL)) FROM guarantees $whereD) as max_amount,
+            (SELECT MIN(CAST({$statsJsonRawAmountExpr} AS REAL)) FROM guarantees $whereD) as min_amount
     ")->fetch(PDO::FETCH_ASSOC);
 
     $efficiencyRatio = $overview['total_assets'] > 0 
@@ -79,17 +99,18 @@ try {
     $topRecurring = $db->query("
         SELECT 
             g.guarantee_number,
-            COALESCE(s.official_name, 'غير محدد') as supplier,
-            COALESCE(b.arabic_name, 'غير محدد') as bank,
-            COUNT(o.id) as occurrence_count
+            MAX(COALESCE(s.official_name, 'غير محدد')) as supplier,
+            MAX(COALESCE(b.arabic_name, 'غير محدد')) as bank,
+            COUNT(o.id) as occurrence_count,
+            MAX(g.imported_at) as imported_at
         FROM guarantee_occurrences o
         JOIN guarantees g ON o.guarantee_id = g.id
         LEFT JOIN guarantee_decisions d ON g.id = d.guarantee_id
         LEFT JOIN suppliers s ON d.supplier_id = s.id
         LEFT JOIN banks b ON d.bank_id = b.id
         $whereG
-        GROUP BY g.id
-        ORDER BY occurrence_count DESC, g.imported_at DESC
+        GROUP BY g.id, g.guarantee_number
+        ORDER BY occurrence_count DESC, imported_at DESC
         LIMIT 5
     ")->fetchAll(PDO::FETCH_ASSOC);
 
@@ -111,7 +132,7 @@ try {
         SELECT 
             b.arabic_name as bank_name,
             COUNT(*) as count,
-            SUM(CAST(json_extract(g.raw_data, '$.amount') AS REAL)) as total_amount,
+            SUM(CAST({$statsJsonAmountExpr} AS REAL)) as total_amount,
             (SELECT COUNT(*) FROM guarantee_history h 
              JOIN guarantee_decisions d2 ON h.guarantee_id = d2.guarantee_id
              WHERE d2.bank_id = b.id AND h.event_subtype = 'extension') as extensions
@@ -141,16 +162,16 @@ try {
             COUNT(DISTINCT d.guarantee_id) as total,
             COUNT(DISTINCT CASE WHEN h.event_subtype = 'extension' THEN h.guarantee_id END) as extensions,
             COUNT(DISTINCT CASE WHEN h.event_subtype = 'reduction' THEN h.guarantee_id END) as reductions,
-            ROUND((CAST(COUNT(DISTINCT CASE WHEN h.event_subtype = 'extension' THEN h.guarantee_id END) AS REAL) * 0.6 + 
+            ROUND(((CAST(COUNT(DISTINCT CASE WHEN h.event_subtype = 'extension' THEN h.guarantee_id END) AS REAL) * 0.6 + 
                    CAST(COUNT(DISTINCT CASE WHEN h.event_subtype = 'reduction' THEN h.guarantee_id END) AS REAL) * 0.4) / 
-                   CAST(COUNT(DISTINCT d.guarantee_id) AS REAL) * 100, 1) as risk_score
+                   CAST(COUNT(DISTINCT d.guarantee_id) AS REAL) * 100)::numeric, 1) as risk_score
         FROM suppliers s
         JOIN guarantee_decisions d ON s.id = d.supplier_id
         JOIN guarantees g ON d.guarantee_id = g.id
         LEFT JOIN guarantee_history h ON d.guarantee_id = h.guarantee_id
         $whereG
         GROUP BY s.id
-        HAVING total >= 2
+        HAVING COUNT(DISTINCT d.guarantee_id) >= 2
         ORDER BY risk_score DESC
         LIMIT 10
     ")->fetchAll(PDO::FETCH_ASSOC);
@@ -208,16 +229,16 @@ try {
     // ============================================
     $timing = $db->query("
         SELECT 
-            AVG(CAST((julianday(d.decided_at) - julianday(g.imported_at)) * 24 AS REAL)) as avg_hours,
-            MIN(CAST((julianday(d.decided_at) - julianday(g.imported_at)) * 24 AS REAL)) as min_hours,
-            MAX(CAST((julianday(d.decided_at) - julianday(g.imported_at)) * 24 AS REAL)) as max_hours
+            AVG(CAST({$statsDurationHoursExpr} AS REAL)) as avg_hours,
+            MIN(CAST({$statsDurationHoursExpr} AS REAL)) as min_hours,
+            MAX(CAST({$statsDurationHoursExpr} AS REAL)) as max_hours
         FROM guarantee_decisions d
         JOIN guarantees g ON d.guarantee_id = g.id
         WHERE d.decided_at IS NOT NULL $andG
     ")->fetch(PDO::FETCH_ASSOC);
     
     $peakHour = $db->query("
-        SELECT strftime('%H', h.created_at) as hour, COUNT(*) as count
+        SELECT {$statsHourBucketExpr} as hour, COUNT(*) as count
         FROM guarantee_history h
         JOIN guarantees g ON h.guarantee_id = g.id
         $whereG
@@ -243,7 +264,7 @@ try {
     
     $busiestDay = $db->query("
         SELECT 
-            CASE CAST(strftime('%w', h.created_at) AS INTEGER)
+            CASE {$statsWeekdayBucketExpr}
                 WHEN 0 THEN 'الأحد' WHEN 1 THEN 'الإثنين' WHEN 2 THEN 'الثلاثاء'
                 WHEN 3 THEN 'الأربعاء' WHEN 4 THEN 'الخميس' WHEN 5 THEN 'الجمعة' WHEN 6 THEN 'السبت'
             END as weekday,
@@ -251,15 +272,15 @@ try {
         FROM guarantee_history h
         JOIN guarantees g ON h.guarantee_id = g.id
         $whereG
-        GROUP BY strftime('%w', h.created_at)
+        GROUP BY {$statsWeekdayBucketExpr}
         ORDER BY count DESC
         LIMIT 1
     ")->fetch(PDO::FETCH_ASSOC);
     
     $weeklyTrend = $db->query("
         SELECT 
-            COUNT(CASE WHEN imported_at >= date('now', '-7 days') THEN 1 END) as this_week,
-            COUNT(CASE WHEN imported_at >= date('now', '-14 days') AND imported_at < date('now', '-7 days') THEN 1 END) as last_week
+            COUNT(CASE WHEN imported_at >= {$statsMinus7DateExpr} THEN 1 END) as this_week,
+            COUNT(CASE WHEN imported_at >= {$statsMinus14DateExpr} AND imported_at < {$statsMinus7DateExpr} THEN 1 END) as last_week
         FROM guarantees
         $whereD
     ")->fetch(PDO::FETCH_ASSOC);
@@ -278,19 +299,19 @@ try {
     // 4A: Expiration Pressure (Filtered to Unlocked Only)
     $expiration = $db->query("
         SELECT 
-            COUNT(CASE WHEN json_extract(raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+30 days') THEN 1 END) as next_30,
-            COUNT(CASE WHEN json_extract(raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+90 days') THEN 1 END) as next_90
+            COUNT(CASE WHEN {$statsJsonRawExpiryDateExpr} BETWEEN {$statsNowDateExpr} AND {$statsPlus30DateExpr} THEN 1 END) as next_30,
+            COUNT(CASE WHEN {$statsJsonRawExpiryDateExpr} BETWEEN {$statsNowDateExpr} AND {$statsPlus90DateExpr} THEN 1 END) as next_90
         FROM guarantees g
         LEFT JOIN guarantee_decisions d ON g.id = d.guarantee_id
-        WHERE (d.is_locked IS NULL OR d.is_locked = 0)
+        WHERE (d.is_locked IS NULL OR d.is_locked = FALSE)
         $andG
     ")->fetch(PDO::FETCH_ASSOC);
 
     // Peak Month
     $peakMonth = $db->query("
-        SELECT strftime('%Y-%m', json_extract(raw_data, '$.expiry_date')) as month, COUNT(*) as count
+        SELECT {$statsMonthExpiryExpr} as month, COUNT(*) as count
         FROM guarantees
-        WHERE json_extract(raw_data, '$.expiry_date') >= date('now')
+        WHERE {$statsJsonRawExpiryDateExpr} >= {$statsNowDateExpr}
         $andD
         GROUP BY month
         ORDER BY count DESC
@@ -299,9 +320,9 @@ try {
     
     // Expiration next 12 months
     $expirationByMonth = $db->query("
-        SELECT strftime('%Y-%m', json_extract(raw_data, '$.expiry_date')) as month, COUNT(*) as count
+        SELECT {$statsMonthExpiryExpr} as month, COUNT(*) as count
         FROM guarantees
-        WHERE json_extract(raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+1 year')
+        WHERE {$statsJsonRawExpiryDateExpr} BETWEEN {$statsNowDateExpr} AND {$statsPlusYearDateExpr}
         $andD
         GROUP BY month
         ORDER BY month ASC
@@ -313,7 +334,7 @@ try {
             COUNT(CASE WHEN h.event_subtype = 'extension' THEN 1 END) as extensions,
             COUNT(CASE WHEN h.event_subtype = 'reduction' THEN 1 END) as reductions,
             COUNT(CASE WHEN h.event_type = 'released' THEN 1 END) as releases,
-            COUNT(CASE WHEN h.event_type = 'released' AND h.created_at >= date('now', '-7 days') THEN 1 END) as recent_releases
+            COUNT(CASE WHEN h.event_type = 'released' AND h.created_at >= {$statsMinus7DateExpr} THEN 1 END) as recent_releases
         FROM guarantee_history h
         JOIN guarantees g ON h.guarantee_id = g.id
         $whereG
@@ -333,8 +354,8 @@ try {
     $extensionProbability = $db->query("
         SELECT 
             s.official_name,
-            ROUND(CAST(COUNT(CASE WHEN h.event_subtype = 'extension' THEN 1 END) AS REAL) / 
-                  CAST(COUNT(DISTINCT d.guarantee_id) AS REAL) * 100, 0) as probability
+            ROUND((CAST(COUNT(CASE WHEN h.event_subtype = 'extension' THEN 1 END) AS REAL) / 
+                  CAST(COUNT(DISTINCT d.guarantee_id) AS REAL) * 100)::numeric, 0) as probability
         FROM suppliers s
         JOIN guarantee_decisions d ON s.id = d.supplier_id
         JOIN guarantees g ON d.guarantee_id = g.id
@@ -390,7 +411,9 @@ try {
     $confidenceDistribution = ['high' => 0, 'medium' => 0, 'low' => 0];
     
     try {
-        $mlStatsCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='learning_confirmations'")->fetch();
+        $mlStatsCheckStmt = $db->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'learning_confirmations' LIMIT 1");
+        $mlStatsCheckStmt->execute();
+        $mlStatsCheck = $mlStatsCheckStmt->fetch();
         if ($mlStatsCheck) {
              $mlStats = $db->query("
                 SELECT 
@@ -421,7 +444,9 @@ try {
             ")->fetchAll(PDO::FETCH_ASSOC);
         }
 
-        $learningPatternsCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='learning_patterns'")->fetch();
+        $learningPatternsCheckStmt = $db->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'learning_patterns' LIMIT 1");
+        $learningPatternsCheckStmt->execute();
+        $learningPatternsCheck = $learningPatternsCheckStmt->fetch();
         if ($learningPatternsCheck) {
             $confidenceDistribution = $db->query("
                 SELECT 
@@ -446,7 +471,7 @@ try {
     // ============================================
     // 🔧 REVERTED: Normalization should happen at import time, not here.
     $typeDistribution = $db->query("
-        SELECT json_extract(raw_data, '$.type') as type, COUNT(*) as count
+        SELECT {$statsJsonRawTypeExpr} as type, COUNT(*) as count
         FROM guarantees
         $whereD
         GROUP BY type
@@ -456,13 +481,13 @@ try {
     $amountCorrelation = $db->query("
         SELECT 
             CASE 
-                WHEN CAST(json_extract(g.raw_data, '$.amount') AS REAL) < 100000 THEN 'صغير (<100K)'
-                WHEN CAST(json_extract(g.raw_data, '$.amount') AS REAL) < 500000 THEN 'متوسط (100-500K)'
+                WHEN CAST({$statsJsonAmountExpr} AS REAL) < 100000 THEN 'صغير (<100K)'
+                WHEN CAST({$statsJsonAmountExpr} AS REAL) < 500000 THEN 'متوسط (100-500K)'
                 ELSE 'كبير (>500K)'
             END as range,
             COUNT(DISTINCT g.id) as total,
             COUNT(DISTINCT h.guarantee_id) as extended,
-            ROUND(CAST(COUNT(DISTINCT h.guarantee_id) AS REAL) / CAST(COUNT(DISTINCT g.id) AS REAL) * 100, 1) as ext_rate
+            ROUND((CAST(COUNT(DISTINCT h.guarantee_id) AS REAL) / CAST(COUNT(DISTINCT g.id) AS REAL) * 100)::numeric, 1) as ext_rate
         FROM guarantees g
         LEFT JOIN guarantee_history h ON g.id = h.guarantee_id AND h.event_subtype = 'extension'
         $whereG
@@ -841,13 +866,14 @@ try {
                         $urgentList = $db->query("
                             SELECT g.id, g.guarantee_number, 
                                    COALESCE(s.official_name, 'غير محدد') as supplier,
-                                   CAST(json_extract(g.raw_data, '$.amount') AS REAL) as amount,
-                                   json_extract(g.raw_data, '$.expiry_date') as expiry_date
+                                   CAST({$statsJsonAmountExpr} AS REAL) as amount,
+                                   {$statsJsonExpiryExpr} as expiry_date
                             FROM guarantees g
                             LEFT JOIN guarantee_decisions d ON g.id = d.guarantee_id
                             LEFT JOIN suppliers s ON d.supplier_id = s.id
-                            WHERE json_extract(g.raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+90 days')
-                            AND (d.is_locked IS NULL OR d.is_locked = 0)
+                            WHERE {$statsJsonExpiryExpr} IS NOT NULL
+                            AND {$statsJsonExpiryDateExpr} BETWEEN {$statsNowDateExpr} AND {$statsPlus90DateExpr}
+                            AND (d.is_locked IS NULL OR d.is_locked = FALSE)
                             $andG
                             ORDER BY amount DESC
                             LIMIT 5

@@ -1,3 +1,10 @@
+<?php
+require_once __DIR__ . '/../app/Support/autoload.php';
+
+use App\Support\ViewPolicy;
+
+ViewPolicy::guardView('confidence-demo.php');
+?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>

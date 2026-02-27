@@ -13,7 +13,7 @@ require_once __DIR__ . '/../app/Support/Database.php';
 require_once __DIR__ . '/../app/Models/Guarantee.php';
 require_once __DIR__ . '/../app/Repositories/GuaranteeRepository.php';
 require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 use App\Support\Input;
@@ -21,6 +21,7 @@ use App\Support\Settings;
 use App\Services\ParseCoordinatorService;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_login();
 
 // ============================================================================
 // MAIN PROCESSING

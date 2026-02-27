@@ -8,6 +8,9 @@
 require_once __DIR__ . '/../app/Support/autoload.php';
 use App\Support\Database;
 use App\Support\Settings;
+use App\Support\ViewPolicy;
+
+ViewPolicy::guardView('batch-detail.php');
 
 $db = Database::connect();
 $importSource = $_GET['import_source'] ?? '';
@@ -21,7 +24,10 @@ $metadataStmt = $db->prepare("SELECT * FROM batch_metadata WHERE import_source =
 $metadataStmt->execute([$importSource]);
 $metadata = $metadataStmt->fetch(PDO::FETCH_ASSOC);
 
-// ✅ UPDATED: Hybrid query handles both old (no occurrences) and new (with occurrences) data
+$rawSupplierExpr = "(g.raw_data::jsonb ->> 'supplier')";
+$rawBankExpr = "(g.raw_data::jsonb ->> 'bank')";
+
+// Batch query from occurrence ledger only (target contract).
 $stmt = $db->prepare("
     SELECT g.*, 
            -- Prefer simple resolved name from decision, then fallback to inferred match, then raw
@@ -37,10 +43,9 @@ $stmt = $db->prepare("
                ELSE NULL
            END as last_action,
            h.created_at as last_action_at,
-           COALESCE(o.occurred_at, g.imported_at) as occurrence_date
-    FROM guarantees g
-    -- LEFT JOIN for occurrences (old guarantees don't have them)
-    LEFT JOIN guarantee_occurrences o ON g.id = o.guarantee_id
+           o.occurred_at as occurrence_date
+    FROM guarantee_occurrences o
+    JOIN guarantees g ON g.id = o.guarantee_id
     
     -- 1. Decision row (single-row per guarantee)
     LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
@@ -58,22 +63,21 @@ $stmt = $db->prepare("
     
     -- 3. Join for inferred supplier (Fallback)
     LEFT JOIN suppliers s ON g.normalized_supplier_name = s.official_name 
-         OR json_extract(g.raw_data, '$.supplier') = s.official_name
-         OR json_extract(g.raw_data, '$.supplier') = s.english_name
+         OR {$rawSupplierExpr} = s.official_name
+         OR {$rawSupplierExpr} = s.english_name
          
-    LEFT JOIN banks b ON json_extract(g.raw_data, '$.bank') = b.english_name 
-         OR json_extract(g.raw_data, '$.bank') = b.arabic_name
-    -- Match either old (import_source) or new (batch_identifier in occurrences)
-    WHERE g.import_source = ? OR o.batch_identifier = ?
+    LEFT JOIN banks b ON {$rawBankExpr} = b.english_name 
+         OR {$rawBankExpr} = b.arabic_name
+    WHERE o.batch_identifier = ?
     ORDER BY g.id ASC
 ");
-$stmt->execute([$importSource, $importSource]);
+$stmt->execute([$importSource]);
 $guarantees = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Production Mode: Filter out test guarantees
 $settings = Settings::getInstance();
 if ($settings->isProductionMode()) {
-    $guarantees = array_filter($guarantees, fn($g) => empty($g['is_test_data']));
+    $guarantees = array_filter($guarantees, static fn($g) => (int)($g['is_test_data'] ?? 0) === 0);
     // Re-index array after filtering
     $guarantees = array_values($guarantees);
 }
@@ -126,6 +130,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
     <link rel="stylesheet" href="../public/css/design-system.css">
     <link rel="stylesheet" href="../public/css/components.css">
     <link rel="stylesheet" href="../public/css/layout.css">
+    <link rel="stylesheet" href="../public/css/a11y.css">
     
     <!-- Page Specific Overrides (Cleaned) -->
     <link rel="stylesheet" href="../public/css/batch-detail.css">
@@ -142,11 +147,11 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
     <?php include __DIR__ . '/../partials/unified-header.php'; ?>
     
     <!-- Toast Container -->
-    <div id="toast-container" style="position: fixed; top: var(--space-md); right: var(--space-md); z-index: var(--z-toast); display: flex; flex-direction: column; gap: var(--space-sm);"></div>
+    <div id="toast-container" role="status" aria-live="polite" style="position: fixed; top: var(--space-md); right: var(--space-md); z-index: var(--z-toast); display: flex; flex-direction: column; gap: var(--space-sm);"></div>
 
     <!-- Modal Container -->
-    <div id="modal-backdrop" class="modal-backdrop" style="display: none;">
-        <div id="modal-content" class="modal-content">
+    <div id="modal-backdrop" class="modal-backdrop" style="display: none;" aria-hidden="true">
+        <div id="modal-content" class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
             <!-- Dynamic Content -->
         </div>
     </div>
@@ -211,12 +216,12 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
 
                         <!-- Action Buttons -->
                         <div class="d-flex align-items-center gap-2">
-                            <button onclick="openMetadataModal()" class="btn btn-outline-secondary btn-sm" title="تعديل الاسم والملاحظات">
+                            <button onclick="openMetadataModal()" class="btn btn-outline-secondary btn-sm" title="تعديل الاسم والملاحظات" aria-label="تعديل اسم وملاحظات الدفعة">
                                 <i data-lucide="edit-3" style="width: 16px;"></i>
                             </button>
                             
                             <?php if (!$isClosed): ?>
-                                <button onclick="handleBatchAction('close')" class="btn btn-outline-danger btn-sm" title="إغلاق الدفعة للأرشفة">
+                                <button onclick="handleBatchAction('close')" class="btn btn-outline-danger btn-sm" title="إغلاق الدفعة للأرشفة" aria-label="إغلاق الدفعة">
                                     <i data-lucide="lock" style="width: 16px;"></i>
                                 </button>
                                 <?php if ($printReadyCount > 0): ?>
@@ -322,7 +327,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center">
-                                    <a href="/index.php?id=<?= $g['id'] ?>" class="btn-icon">
+                                    <a href="/index.php?id=<?= $g['id'] ?>" class="btn-icon" aria-label="عرض تفاصيل الضمان <?= htmlspecialchars($g['guarantee_number']) ?>">
                                         <i data-lucide="arrow-left" style="width: 18px;"></i>
                                     </a>
                                 </td>
@@ -340,6 +345,8 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
             <?php endif; ?>
         </div>
     </div>
+
+    <script src="/public/js/print-audit.js?v=<?= time() ?>"></script>
 
     <!-- JavaScript Application Logic -->
     <script>
@@ -383,23 +390,58 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
         const Modal = {
             el: document.getElementById('modal-backdrop'),
             content: document.getElementById('modal-content'),
+            lastFocusedEl: null,
             
             open(html) {
+                this.lastFocusedEl = document.activeElement;
                 this.content.innerHTML = html;
+                this.el.setAttribute('aria-hidden', 'false');
                 this.el.style.display = 'flex';
                 // Trigger reflow to enable transition
                 void this.el.offsetWidth; 
                 this.el.classList.add('active');
+
+                // Ensure dialog has a label for screen readers
+                const heading = this.content.querySelector('h1, h2, h3');
+                if (heading && !heading.id) {
+                    heading.id = 'modal-title';
+                }
+
+                const firstFocusable = this.content.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+                if (firstFocusable) {
+                    firstFocusable.focus();
+                } else {
+                    this.content.focus();
+                }
             },
             
             close() {
                 this.el.classList.remove('active');
+                this.el.setAttribute('aria-hidden', 'true');
                 setTimeout(() => {
                     this.el.style.display = 'none';
                     this.content.innerHTML = '';
+                    if (this.lastFocusedEl && typeof this.lastFocusedEl.focus === 'function') {
+                        this.lastFocusedEl.focus();
+                    }
                 }, 300); // Wait for transition
+            },
+
+            bindA11y() {
+                this.el.addEventListener('click', (event) => {
+                    if (event.target === this.el) {
+                        this.close();
+                    }
+                });
+
+                document.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape' && this.el.classList.contains('active')) {
+                        this.close();
+                    }
+                });
             }
         };
+        Modal.bindA11y();
 
         const API = {
             async post(action, data = {}) {
@@ -450,6 +492,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
         function handleBatchAction(action) {
             const actionText = action === 'close' ? 'إغلاق الدفعة' : 'إعادة فتح الدفعة';
             const actionColor = action === 'close' ? 'text-danger' : 'text-warning';
+            const needsReason = action === 'reopen';
             
             Modal.open(`
                 <div class="p-5 text-center">
@@ -458,8 +501,23 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                             <i data-lucide="alert-triangle" style="width: 32px; height: 32px; color: var(--accent-warning);"></i>
                         </div>
                     </div>
-                    <h3 class="text-xl font-bold mb-2">تأكيد الإجراء</h3>
+                    <h3 id="modal-title" class="text-xl font-bold mb-2">تأكيد الإجراء</h3>
                     <p class="text-secondary mb-6">هل أنت متأكد من رغبتك في <span class="${actionColor} font-bold">${actionText}</span>؟</p>
+                    ${needsReason ? `
+                    <div style="text-align: right; margin-bottom: 12px;">
+                        <label for="batch-action-reason" class="font-semibold text-sm">سبب إعادة الفتح <span style="color:#dc2626">*</span></label>
+                        <textarea id="batch-action-reason" rows="3" class="form-textarea" placeholder="اكتب سبب إعادة فتح الدفعة..." style="margin-top:8px;"></textarea>
+                    </div>
+                    <div style="text-align: right; margin-bottom: 16px; border:1px dashed #f59e0b; border-radius:10px; padding:10px;">
+                        <label style="display:flex; align-items:center; gap:8px;">
+                            <input type="checkbox" id="break-glass-enabled">
+                            <span class="font-semibold">وضع الطوارئ (Break-glass)</span>
+                        </label>
+                        <div id="break-glass-fields" style="display:none; margin-top:10px;">
+                            <input id="break-glass-ticket" type="text" class="form-input" placeholder="رقم التذكرة/الحادث (إلزامي بالطوارئ)" style="margin-bottom:8px;">
+                            <textarea id="break-glass-reason" rows="2" class="form-textarea" placeholder="سبب الطوارئ"></textarea>
+                        </div>
+                    </div>` : ''}
                     <div class="flex-center gap-3">
                         <button onclick="Modal.close()" class="btn btn-secondary w-32">إلغاء</button>
                         <button onclick="confirmBatchAction('${action}')" class="btn btn-primary w-32">نعم، نفذ</button>
@@ -467,13 +525,40 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                 </div>
             `);
             lucide.createIcons();
+            const bgEnabled = document.getElementById('break-glass-enabled');
+            const bgFields = document.getElementById('break-glass-fields');
+            if (bgEnabled && bgFields) {
+                bgEnabled.addEventListener('change', () => {
+                    bgFields.style.display = bgEnabled.checked ? 'block' : 'none';
+                });
+            }
         }
 
         async function confirmBatchAction(action) {
-            Modal.close();
             try {
+                const payload = {};
+                if (action === 'reopen') {
+                    const reasonEl = document.getElementById('batch-action-reason');
+                    const reason = reasonEl ? reasonEl.value.trim() : '';
+                    if (!reason) {
+                        Toast.show('سبب إعادة فتح الدفعة مطلوب', 'warning');
+                        return;
+                    }
+                    payload.reason = reason;
+
+                    const bgEnabled = document.getElementById('break-glass-enabled');
+                    if (bgEnabled && bgEnabled.checked) {
+                        const bgTicket = document.getElementById('break-glass-ticket');
+                        const bgReason = document.getElementById('break-glass-reason');
+                        payload.break_glass_enabled = '1';
+                        payload.break_glass_ticket = bgTicket ? bgTicket.value.trim() : '';
+                        payload.break_glass_reason = bgReason ? bgReason.value.trim() : '';
+                    }
+                }
+
+                Modal.close();
                 document.getElementById('table-loading').style.display = 'flex';
-                await API.post(action);
+                await API.post(action, payload);
                 Toast.show('تم تنفيذ العملية بنجاح', 'success');
                 setTimeout(() => location.reload(), 1000);
             } catch (e) {
@@ -518,7 +603,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
         function openMetadataModal() {
             Modal.open(`
                 <div class="p-4">
-                    <h3 class="text-xl font-bold mb-4">تعديل بيانات الدفعة</h3>
+                    <h3 id="modal-title" class="text-xl font-bold mb-4">تعديل بيانات الدفعة</h3>
                     <div class="form-group mb-3">
                         <label class="form-label">اسم الدفعة</label>
                         <input type="text" id="modal-batch-name" value="<?= htmlspecialchars($batchName) ?>" class="form-input">
@@ -559,7 +644,11 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
             }
 
             const ids = ready.map(g => g.id);
-            window.open(`/views/batch-print.php?ids=${ids.join(',')}`);
+            const params = new URLSearchParams({
+                ids: ids.join(','),
+                batch_identifier: <?= json_encode($importSource, JSON_UNESCAPED_UNICODE) ?>
+            });
+            window.open(`/views/batch-print.php?${params.toString()}`);
             Toast.show(`تم فتح نافذة الطباعة لـ ${ids.length} خطاب`, 'success');
         }
 

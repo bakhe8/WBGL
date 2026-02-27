@@ -37,6 +37,7 @@ $eventCount = count($timeline);
                     // Use TimelineRecorder for labels and icons
                     $eventLabel = \App\Services\TimelineRecorder::getEventDisplayLabel($event);
                     $eventIcon = \App\Services\TimelineRecorder::getEventIcon($event);
+                    $eventId = (int)($event['event_id'] ?? $event['id'] ?? 0);
 
                     // Parse event_details JSON
                     $eventDetailsRaw = $event['event_details'] ?? null;
@@ -62,7 +63,7 @@ $eventCount = count($timeline);
                     $isLatest = $index === 0;  // Latest event (current state)
                 ?>
                     <div class="timeline-event-wrapper"
-                        data-event-id="<?= $event['id'] ?>"
+                        data-event-id="<?= $eventId ?>"
                         data-event-type="<?= $event['event_type'] ?? 'unknown' ?>"
                         data-event-subtype="<?= $event['event_subtype'] ?? '' ?>"
                         data-snapshot='<?= htmlspecialchars($event['snapshot_data'] ?? '{}', ENT_QUOTES, 'UTF-8') ?>'
@@ -78,9 +79,10 @@ $eventCount = count($timeline);
 
                         <?php
                         $hasSnapshot = !empty($event['snapshot_data']) && $event['snapshot_data'] !== '{}' && $event['snapshot_data'] !== 'null';
+                        $hasAnchor = !empty($event['anchor_snapshot']) && $event['anchor_snapshot'] !== '{}' && $event['anchor_snapshot'] !== 'null';
                         ?>
                         <!-- Dot -->
-                        <div class="timeline-dot <?= $hasSnapshot ? 'timeline-dot-anchor' : '' ?>" style="position: absolute; right: -2px; top: 8px; width: 10px; height: 10px; border-radius: 50%; background: <?= $colors['border'] ?>; border: 2px solid white; box-shadow: 0 0 0 1px #e2e8f0; z-index: 1;"></div>
+                        <div class="timeline-dot <?= ($hasSnapshot || $hasAnchor) ? 'timeline-dot-anchor' : '' ?>" style="position: absolute; right: -2px; top: 8px; width: 10px; height: 10px; border-radius: 50%; background: <?= $colors['border'] ?>; border: 2px solid white; box-shadow: 0 0 0 1px #e2e8f0; z-index: 1;"></div>
 
                         <!-- Event Card -->
                         <div class="timeline-event-card" style="background: white; border: 1px solid #e2e8f0; border-right: 3px solid <?= $colors['border'] ?>; border-radius: 4px; padding: 10px 12px; margin-right: 16px; transition: all 0.2s;"

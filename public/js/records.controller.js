@@ -396,7 +396,16 @@ if (!window.RecordsController) {
 
 
         print(target) {
-            // New Logic: Direct Browser Print
+            const audit = window.WBGLPrintAudit;
+            if (audit && typeof audit.recordSinglePrint === 'function') {
+                const guaranteeId = (typeof audit.currentRecordId === 'function')
+                    ? audit.currentRecordId()
+                    : null;
+                audit.recordSinglePrint(guaranteeId, {
+                    trigger: 'records_controller_menu'
+                }).catch(() => { });
+            }
+
             window.print();
             this.closePrintDropdown();
         }
@@ -822,7 +831,7 @@ if (!window.RecordsController) {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        name: supplierName,
+                        official_name: supplierName,
                         guarantee_id: guaranteeId
                     })
                 });

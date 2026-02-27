@@ -6,11 +6,12 @@
  * that adds confidence scoring to all extracted fields.
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Services\SmartPaste\ConfidenceCalculator;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_login();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'error' => 'Method not allowed']);

@@ -24,49 +24,62 @@ class Guard
      */
     public static function has(string $permissionSlug): bool
     {
-        $user = AuthService::getCurrentUser();
+        $permissions = self::permissions();
+        return in_array($permissionSlug, $permissions, true) || in_array('*', $permissions, true);
+    }
 
-        // Developer has all permissions
-        if ($user && $user->roleId !== null) {
-            $db = Database::connect();
-            $roleRepo = new RoleRepository($db);
-            $role = $roleRepo->find($user->roleId);
-
-            if ($role && $role->slug === 'developer') {
-                return true;
-            }
-
-            // Cache permissions for the current request
-            if (self::$permissions === null) {
-                $rolePerms = $roleRepo->getPermissions($user->roleId);
-
-                // 🛡️ GRANULAR OVERRIDES:
-                // Fetch user-specific overrides (allow/deny)
-                $stmt = $db->prepare("
-                    SELECT p.slug, up.override_type
-                    FROM user_permissions up
-                    JOIN permissions p ON p.id = up.permission_id
-                    WHERE up.user_id = ?
-                ");
-                $stmt->execute([$user->id]);
-                $overrides = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-                $allow = [];
-                $deny = [];
-                foreach ($overrides as $ov) {
-                    if ($ov['override_type'] === 'allow') $allow[] = $ov['slug'];
-                    if ($ov['override_type'] === 'deny') $deny[] = $ov['slug'];
-                }
-
-                // Logic: (Role Perms + Allowed) - Denied
-                self::$permissions = array_diff(array_unique(array_merge($rolePerms, $allow)), $deny);
-                self::$userOverrides = ['allow' => $allow, 'deny' => $deny];
-            }
-
-            return in_array($permissionSlug, self::$permissions);
+    /**
+     * Get current effective permission slugs.
+     *
+     * @return string[]
+     */
+    public static function permissions(): array
+    {
+        if (self::$permissions !== null) {
+            return self::$permissions;
         }
 
-        return false;
+        $user = AuthService::getCurrentUser();
+        if (!$user || $user->roleId === null) {
+            self::$permissions = [];
+            return self::$permissions;
+        }
+
+        $db = Database::connect();
+        $roleRepo = new RoleRepository($db);
+        $role = $roleRepo->find($user->roleId);
+
+        if ($role && $role->slug === 'developer') {
+            self::$permissions = ['*'];
+            self::$userOverrides = ['allow' => ['*'], 'deny' => []];
+            return self::$permissions;
+        }
+
+        $rolePerms = $roleRepo->getPermissions($user->roleId);
+
+        $stmt = $db->prepare("
+            SELECT p.slug, up.override_type
+            FROM user_permissions up
+            JOIN permissions p ON p.id = up.permission_id
+            WHERE up.user_id = ?
+        ");
+        $stmt->execute([$user->id]);
+        $overrides = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $allow = [];
+        $deny = [];
+        foreach ($overrides as $ov) {
+            if (($ov['override_type'] ?? '') === 'allow') {
+                $allow[] = $ov['slug'];
+            }
+            if (($ov['override_type'] ?? '') === 'deny') {
+                $deny[] = $ov['slug'];
+            }
+        }
+
+        self::$permissions = array_values(array_diff(array_unique(array_merge($rolePerms, $allow)), $deny));
+        self::$userOverrides = ['allow' => $allow, 'deny' => $deny];
+        return self::$permissions;
     }
 
     /**

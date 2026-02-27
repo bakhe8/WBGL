@@ -4,21 +4,28 @@
  * Returns HTML of letter for display in guarantee details page
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 use App\Repositories\GuaranteeRepository;
 use App\Repositories\BankRepository;
 use App\Repositories\SupplierRepository;
 use App\Services\LetterBuilder;
+use App\Services\PrintAuditService;
+use App\Services\GuaranteeVisibilityService;
 
 header('Content-Type: text/html; charset=utf-8');
+wbgl_api_require_login();
 
 try {
     $guaranteeId = $_GET['id'] ?? null;
     
     if (!$guaranteeId) {
         throw new Exception('معرف الضمان مطلوب');
+    }
+
+    if (!GuaranteeVisibilityService::canAccessGuarantee((int)$guaranteeId)) {
+        throw new Exception('Permission Denied');
     }
     
     $db = Database::connect();
@@ -64,6 +71,7 @@ try {
     
     // Prepare data array
     $record = [
+        'id' => (int)$guaranteeId,
         'guarantee_number' => $guarantee->guaranteeNumber,
         'contract_number' => $guarantee->rawData['contract_number'] ?? '',
         'amount' => $guarantee->rawData['amount'] ?? 0,
@@ -92,6 +100,21 @@ try {
             $record['bank_po_box'] = $bank['po_box'];
             $record['bank_email'] = $bank['email'];
         }
+    }
+
+    try {
+        PrintAuditService::record(
+            'preview_opened',
+            'single_letter',
+            [(int)$guaranteeId],
+            wbgl_api_current_user_display(),
+            null,
+            ['transport' => 'api_get_letter_preview'],
+            'browser',
+            '/api/get-letter-preview.php'
+        );
+    } catch (Throwable $auditError) {
+        // Non-blocking audit trail
     }
     
     // Use letter-renderer partial (same as batch-print)

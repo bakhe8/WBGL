@@ -1,11 +1,11 @@
 <?php
-require_once __DIR__ . '/../app/Support/Database.php';
-require_once __DIR__ . '/../app/Support/BankNormalizer.php'; 
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 use App\Support\BankNormalizer;
 
 header('Content-Type: application/json');
+wbgl_api_require_permission('import_excel');
 
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -28,8 +28,17 @@ try {
     $inserts = 0;
     $aliasInserts = 0;
 
-    // Prepare alias insertion statement
-    $insertAlias = $db->prepare('INSERT OR IGNORE INTO bank_alternative_names (bank_id, alternative_name, normalized_name) VALUES (?, ?, ?)');
+    // Prepare alias insertion statement (PostgreSQL-safe dedupe by bank + normalized alias)
+    $insertAlias = $db->prepare("
+        INSERT INTO bank_alternative_names (bank_id, alternative_name, normalized_name)
+        SELECT :bank_id, :alternative_name, :normalized_name
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM bank_alternative_names
+            WHERE bank_id = :exists_bank_id
+              AND normalized_name = :exists_normalized_name
+        )
+    ");
 
     foreach ($data as $item) {
         $bankId = null;
@@ -91,7 +100,13 @@ try {
                 if (empty(trim($alias))) continue;
                 
                 $normalized = BankNormalizer::normalize($alias);
-                $insertAlias->execute([$bankId, trim($alias), $normalized]);
+                $insertAlias->execute([
+                    'bank_id' => $bankId,
+                    'alternative_name' => trim($alias),
+                    'normalized_name' => $normalized,
+                    'exists_bank_id' => $bankId,
+                    'exists_normalized_name' => $normalized,
+                ]);
                 if ($insertAlias->rowCount() > 0) {
                     $aliasInserts++;
                 }

@@ -1,10 +1,11 @@
 <?php
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 use App\Support\Database;
 use App\Support\Input;
 use App\Support\Normalizer;
 
 header('Content-Type: application/json');
+wbgl_api_require_permission('manage_data');
 
 try {
     $data = json_decode(file_get_contents('php://input'), true);

@@ -202,7 +202,8 @@ class TimelineRecorder
         $currentUser = \App\Support\AuthService::getCurrentUser();
         $creatorName = $currentUser ? $currentUser->fullName : 'المستخدم';
 
-        return self::recordEvent($guaranteeId, 'modified', null, $changes, $creatorName, [], 'extension', $letterSnapshot);
+        $afterSnapshot = self::createSnapshot($guaranteeId);
+        return self::recordEvent($guaranteeId, 'modified', $oldSnapshot, $changes, $creatorName, [], 'extension', $letterSnapshot, $afterSnapshot);
     }
 
     /**
@@ -239,7 +240,8 @@ class TimelineRecorder
         $currentUser = \App\Support\AuthService::getCurrentUser();
         $creatorName = $currentUser ? $currentUser->fullName : 'المستخدم';
 
-        return self::recordEvent($guaranteeId, 'modified', null, $changes, $creatorName, [], 'reduction', $letterSnapshot);
+        $afterSnapshot = self::createSnapshot($guaranteeId);
+        return self::recordEvent($guaranteeId, 'modified', $oldSnapshot, $changes, $creatorName, [], 'reduction', $letterSnapshot, $afterSnapshot);
     }
 
     /**
@@ -271,7 +273,8 @@ class TimelineRecorder
         $currentUser = \App\Support\AuthService::getCurrentUser();
         $creatorName = $currentUser ? $currentUser->fullName : 'المستخدم';
 
-        return self::recordEvent($guaranteeId, 'release', null, $changes, $creatorName, $extraDetails, 'release', $letterSnapshot);
+        $afterSnapshot = self::createSnapshot($guaranteeId);
+        return self::recordEvent($guaranteeId, 'release', $oldSnapshot, $changes, $creatorName, $extraDetails, 'release', $letterSnapshot, $afterSnapshot);
     }
 
     /**
@@ -321,39 +324,45 @@ class TimelineRecorder
         }
 
         $extra = $confidence ? ['confidence' => $confidence] : [];
-
-        // 🛡️ Anchor Point: Mapping decisions (supplier/bank) are major milestones.
-        // Store a full snapshot to ensure this mapping can be audited instantly and reliably.
-        $anchorSnapshot = self::createSnapshot($guaranteeId);
+        $afterSnapshot = self::createSnapshot($guaranteeId);
 
         $subtype = $subtype ?? ($isAuto ? 'ai_match' : 'manual_edit');
-        return self::recordEvent($guaranteeId, 'modified', $anchorSnapshot, $changes, $creator, [], $subtype);
+        return self::recordEvent($guaranteeId, 'modified', $oldSnapshot, $changes, $creator, $extra, $subtype, null, $afterSnapshot);
     }
 
     /**
      * Record Manual Admin Edit (Audit Milestone)
      * Stores a FULL snapshot as a safety anchor
      */
-    public static function recordManualEditEvent($guaranteeId, array $newRawData)
+    public static function recordManualEditEvent($guaranteeId, array $newRawData, ?array $oldSnapshot = null)
     {
         $creatorName = self::getCurrentUser();
-
-        // Create a proper snapshot from the new data
-        $snapshot = self::createSnapshot($guaranteeId, ['raw_data' => json_encode($newRawData)]);
+        $beforeSnapshot = is_array($oldSnapshot) && !empty($oldSnapshot)
+            ? $oldSnapshot
+            : self::createSnapshot($guaranteeId);
+        $afterSnapshot = self::createSnapshot($guaranteeId, ['raw_data' => json_encode($newRawData, JSON_UNESCAPED_UNICODE)]);
+        $changes = self::buildChangesFromSnapshots(
+            is_array($beforeSnapshot) ? $beforeSnapshot : [],
+            is_array($afterSnapshot) ? $afterSnapshot : [],
+            'manual_edit'
+        );
 
         $eventDetails = [
             'action' => 'Manual Administrative Edit',
-            'reason' => 'Admin override via maintenance dashboard'
+            'reason' => 'Admin override via maintenance dashboard',
+            'snapshot_contract' => 'before_change'
         ];
 
         return self::recordEvent(
             $guaranteeId,
             'modified',
-            $snapshot,
-            [], // Snapshot is primary here
+            $beforeSnapshot,
+            $changes,
             $creatorName,
             $eventDetails,
-            'manual_edit'
+            'manual_edit',
+            null,
+            $afterSnapshot
         );
     }
 
@@ -381,6 +390,47 @@ class TimelineRecorder
     }
 
     /**
+     * Build timeline-style changes array from two snapshots.
+     *
+     * @param array<string,mixed> $before
+     * @param array<string,mixed> $after
+     * @return array<int,array<string,mixed>>
+     */
+    private static function buildChangesFromSnapshots(array $before, array $after, string $trigger = 'manual_edit'): array
+    {
+        $patch = self::createPatch($before, $after);
+        $changes = [];
+
+        foreach ($patch as $op) {
+            $path = (string)($op['path'] ?? '');
+            if (!str_starts_with($path, '/')) {
+                continue;
+            }
+
+            $field = substr($path, 1);
+            if ($field === '') {
+                continue;
+            }
+
+            $oldValue = $before[$field] ?? null;
+            $newValue = array_key_exists('value', $op) ? $op['value'] : ($after[$field] ?? null);
+
+            if (($op['op'] ?? '') === 'remove') {
+                $newValue = null;
+            }
+
+            $changes[] = [
+                'field' => $field,
+                'old_value' => $oldValue,
+                'new_value' => $newValue,
+                'trigger' => $trigger,
+            ];
+        }
+
+        return $changes;
+    }
+
+    /**
      * Core Private Recording Method
      * Enforces Closed Event Contract
      */
@@ -392,9 +442,11 @@ class TimelineRecorder
         $creator,
         $extraDetails = [],
         $subtype = null,  // 🆕 event_subtype
-        $letterSnapshot = null  // ADR-007: letter snapshot
+        $letterSnapshot = null,  // ADR-007: letter snapshot
+        $postSnapshot = null     // Current state after change (for hybrid patch generation)
     ) {
         $db = \App\Support\Database::connection();
+        $guaranteeId = (int)$guaranteeId;
 
         // Note: We do NOT calculate status change here anymore.
         // Status transitions (SE-01/02) must be recorded via recordStatusTransitionEvent separately.
@@ -402,21 +454,28 @@ class TimelineRecorder
         // 🛡️ LEDGER LOGIC: Periodic Auto-Anchors
         // To ensure high-speed reconstruction and 100% audit integrity,
         // we force a full snapshot every 10 events if one wasn't provided (Anchor).
+        $anchorInterval = \App\Services\TimelineHybridLedger::anchorInterval();
         if ($snapshot === null) {
             $countStmt = $db->prepare("SELECT COUNT(*) FROM guarantee_history WHERE guarantee_id = ?");
             $countStmt->execute([$guaranteeId]);
             $historyCount = (int)$countStmt->fetchColumn();
 
-            if ($historyCount > 0 && ($historyCount + 1) % 10 === 0) {
+            if ($historyCount > 0 && ($historyCount + 1) % $anchorInterval === 0) {
                 $snapshot = self::createSnapshot($guaranteeId);
                 $extraDetails['ledger_auto_anchor'] = true;
                 $extraDetails['checkpoint_reason'] = 'periodic_maintenance_anchor';
             }
         }
 
+        $details = is_array($extraDetails) ? $extraDetails : [];
+        $eventTimestamp = self::resolveEventTimestamp($details['event_time'] ?? null);
+        if (array_key_exists('event_time', $details)) {
+            unset($details['event_time']);
+        }
+
         $eventDetails = array_merge([
             'changes' => $changes
-        ], $extraDetails);
+        ], $details);
 
         // Map Creator to Display Text (If it's a known generic/internal ID, map it, otherwise use it)
         $creatorText = match ($creator) {
@@ -427,23 +486,81 @@ class TimelineRecorder
 
         error_log("🔍 recording event: Type=$type Subtype=$subtype GID=$guaranteeId");
 
-        $stmt = $db->prepare("
-            INSERT INTO guarantee_history
-            (guarantee_id, event_type, event_subtype, snapshot_data, event_details, letter_snapshot, created_at, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ");
+        $snapshotJson = is_array($snapshot) && !empty($snapshot)
+            ? json_encode($snapshot, JSON_UNESCAPED_UNICODE)
+            : null;
+        $eventDetailsJson = json_encode($eventDetails, JSON_UNESCAPED_UNICODE);
+
+        $columns = [
+            'guarantee_id',
+            'event_type',
+            'event_subtype',
+            'snapshot_data',
+            'event_details',
+            'letter_snapshot',
+            'created_at',
+            'created_by',
+        ];
+        $values = [
+            $guaranteeId,
+            $type,
+            $subtype,
+            $snapshotJson,
+            $eventDetailsJson,
+            $letterSnapshot,
+            $eventTimestamp,
+            $creatorText,
+        ];
+
+        if (!\App\Services\TimelineHybridLedger::supportsHybridColumns($db)) {
+            throw new \RuntimeException('Hybrid history columns are required before writing timeline events');
+        }
+
+        $currentSnapshotForHybrid = is_array($postSnapshot) && !empty($postSnapshot)
+            ? $postSnapshot
+            : self::createSnapshot($guaranteeId);
+
+        $hybrid = \App\Services\TimelineHybridLedger::buildHybridPayload(
+            $db,
+            $guaranteeId,
+            (string)$type,
+            $subtype ? (string)$subtype : null,
+            is_array($snapshot) ? $snapshot : null,
+            is_array($currentSnapshotForHybrid) ? $currentSnapshotForHybrid : null,
+            $details,
+            is_string($letterSnapshot) ? $letterSnapshot : null
+        );
+
+        $columns = array_merge($columns, [
+            'history_version',
+            'patch_data',
+            'anchor_snapshot',
+            'is_anchor',
+            'anchor_reason',
+            'letter_context',
+            'template_version',
+        ]);
+
+        $values = array_merge($values, [
+            $hybrid['history_version'] ?? 'v2',
+            !empty($hybrid['patch_data']) ? json_encode($hybrid['patch_data'], JSON_UNESCAPED_UNICODE) : null,
+            !empty($hybrid['anchor_snapshot']) ? json_encode($hybrid['anchor_snapshot'], JSON_UNESCAPED_UNICODE) : null,
+            (int)($hybrid['is_anchor'] ?? 0),
+            $hybrid['anchor_reason'] ?? null,
+            !empty($hybrid['letter_context']) ? json_encode($hybrid['letter_context'], JSON_UNESCAPED_UNICODE) : null,
+            $hybrid['template_version'] ?? \App\Services\TimelineHybridLedger::templateVersion(),
+        ]);
+
+        // Hybrid mode is patch-first by default to avoid storing full unchanged payloads.
+        $values[3] = null;
+
+        $placeholders = implode(', ', array_fill(0, count($columns), '?'));
+        $stmt = $db->prepare(
+            'INSERT INTO guarantee_history (' . implode(', ', $columns) . ') VALUES (' . $placeholders . ')'
+        );
 
         try {
-            $stmt->execute([
-                $guaranteeId,
-                $type,
-                $subtype,
-                $snapshot ? json_encode($snapshot) : null, // ✅ NEW: Optional snapshot
-                json_encode($eventDetails),
-                $letterSnapshot,  // ✨ Store HTML directly (no json_encode)
-                date('Y-m-d H:i:s'),
-                $creatorText
-            ]);
+            $stmt->execute($values);
             $id = $db->lastInsertId();
             error_log("✅ Event recorded successfully. ID=$id");
             return $id;
@@ -454,47 +571,37 @@ class TimelineRecorder
     }
 
     /**
-     * Detect Changes - Generalized Helper
-     * Kept for backward compatibility or generic use, but specific methods preferred
-     */
-    public static function detectChanges($oldSnapshot, $newData)
-    {
-        if (!$oldSnapshot || !is_array($newData)) {
-            return $newData ?: [];
-        }
-
-        $changes = [];
-        foreach ($newData as $key => $value) {
-            if (!array_key_exists($key, $oldSnapshot)) {
-                // Ignore meta keys like triggers/confidence that are not part of snapshot.
-                continue;
-            }
-            if ($oldSnapshot[$key] != $value) {
-                $changes[$key] = [
-                    'old' => $oldSnapshot[$key],
-                    'new' => $value
-                ];
-            }
-        }
-
-        return $changes;
-    }
-
-    /**
-     * Calculate status based on supplier and bank presence
+     * Public structured recorder for callers that need custom event_type/subtype
+     * while still going through hybrid ledger and snapshot contract enforcement.
      *
-     * DEPRECATED: Delegates to StatusEvaluator for authority
-     * Kept for backward compatibility with existing calls
-     *
-     * @param int $guaranteeId Guarantee ID
-     * @return string Status: 'approved' or 'pending'
+     * @param array<string,mixed> $beforeSnapshot
+     * @param array<int,array<string,mixed>> $changes
+     * @param array<string,mixed> $extraDetails
+     * @param array<string,mixed>|null $afterSnapshot
      */
-    public static function calculateStatus($guaranteeId)
-    {
-        return \App\Services\StatusEvaluator::evaluateFromDatabase($guaranteeId);
+    public static function recordStructuredEvent(
+        int $guaranteeId,
+        string $eventType,
+        ?string $eventSubtype,
+        array $beforeSnapshot,
+        array $changes,
+        string $creator,
+        array $extraDetails = [],
+        ?string $letterSnapshot = null,
+        ?array $afterSnapshot = null
+    ) {
+        return self::recordEvent(
+            $guaranteeId,
+            $eventType,
+            $beforeSnapshot,
+            $changes,
+            $creator,
+            $extraDetails,
+            $eventSubtype,
+            $letterSnapshot,
+            $afterSnapshot
+        );
     }
-
-    // ... [Values kept for saveModifiedEvent, keeping strictly for backward compat if needed] ...
 
     /**
      * saveImportEvent / saveReimportEvent kept as is (LE-00)
@@ -600,7 +707,7 @@ class TimelineRecorder
         return self::recordEvent(
             $guaranteeId,
             'import',
-            null,
+            $snapshot,
             [],  // no changes
             'النظام',
             $eventDetails,
@@ -610,16 +717,11 @@ class TimelineRecorder
 
     public static function recordStatusTransitionEvent($guaranteeId, $oldSnapshot, $newStatus, $reason = 'auto_logic')
     {
-        $db = \App\Support\Database::connection();
-
         $oldStatus = $oldSnapshot['status'] ?? 'pending';
 
         if ($oldStatus === $newStatus) {
             return false;
         }
-
-        // ✅ FIX: Fetch fresh snapshot to capture the state AFTER the change
-        // This ensures 'Status Change' events reflect matched supplier/bank names
         $currentSnapshot = self::createSnapshot($guaranteeId);
 
         $changes = [[
@@ -632,9 +734,7 @@ class TimelineRecorder
         // Metadata (Conflict is Reason, NOT Event)
         $extra = ['reason' => $reason];
 
-        // 🛡️ Anchor Point: Status transitions (SE-01/02) are critical strategic milestones.
-        // Store the fresh snapshot created above as the anchor for this transition.
-        return self::recordEvent($guaranteeId, 'status_change', $currentSnapshot, $changes, 'System', $extra, 'status_change');
+        return self::recordEvent($guaranteeId, 'status_change', $oldSnapshot, $changes, 'System', $extra, 'status_change', null, $currentSnapshot);
     }
 
     /**
@@ -642,12 +742,19 @@ class TimelineRecorder
      */
     public static function recordReimportEvent($guaranteeId, $source = 'excel')
     {
-        $db = \App\Support\Database::connection();
         $snapshot = self::createSnapshot($guaranteeId);
         $eventDetails = ['source' => $source, 'reason' => 'duplicate_guarantee_number'];
-        $stmt = $db->prepare("INSERT INTO guarantee_history (guarantee_id, event_type, snapshot_data, event_details, created_at, created_by) VALUES (?, 'reimport', ?, ?, ?, ?)");
-        $stmt->execute([$guaranteeId, json_encode($snapshot), json_encode($eventDetails), date('Y-m-d H:i:s'), 'النظام']);
-        return $db->lastInsertId();
+        return self::recordEvent(
+            $guaranteeId,
+            'reimport',
+            $snapshot,
+            [],
+            'النظام',
+            $eventDetails,
+            (string)$source,
+            null,
+            $snapshot
+        );
     }
 
     // ... [Keep getEventDisplayLabel as per previous fix, but ensure it handles new structure] ...
@@ -657,148 +764,36 @@ class TimelineRecorder
         $db = \App\Support\Database::connection();
         $stmt = $db->prepare("SELECT * FROM guarantee_history WHERE guarantee_id = ? ORDER BY created_at DESC, id DESC");
         $stmt->execute([$guaranteeId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($rows as &$row) {
+            $resolvedSnapshot = \App\Services\TimelineHybridLedger::resolveEventSnapshot($db, $row);
+            $snapshotRaw = json_encode($resolvedSnapshot, JSON_UNESCAPED_UNICODE);
+            $row['snapshot_data'] = (is_string($snapshotRaw) && trim($snapshotRaw) !== '') ? $snapshotRaw : '{}';
+        }
+
+        return $rows;
     }
 
     public static function getEventDisplayLabel(array $event): string
     {
-        $subtype = $event['event_subtype'] ?? '';
-        $type = $event['event_type'] ?? '';
-
-        // ✅ CRITICAL: Parse event_details first to detect transitions
-        $details = json_decode($event['event_details'] ?? '{}', true);
-        $changes = $details['changes'] ?? [];
-
-        // Helper functions for logic
-        $hasField = function ($field) use ($changes) {
-            foreach ($changes as $change) {
-                if (($change['field'] ?? '') === $field) return true;
-                if (($change['trigger'] ?? '') === $field) return true;
-            }
-            return false;
-        };
-
-        $hasTrigger = function ($trigger) use ($changes) {
-            foreach ($changes as $change) {
-                if (($change['trigger'] ?? '') === $trigger) return true;
-            }
-            return false;
-        };
-
-        // Check if changes contain ONLY bank (not supplier)
-        $hasOnlyBank = false;
-        $hasSupplier = false;
-        foreach ($changes as $change) {
-            if (($change['field'] ?? '') === 'bank_id') {
-                $hasOnlyBank = true;
-            }
-            if (($change['field'] ?? '') === 'supplier_id') {
-                $hasSupplier = true;
-            }
-        }
-
-        // ✅ If ONLY bank changed → always automatic (overrides subtype)
-        if ($hasOnlyBank && !$hasSupplier) {
-            return 'تطابق تلقائي';
-        }
-
-        // ✅ Check if it's a workflow_advance trigger inside changes
-        if ($hasTrigger('workflow_advance')) {
-            // Check for specific target steps in changes
-            foreach ($changes as $change) {
-                if (($change['field'] ?? '') === 'workflow_step') {
-                    return match ($change['new_value'] ?? '') {
-                        'audited' => 'تم التدقيق',
-                        'analyzed' => 'تم التحليل',
-                        'supervised' => 'تم الإشراف',
-                        'approved' => 'تم الاعتماد',
-                        'signed' => 'تم التوقيع',
-                        default => 'تحديث المرحلة'
-                    };
-                }
-            }
-            return 'تحديث المرحلة';
-        }
-
-        // 🆕 Prioritize event_subtype if available (unified timeline)
-        if ($subtype) {
-            return match ($subtype) {
-                'excel', 'manual', 'smart_paste', 'smart_paste_multi' => 'استيراد',
-                'extension' => 'تمديد',
-                'reduction' => 'تخفيض',
-                'release' => 'إفراج',
-                'supplier_change' => 'تطابق يدوي',  // Supplier only
-                'bank_change' => 'تطابق تلقائي',     // ✅ Bank is always auto now
-                'bank_match' => 'تطابق تلقائي',      // ✅ Bank auto-match event
-                'auto_match' => 'تطابق تلقائي',      // ✅ NEW: Retroactive auto-match
-                'manual_edit' => 'تطابق يدوي',       // Mixed or supplier-only events
-                'ai_match' => 'تطابق تلقائي',
-                'status_change' => 'تغيير حالة',
-                'reopened' => 'إعادة فتح',
-                'correction' => 'تصحيح بيانات',
-                'workflow_advance' => 'تحديث مسار العمل',
-                default => 'تحديث'
-            };
-        }
-
-        if ($type === 'import') return 'استيراد';
-        if ($type === 'reimport') return 'استيراد مكرر';
-        if ($type === 'auto_matched') return 'تطابق تلقائي';
-        if ($type === 'approved') return 'اعتماد';
-
-        if ($type === 'modified') {
-            if ($hasField('expiry_date') || $hasTrigger('extension_action')) return 'تمديد';
-            if ($hasField('amount') || $hasTrigger('reduction_action')) return 'تخفيض';
-            // Decision event: Based on what changed
-            $categorizeDecision = function ($data) use ($hasField) {
-                // If supplier changed = user selected supplier (manual action)
-                // البنك الآن تلقائي، فالقرار اليدوي = اختيار المورد فقط
-                if ($hasField('supplier_id') || $hasField('bank_id')) return 'اختيار القرار';
-                return 'تحديث';
-            };
-            return $categorizeDecision($changes); // Pass changes to the categorizer
-        }
-
-        if ($type === 'released' || $type === 'release') return 'إفراج';
-
-        if ($type === 'status_change') {
-            return 'تغيير حالة';
-        }
-
-        return 'تحديث';
+        return \App\Services\TimelineEventCatalog::getEventDisplayLabel($event);
     }
 
     public static function getEventIcon(array $event): string
     {
-        $label = self::getEventDisplayLabel($event);
-        return match ($label) {
-            'استيراد' => '📥',
-            'استيراد مكرر' => '🔁',
-            'تطابق تلقائي' => '🤖',
-            'تطابق يدوي' => '✍️',
-            'اعتماد' => '✔️',
-            'تمديد' => '⏱️',
-            'تخفيض' => '💰',
-            'إفراج' => '🔓',
-            'تغيير حالة' => '🔄',
-            'إعادة فتح' => '🔓',
-            'تصحيح بيانات' => '🛠️',
-            'تحديث المرحلة' => '⚡',
-            'تم التدقيق' => '🔍',
-            'تم التحليل' => '📝',
-            'تم الإشراف' => '🛂',
-            'تم الاعتماد' => '✅',
-            'تم التوقيع' => '✒️',
-            default => '📝'
-        };
+        return \App\Services\TimelineEventCatalog::getEventIcon($event);
     }
 
     /**
      * Record Workflow Stage Transition Event (Phase 3)
      */
-    public static function recordWorkflowEvent($guaranteeId, $oldStep, $newStep, $userName)
+    public static function recordWorkflowEvent($guaranteeId, $oldStep, $newStep, $userName, $oldSnapshot = null)
     {
-        $snapshot = self::createSnapshot($guaranteeId);
+        $beforeSnapshot = is_array($oldSnapshot) && !empty($oldSnapshot)
+            ? $oldSnapshot
+            : self::createSnapshot($guaranteeId);
+        $currentSnapshot = self::createSnapshot($guaranteeId);
 
         $changes = [[
             'field' => 'workflow_step',
@@ -810,11 +805,13 @@ class TimelineRecorder
         return self::recordEvent(
             $guaranteeId,
             'status_change',
-            $snapshot, // 🛡️ Anchor Point: Workflow stage transitions
+            $beforeSnapshot,
             $changes,
             $userName,
             [],
-            'workflow_advance'
+            'workflow_advance',
+            null,
+            $currentSnapshot
         );
     }
 
@@ -832,15 +829,28 @@ class TimelineRecorder
             'trigger' => 'manual_correction'
         ]];
 
-        return self::recordEvent($guaranteeId, 'manual_override', null, $changes, $creatorName, [
+        $currentSnapshot = self::createSnapshot($guaranteeId);
+        return self::recordEvent($guaranteeId, 'manual_override', $oldSnapshot, $changes, $creatorName, [
             'action' => 'Re-opened for correction',
             'reason' => 'User requested manual correction of record data'
-        ], 'reopened');
+        ], 'reopened', null, $currentSnapshot);
     }
 
     private static function getCurrentUser(): string
     {
         $user = \App\Support\AuthService::getCurrentUser();
         return $user ? $user->fullName : 'المستخدم';
+    }
+
+    private static function resolveEventTimestamp($value): string
+    {
+        if (is_string($value) && trim($value) !== '') {
+            $timestamp = strtotime($value);
+            if ($timestamp !== false) {
+                return date('Y-m-d H:i:s', $timestamp);
+            }
+        }
+
+        return date('Y-m-d H:i:s');
     }
 }

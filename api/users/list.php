@@ -5,27 +5,21 @@
  * Returns all system users with their roles
  */
 
-require_once __DIR__ . '/../../app/Support/autoload.php';
+require_once __DIR__ . '/../_bootstrap.php';
 
-use App\Support\AuthService;
 use App\Support\Database;
-use App\Support\Guard;
 
 header('Content-Type: application/json; charset=utf-8');
-
-// 1. Auth Check - Only users with 'manage_users' permission
-if (!AuthService::isLoggedIn() || !Guard::has('manage_users')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Permission Denied']);
-    exit;
-}
+wbgl_api_require_permission('manage_users');
 
 try {
     $db = Database::connect();
 
     // Fetch users with roles
     $stmt = $db->query("
-        SELECT u.id, u.username, u.full_name, u.email, u.last_login, u.role_id, r.name as role_name, r.slug as role_slug
+        SELECT u.id, u.username, u.full_name, u.email, u.last_login, u.role_id,
+               u.preferred_language, u.preferred_theme, u.preferred_direction,
+               r.name as role_name, r.slug as role_slug
         FROM users u
         LEFT JOIN roles r ON u.role_id = r.id
         ORDER BY u.created_at DESC

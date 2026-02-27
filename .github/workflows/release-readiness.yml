@@ -1,0 +1,138 @@
+name: Release Readiness (WBGL)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    env:
+      WBGL_DB_DRIVER: pgsql
+      WBGL_DB_HOST: 127.0.0.1
+      WBGL_DB_PORT: 5432
+      WBGL_DB_NAME: wbgl
+      WBGL_DB_USER: wbgl_user
+      WBGL_DB_PASS: ${{ secrets.WBGL_CI_DB_PASSWORD }}
+      WBGL_DB_SSLMODE: disable
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wbgl_user
+          POSTGRES_PASSWORD: ${{ secrets.WBGL_CI_DB_PASSWORD }}
+          POSTGRES_DB: wbgl
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wbgl_user -d wbgl"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert CI DB secret
+        run: |
+          set -euo pipefail
+          if [ -z "${WBGL_DB_PASS}" ]; then
+            echo "WBGL_CI_DB_PASSWORD secret is required."
+            exit 1
+          fi
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pgsql, pdo_pgsql, fileinfo
+          coverage: none
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Apply migrations
+        run: php maint/migrate.php
+
+      - name: Generate execution loop status
+        run: php maint/run-execution-loop.php
+
+      - name: DB cutover check
+        run: php maint/db-cutover-check.php
+
+      - name: Migration portability check
+        run: php maint/check-migration-portability.php || true
+
+      - name: DB cutover fingerprint
+        run: php maint/db-cutover-fingerprint.php
+
+      - name: Upload readiness artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wbgl-release-readiness
+          path: |
+            docs/WBGL_EXECUTION_LOOP_STATUS.json
+            docs/WBGL_EXECUTION_LOOP_STATUS.md
+            docs/WBGL_EXECUTION_LOOP_LOG.md
+            storage/database/cutover/*.json
+
+  pgsql-readiness:
+    runs-on: ubuntu-latest
+    env:
+      WBGL_DB_DRIVER: pgsql
+      WBGL_DB_HOST: 127.0.0.1
+      WBGL_DB_PORT: 5432
+      WBGL_DB_NAME: wbgl
+      WBGL_DB_USER: wbgl_user
+      WBGL_DB_PASS: ${{ secrets.WBGL_CI_DB_PASSWORD }}
+      WBGL_DB_SSLMODE: disable
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wbgl_user
+          POSTGRES_PASSWORD: ${{ secrets.WBGL_CI_DB_PASSWORD }}
+          POSTGRES_DB: wbgl
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wbgl_user -d wbgl"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert CI DB secret
+        run: |
+          set -euo pipefail
+          if [ -z "${WBGL_DB_PASS}" ]; then
+            echo "WBGL_CI_DB_PASSWORD secret is required."
+            exit 1
+          fi
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pgsql, pdo_pgsql, fileinfo
+          coverage: none
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Run PostgreSQL activation rehearsal (apply)
+        run: php maint/pgsql-activation-rehearsal.php --apply-migrations
+
+      - name: Upload PostgreSQL readiness artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wbgl-pgsql-readiness
+          path: |
+            storage/database/cutover/pgsql_activation_rehearsal_*.json
+            storage/database/cutover/pgsql_activation_rehearsal_latest.json
+            storage/database/cutover/fingerprint_pgsql_*.json
+            storage/database/cutover/fingerprint_pgsql_latest.json

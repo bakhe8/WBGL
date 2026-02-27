@@ -2,11 +2,13 @@
 /**
  * API: Upload Attachment
  */
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Repositories\AttachmentRepository;
+use App\Services\GuaranteeMutationPolicyService;
 
-header('Content-Type: application/json');
+wbgl_api_json_headers();
+wbgl_api_require_login();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -39,8 +41,25 @@ $safeName = uniqid() . '_' . preg_replace('/[^a-zA-Z0-9_-]/', '', pathinfo($file
 $targetPath = $uploadDir . $safeName;
 
 try {
+    $actor = wbgl_api_current_user_display();
+    $policy = GuaranteeMutationPolicyService::evaluate(
+        (int)$guaranteeId,
+        $_POST,
+        'upload_attachment',
+        $actor
+    );
+    if (!$policy['allowed']) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => 'released_read_only',
+            'message' => $policy['reason']
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if (move_uploaded_file($file['tmp_name'], $targetPath)) {
-        
+        $uploadedBy = wbgl_api_current_user_display();
         $repo = new AttachmentRepository();
         $id = $repo->create([
             'guarantee_id' => $guaranteeId,
@@ -48,7 +67,7 @@ try {
             'file_path' => 'attachments/' . $safeName, // Relative path for storage
             'file_size' => $file['size'],
             'file_type' => $file['type'],
-            'uploaded_by' => 'User' // Should come from session
+            'uploaded_by' => $uploadedBy
         ]);
         
         echo json_encode([
@@ -56,7 +75,8 @@ try {
             'file' => [
                 'id' => $id,
                 'name' => $file['name'],
-                'path' => 'attachments/' . $safeName
+                'path' => 'attachments/' . $safeName,
+                'break_glass' => $policy['break_glass']
             ]
         ]);
         

@@ -1,10 +1,11 @@
 <?php
-require __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 use App\Support\Input;
 
 header('Content-Type: application/json');
+wbgl_api_require_login();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

@@ -132,7 +132,7 @@ class GuaranteeDecisionRepository
     {
         $stmt = $this->db->prepare("
             UPDATE guarantee_decisions
-            SET is_locked = 1, locked_reason = ?
+            SET is_locked = TRUE, locked_reason = ?
             WHERE guarantee_id = ?
         ");
 

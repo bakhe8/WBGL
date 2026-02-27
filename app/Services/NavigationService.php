@@ -66,11 +66,14 @@ class NavigationService
      */
     private static function buildFilterConditions(string $filter, ?string $searchTerm = null): array
     {
+        $visibility = GuaranteeVisibilityService::buildSqlFilter('g', 'd');
+        $expiryDateExpr = "(g.raw_data::jsonb ->> 'expiry_date')";
+
         // Production Mode: Check if we should exclude test data
         $settings = \App\Support\Settings::getInstance();
         $testDataFilter = '';
         if ($settings->isProductionMode()) {
-            $testDataFilter = ' AND (g.is_test_data = 0 OR g.is_test_data IS NULL)';
+            $testDataFilter = ' AND g.is_test_data = 0';
         }
 
         // ✅ Search Mode: Overrides standard status filters
@@ -84,40 +87,40 @@ class NavigationService
                     g.guarantee_number LIKE :search_any OR
                     g.raw_data LIKE :search_any OR
                     s.official_name LIKE :search_any
-                )" . $testDataFilter,
-                'params' => [
+                )" . $testDataFilter . $visibility['sql'],
+                'params' => array_merge([
                     'search_any' => $searchAny,
-                ],
+                ], $visibility['params']),
             ];
         }
 
         if ($filter === 'released') {
             // Show only released
             return [
-                'sql' => ' AND d.is_locked = 1' . $testDataFilter,
-                'params' => [],
+                'sql' => ' AND d.is_locked = TRUE' . $testDataFilter . $visibility['sql'],
+                'params' => $visibility['params'],
             ];
         } else {
             // Exclude released for other filters
-            $conditions = ' AND (d.is_locked IS NULL OR d.is_locked = 0)';
+            $conditions = ' AND (d.is_locked IS NULL OR d.is_locked = FALSE)';
 
             // Apply specific status filter
             if ($filter === 'ready') {
-                $conditions .= ' AND d.status = "ready"';
+                $conditions .= " AND d.status = 'ready'";
             } elseif ($filter === 'actionable') {
-                $conditions .= ' AND d.status = "ready" AND (d.active_action IS NULL OR d.active_action = "")';
+                $conditions .= " AND d.status = 'ready' AND (d.active_action IS NULL OR d.active_action = '')";
             } elseif ($filter === 'pending') {
-                $conditions .= ' AND (d.id IS NULL OR d.status = "pending")';
+                $conditions .= " AND (d.id IS NULL OR d.status = 'pending')";
             } elseif ($filter === 'expiring_30') {
-                $conditions .= " AND json_extract(g.raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+30 days')";
+                $conditions .= " AND {$expiryDateExpr} IS NOT NULL AND ({$expiryDateExpr})::date BETWEEN CURRENT_DATE AND (CURRENT_DATE + INTERVAL '30 days')";
             } elseif ($filter === 'expiring_90') {
-                $conditions .= " AND json_extract(g.raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+90 days')";
+                $conditions .= " AND {$expiryDateExpr} IS NOT NULL AND ({$expiryDateExpr})::date BETWEEN CURRENT_DATE AND (CURRENT_DATE + INTERVAL '90 days')";
             }
             // 'all' filter has no additional conditions
 
             return [
-                'sql' => $conditions . $testDataFilter,
-                'params' => [],
+                'sql' => $conditions . $testDataFilter . $visibility['sql'],
+                'params' => $visibility['params'],
             ];
         }
     }

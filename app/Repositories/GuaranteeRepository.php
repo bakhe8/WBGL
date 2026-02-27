@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 use App\Models\Guarantee;
-use App\Support\Database;
+use App\Services\HistoryArchiveService;
 use PDO;
 
 /**
@@ -174,8 +174,8 @@ class GuaranteeRepository
             // ONLY test data
             $where[] = 'is_test_data = 1';
         } elseif (!isset($filters['include_test_data']) || $filters['include_test_data'] === false) {
-            // Default: exclude test data (include NULLs as real data for backward compatibility)
-            $where[] = '(is_test_data = 0 OR is_test_data IS NULL)';
+            // Default: exclude test data.
+            $where[] = 'is_test_data = 0';
         }
         // If include_test_data = true, don't add any filter (show all)
         
@@ -291,61 +291,82 @@ class GuaranteeRepository
         if (empty($ids)) {
             return 0;
         }
-        
-        // Delete from related tables first (cascade)
+
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        
-        // 1. Delete guarantee_history (timeline events)
-        $stmt = $this->db->prepare("
-            DELETE FROM guarantee_history 
-            WHERE guarantee_id IN ({$placeholders})
-        ");
-        $stmt->execute($ids);
-        
-        // 2. Delete guarantee_decisions
-        $stmt = $this->db->prepare("
-            DELETE FROM guarantee_decisions 
-            WHERE guarantee_id IN ({$placeholders})
-        ");
-        $stmt->execute($ids);
-        
-        // 3. Delete guarantee_metadata (if exists)
-        $stmt = $this->db->prepare("
-            DELETE FROM guarantee_metadata 
-            WHERE guarantee_id IN ({$placeholders})
-        ");
-        $stmt->execute($ids);
-        
-        // 4. Delete learning_confirmations
-        $stmt = $this->db->prepare("
-            DELETE FROM learning_confirmations 
-            WHERE guarantee_id IN ({$placeholders})
-        ");
-        $stmt->execute($ids);
-        
-        // 5. Delete guarantee_occurrences (batch relationship)
-        $stmt = $this->db->prepare("
-            DELETE FROM guarantee_occurrences 
-            WHERE guarantee_id IN ({$placeholders})
-        ");
-        $stmt->execute($ids);
-        
-        // 6. Finally, delete the guarantees themselves
-        $stmt = $this->db->prepare("DELETE FROM guarantees WHERE {$whereClause}");
-        $stmt->execute($params);
-        
-        $deletedCount = $stmt->rowCount();
-        
-        // 7. ORPHAN CLEANUP: Remove batch metadata if no guarantees remain for that batch
-        // This ensures the Batches list is clean after deleting test data.
-        $this->db->exec("
-            DELETE FROM batch_metadata 
-            WHERE import_source NOT IN (SELECT DISTINCT import_source FROM guarantees)
-        ");
-        
-        $this->db->commit();
-        
-        return $deletedCount;
+        $deletedCount = 0;
+
+        $this->db->beginTransaction();
+        try {
+            // Archive timeline before deletion to prevent permanent audit loss.
+            HistoryArchiveService::archiveForGuarantees(
+                $this->db,
+                $ids,
+                'delete_test_data',
+                'GuaranteeRepository::deleteTestData'
+            );
+
+            // Delete from related tables first (cascade)
+            // 1. Delete guarantee_history (timeline events)
+            $stmt = $this->db->prepare("
+                DELETE FROM guarantee_history 
+                WHERE guarantee_id IN ({$placeholders})
+            ");
+            $stmt->execute($ids);
+
+            // 2. Delete guarantee_decisions
+            $stmt = $this->db->prepare("
+                DELETE FROM guarantee_decisions 
+                WHERE guarantee_id IN ({$placeholders})
+            ");
+            $stmt->execute($ids);
+
+            // 3. Delete guarantee_metadata (optional table)
+            if ($this->tableExists('guarantee_metadata')) {
+                $stmt = $this->db->prepare("
+                    DELETE FROM guarantee_metadata 
+                    WHERE guarantee_id IN ({$placeholders})
+                ");
+                $stmt->execute($ids);
+            }
+
+            // 4. Delete learning_confirmations (optional table)
+            if ($this->tableExists('learning_confirmations')) {
+                $stmt = $this->db->prepare("
+                    DELETE FROM learning_confirmations 
+                    WHERE guarantee_id IN ({$placeholders})
+                ");
+                $stmt->execute($ids);
+            }
+
+            // 5. Delete guarantee_occurrences (optional table)
+            if ($this->tableExists('guarantee_occurrences')) {
+                $stmt = $this->db->prepare("
+                    DELETE FROM guarantee_occurrences 
+                    WHERE guarantee_id IN ({$placeholders})
+                ");
+                $stmt->execute($ids);
+            }
+
+            // 6. Finally, delete the guarantees themselves
+            $stmt = $this->db->prepare("DELETE FROM guarantees WHERE {$whereClause}");
+            $stmt->execute($params);
+            $deletedCount = $stmt->rowCount();
+
+            // 7. ORPHAN CLEANUP: Remove batch metadata if no guarantees remain for that batch
+            // This ensures the Batches list is clean after deleting test data.
+            $this->db->exec("
+                DELETE FROM batch_metadata 
+                WHERE import_source NOT IN (SELECT DISTINCT import_source FROM guarantees)
+            ");
+
+            $this->db->commit();
+            return $deletedCount;
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
     }
     
     /**
@@ -371,5 +392,18 @@ class GuaranteeRepository
             'oldest_test_data' => null,
             'newest_test_data' => null
         ];
+    }
+
+    private function tableExists(string $tableName): bool
+    {
+        $stmt = $this->db->prepare("
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$tableName]);
+        return (bool)$stmt->fetchColumn();
     }
 }

@@ -1,9 +1,10 @@
 <?php
-require __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 
 header('Content-Type: application/json');
+wbgl_api_require_login();
 
 try {
     $db = Database::connect();

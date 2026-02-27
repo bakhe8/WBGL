@@ -7,27 +7,31 @@
 require_once __DIR__ . '/../app/Support/autoload.php';
 use App\Support\Database;
 use App\Support\Settings;
+use App\Support\ViewPolicy;
+
+ViewPolicy::guardView('batches.php');
 
 $db = Database::connect();
+$driver = Database::currentDriver();
+$importedByAggregate = $driver === 'pgsql'
+    ? "STRING_AGG(DISTINCT g.imported_by, ', ')"
+    : 'GROUP_CONCAT(DISTINCT g.imported_by)';
 
-// Get all batches (hybrid: shows all, uses occurrence counts when available)
+// Get all batches from occurrence ledger only (target contract).
 $batches = $db->query("
     SELECT 
-        g.import_source,
-        COALESCE(bm.batch_name, 'دفعة ' || SUBSTR(g.import_source, 1, 25)) as batch_name,
-        COALESCE(bm.status, 'active') as status,
-        COALESCE(bm.batch_notes, '') as batch_notes,
-        COALESCE(occ.count, COUNT(g.id)) as guarantee_count,
-        MIN(g.imported_at) as created_at,
-        GROUP_CONCAT(DISTINCT g.imported_by) as imported_by
-    FROM guarantees g
-    LEFT JOIN batch_metadata bm ON bm.import_source = g.import_source
-    LEFT JOIN (
-        SELECT batch_identifier, COUNT(DISTINCT guarantee_id) as count
-        FROM guarantee_occurrences GROUP BY batch_identifier
-    ) occ ON occ.batch_identifier = g.import_source
-    GROUP BY g.import_source
-    ORDER BY MIN(g.imported_at) DESC
+        o.batch_identifier as import_source,
+        COALESCE(MAX(bm.batch_name), 'دفعة ' || SUBSTR(o.batch_identifier, 1, 25)) as batch_name,
+        COALESCE(MAX(bm.status), 'active') as status,
+        COALESCE(MAX(bm.batch_notes), '') as batch_notes,
+        COUNT(DISTINCT o.guarantee_id) as guarantee_count,
+        MIN(o.occurred_at) as created_at,
+        {$importedByAggregate} as imported_by
+    FROM guarantee_occurrences o
+    JOIN guarantees g ON g.id = o.guarantee_id
+    LEFT JOIN batch_metadata bm ON bm.import_source = o.batch_identifier
+    GROUP BY o.batch_identifier
+    ORDER BY MIN(o.occurred_at) DESC
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // Production Mode: Filter out test batches
@@ -44,9 +48,10 @@ if ($settings->isProductionMode()) {
         // Check if this batch has any non-test guarantees
         $stmt = $db->prepare("
             SELECT COUNT(*) as count 
-            FROM guarantees 
-            WHERE import_source = ? 
-            AND (is_test_data = 0 OR is_test_data IS NULL)
+            FROM guarantee_occurrences o
+            JOIN guarantees g ON g.id = o.guarantee_id
+            WHERE o.batch_identifier = ?
+            AND g.is_test_data = 0
         ");
         $stmt->execute([$batch['import_source']]);
         $nonTestCount = $stmt->fetch(PDO::FETCH_ASSOC)['count'];

@@ -3,7 +3,7 @@
  * V3 API - Release Guarantee (Server-Driven Partial HTML)
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 
 use App\Repositories\GuaranteeDecisionRepository;
@@ -14,6 +14,7 @@ use App\Support\Input;
 use App\Services\LetterBuilder;
 
 header('Content-Type: text/html; charset=utf-8');
+wbgl_api_require_permission('manage_data');
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);

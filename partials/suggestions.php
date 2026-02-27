@@ -4,14 +4,14 @@
  * Renders a list of suggestion chips driven by UnifiedLearningAuthority data.
  * 
  * Variables:
- * @var array $suggestions Array of suggestion data (id, official_name, score, etc.)
+ * @var array $suggestions Array of canonical suggestion data (supplier_id, official_name, confidence, ...)
  */
 
 if (empty($suggestions)): ?>
     <div style="font-size: 11px; color: #94a3b8; padding: 4px;">لا توجد اقتراحات</div>
 <?php else: 
     foreach ($suggestions as $sugg):
-        $score = $sugg['score'] ?? 0;
+        $score = $sugg['confidence'] ?? 0;
         
         // Determine tooltip
         $tooltipText = 'ثقة عالية';
@@ -30,7 +30,7 @@ if (empty($suggestions)): ?>
         type="button" 
         class="chip chip-unified"
         data-action="selectSupplier"
-        data-id="<?= htmlspecialchars($sugg['id'] ?? '') ?>"
+        data-id="<?= htmlspecialchars($sugg['supplier_id'] ?? '') ?>"
         data-name="<?= $safeName ?>"
         data-confidence="<?= $confidenceLevel ?>"
         title="<?= $tooltipText ?>">

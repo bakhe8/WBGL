@@ -1,11 +1,12 @@
 <?php
 // api/save-import.php
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 
 header('Content-Type: application/json');
+wbgl_api_require_permission('import_excel');
 
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {

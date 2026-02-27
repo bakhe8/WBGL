@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 
 use App\Repositories\GuaranteeRepository;
@@ -15,6 +15,7 @@ use App\Models\Guarantee;
 use App\Models\GuaranteeDecision;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_permission('manual_entry');
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);

@@ -28,6 +28,12 @@ class AuthService
         if ($user && password_verify($password, $user->passwordHash)) {
             $_SESSION['user_id'] = $user->id;
             $_SESSION['username'] = $user->username;
+            $_SESSION['ui_language'] = $user->preferredLanguage ?: 'ar';
+            $_SESSION['ui_theme'] = $user->preferredTheme ?: 'system';
+            $_SESSION['ui_direction_override'] = $user->preferredDirection ?: 'auto';
+            SessionSecurity::markAuthenticatedSession();
+            CsrfGuard::rotateToken();
+            CsrfGuard::publishCookie();
             self::$currentUser = $user;
             $repo->updateLastLogin($user->id);
             return true;
@@ -41,8 +47,9 @@ class AuthService
      */
     public static function logout(): void
     {
-        unset($_SESSION['user_id']);
-        unset($_SESSION['username']);
+        unset($_SESSION['user_id'], $_SESSION['username'], $_SESSION['ui_language'], $_SESSION['ui_theme'], $_SESSION['ui_direction_override']);
+        CsrfGuard::clearToken();
+        SessionSecurity::invalidateSession();
         self::$currentUser = null;
     }
 
@@ -70,6 +77,14 @@ class AuthService
      */
     public static function isLoggedIn(): bool
     {
+        if (self::$currentUser !== null) {
+            return true;
+        }
         return isset($_SESSION['user_id']);
+    }
+
+    public static function forceAuthenticatedUser(User $user): void
+    {
+        self::$currentUser = $user;
     }
 }

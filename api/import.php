@@ -6,12 +6,13 @@
 
 
 require_once __DIR__ . '/../vendor/autoload.php';
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Services\ImportService;
 use App\Support\Settings;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_permission('import_excel');
 ini_set('memory_limit', '512M');
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
@@ -70,36 +71,32 @@ try {
         $service = new ImportService();
         $isTestData = !empty($_POST['is_test_data']);
         $result = $service->importFromExcel($tempPath, $_POST['imported_by'] ?? 'web_user', $filename, $isTestData);
+        $importedRecords = is_array($result['imported_records'] ?? null) ? $result['imported_records'] : [];
+        $importedCount = count($importedRecords);
 
         // ✅ NEW: Mark as test data if requested (Phase 1)
-        if (!empty($_POST['is_test_data']) && !empty($result['imported_records'])) {
+        if (!empty($_POST['is_test_data']) && !empty($importedRecords)) {
             $testBatchId = $_POST['test_batch_id'] ?? null;
             $testNote = $_POST['test_note'] ?? null;
             
             $db = \App\Support\Database::connect();
             $repo = new \App\Repositories\GuaranteeRepository($db);
             
-            foreach ($result['imported_records'] as $record) {
+            foreach ($importedRecords as $record) {
                 $repo->markAsTestData($record['id'], $testBatchId, $testNote);
             }
         }
 
         // --- RECORD IMPORT EVENTS (Before Smart Processing!) ---
         try {
-            if (!empty($result['imported_records'])) {
-                foreach ($result['imported_records'] as $record) {
-
+            if (!empty($importedRecords)) {
+                foreach ($importedRecords as $record) {
                     \App\Services\TimelineRecorder::recordImportEvent(
-                        $record['id'], 
-                        'excel', 
-                        $record['raw_data'] // Pass explicit data
+                        (int)$record['id'],
+                        'excel',
+                        $record['raw_data'] // Explicit canonical payload
                     );
                 }
-            } elseif (!empty($result['imported_ids'])) { 
-                 // Fallback for older ImportService versions if somehow mixed
-                 foreach ($result['imported_ids'] as $gId) {
-                    \App\Services\TimelineRecorder::recordImportEvent($gId, 'excel');
-                 }
             }
         } catch (\Throwable $e) { 
             error_log("Failed to record import events: " . $e->getMessage());
@@ -112,7 +109,7 @@ try {
             // "Smart Processing" applies to any new guarantees, regardless of source (Excel, Manual, Paste)
             $importedBy = $_POST['imported_by'] ?? 'web_user';
             $processor = new \App\Services\SmartProcessingService('manual', $importedBy);
-            $autoMatchStats = $processor->processNewGuarantees($result['imported']);
+            $autoMatchStats = $processor->processNewGuarantees($importedCount);
         } catch (\Throwable $e) { /* Ignore automation errors, keep import success */ }
         // ------------------------------
 
@@ -120,7 +117,8 @@ try {
         echo json_encode([
             'success' => true,
             'data' => [
-                'imported' => $result['imported'],
+                'imported' => $importedCount,
+                'imported_records' => $importedRecords,
                 'auto_matched' => $autoMatchStats['auto_matched'],
                 'total_rows' => $result['total_rows'],
                 'skipped' => count($result['skipped']),
@@ -128,7 +126,7 @@ try {
                 'skipped_details' => $result['skipped'],
                 'error_details' => $result['errors'],
             ],
-            'message' => "تم استيراد {$result['imported']} سجل، وتمت المطابقة التلقائية لـ {$autoMatchStats['auto_matched']} سجل!",
+            'message' => "تم استيراد {$importedCount} سجل، وتمت المطابقة التلقائية لـ {$autoMatchStats['auto_matched']} سجل!",
         ]);
         
     } finally {

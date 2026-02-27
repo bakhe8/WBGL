@@ -61,9 +61,9 @@ class BatchService
             FROM guarantees g
             LEFT JOIN guarantee_occurrences o ON o.guarantee_id = g.id
             LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
-            WHERE o.batch_identifier = ? OR g.import_source = ?
+            WHERE o.batch_identifier = ?
         ";
-        $params = [$importSource, $importSource];
+        $params = [$importSource];
 
         if (!empty($guaranteeIds)) {
             $placeholders = implode(',', array_fill(0, count($guaranteeIds), '?'));
@@ -751,6 +751,14 @@ class BatchService
             ");
             $stmt->execute([$importSource]);
         }
+
+        BatchAuditService::record(
+            $importSource,
+            'batch_closed',
+            $closedBy,
+            null,
+            ['source' => 'batch_service']
+        );
         
         return ['success' => true];
     }
@@ -759,8 +767,21 @@ class BatchService
      * Reopen batch
      * Decision #7: Allowed with explicit user action
      */
-    public function reopenBatch(string $importSource, string $reopenedBy = 'system'): array
+    public function reopenBatch(
+        string $importSource,
+        string $reopenedBy = 'system',
+        ?string $reason = null,
+        ?array $breakGlass = null
+    ): array
     {
+        $reason = $reason !== null ? trim($reason) : '';
+        if ($reason === '') {
+            return [
+                'success' => false,
+                'error' => 'سبب إعادة فتح الدفعة مطلوب'
+            ];
+        }
+
         $stmt = $this->db->prepare("
             UPDATE batch_metadata SET status = 'active' 
             WHERE import_source = ? AND status = 'completed'
@@ -773,8 +794,22 @@ class BatchService
                 'error' => 'الدفعة غير موجودة أو غير مغلقة'
             ];
         }
+
+        BatchAuditService::record(
+            $importSource,
+            'batch_reopened',
+            $reopenedBy,
+            $reason,
+            [
+                'source' => 'batch_service',
+                'break_glass' => $breakGlass,
+            ]
+        );
         
-        return ['success' => true];
+        return [
+            'success' => true,
+            'break_glass' => $breakGlass,
+        ];
     }
     
     /**
@@ -790,14 +825,20 @@ class BatchService
         $stmt->execute([$importSource]);
         $metadata = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        // Get derived data from guarantees
+        // Get derived data from occurrence ledger only (target contract).
+        $driver = \App\Support\Database::currentDriver();
+        $importedByAggregate = $driver === 'pgsql'
+            ? "STRING_AGG(DISTINCT g.imported_by, ', ')"
+            : 'GROUP_CONCAT(DISTINCT g.imported_by)';
+
         $stmt = $this->db->prepare("
-            SELECT 
-                COUNT(*) as guarantee_count,
-                MIN(imported_at) as created_at,
-                GROUP_CONCAT(DISTINCT imported_by) as imported_by
-            FROM guarantees 
-            WHERE import_source = ?
+            SELECT
+                COUNT(DISTINCT o.guarantee_id) as guarantee_count,
+                MIN(o.occurred_at) as created_at,
+                {$importedByAggregate} as imported_by
+            FROM guarantee_occurrences o
+            JOIN guarantees g ON g.id = o.guarantee_id
+            WHERE o.batch_identifier = ?
         ");
         $stmt->execute([$importSource]);
         $derived = $stmt->fetch(PDO::FETCH_ASSOC);

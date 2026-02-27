@@ -1,10 +1,10 @@
 <?php
-require_once __DIR__ . '/../app/Support/Database.php';
-require_once __DIR__ . '/../app/Support/Normalizer.php';
+require_once __DIR__ . '/_bootstrap.php';
 use App\Support\Database;
 use App\Support\Normalizer;
 
 header('Content-Type: application/json');
+wbgl_api_require_permission('import_excel');
 
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {

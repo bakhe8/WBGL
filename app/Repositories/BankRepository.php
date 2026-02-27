@@ -32,10 +32,10 @@ class BankRepository
 
     private function map(array $row): Bank
     {
-        $officialName = $row['arabic_name'] ?? $row['official_name'] ?? '';
-        $officialNameEn = $row['english_name'] ?? $row['official_name_en'] ?? null;
-        $shortCode = $row['short_name'] ?? $row['short_code'] ?? null;
-        $normalized = $row['normalized_name'] ?? $row['normalized_key'] ?? null;
+        $officialName = $row['arabic_name'] ?? '';
+        $officialNameEn = $row['english_name'] ?? null;
+        $shortCode = $row['short_name'] ?? null;
+        $normalized = $row['normalized_name'] ?? null;
 
         return new Bank(
             (int) $row['id'],
@@ -47,8 +47,8 @@ class BankRepository
             1, // is_confirmed - always confirmed in new schema
             $row['created_at'] ?? null,
             $row['department'] ?? null,
-            $row['address_line1'] ?? $row['address_line_1'] ?? null,
-            $row['address_line2'] ?? $row['address_line_2'] ?? null, // Legacy compatibility (not in schema)
+            $row['address_line1'] ?? null,
+            $row['address_line2'] ?? null,
             $row['contact_email'] ?? null
         );
     }
@@ -111,14 +111,14 @@ class BankRepository
     public function create(array $data): Bank
     {
         $pdo = Database::connection();
-        $arabicName = $data['arabic_name'] ?? $data['official_name'] ?? '';
-        $englishName = $data['english_name'] ?? $data['official_name_en'] ?? null;
-        $shortName = $data['short_name'] ?? $data['short_code'] ?? null;
-        $normalizedName = $data['normalized_name'] ?? $data['normalized_key'] ?? null;
+        $arabicName = $data['arabic_name'] ?? '';
+        $englishName = $data['english_name'] ?? null;
+        $shortName = $data['short_name'] ?? null;
+        $normalizedName = $data['normalized_name'] ?? null;
         if (!$normalizedName && $arabicName) {
             $normalizedName = \App\Support\BankNormalizer::normalize($arabicName);
         }
-        $addressLine1 = $data['address_line1'] ?? $data['address_line_1'] ?? null;
+        $addressLine1 = $data['address_line1'] ?? null;
 
         $stmt = $pdo->prepare('INSERT INTO banks 
             (arabic_name, english_name, short_name, normalized_name, department, address_line1, contact_email, created_at, updated_at) 
@@ -144,7 +144,7 @@ class BankRepository
             date('c'),
             $data['department'] ?? null,
             $addressLine1,
-            $data['address_line2'] ?? $data['address_line_2'] ?? null,
+            $data['address_line2'] ?? null,
             $data['contact_email'] ?? null
         );
     }
@@ -157,30 +157,30 @@ class BankRepository
         $fields = [];
         $params = ['id' => $id];
         
-        if (isset($data['arabic_name']) || isset($data['official_name'])) {
+        if (isset($data['arabic_name'])) {
             $fields[] = 'arabic_name = :arabic';
-            $params['arabic'] = $data['arabic_name'] ?? $data['official_name'];
+            $params['arabic'] = $data['arabic_name'];
         }
-        if (isset($data['english_name']) || isset($data['official_name_en'])) {
+        if (isset($data['english_name'])) {
             $fields[] = 'english_name = :english';
-            $params['english'] = $data['english_name'] ?? $data['official_name_en'];
+            $params['english'] = $data['english_name'];
         }
-        if (isset($data['normalized_name']) || isset($data['normalized_key'])) {
+        if (isset($data['normalized_name'])) {
             $fields[] = 'normalized_name = :normalized';
-            $params['normalized'] = $data['normalized_name'] ?? $data['normalized_key'];
+            $params['normalized'] = $data['normalized_name'];
         }
-        if (isset($data['short_name']) || isset($data['short_code'])) {
+        if (isset($data['short_name'])) {
             $fields[] = 'short_name = :short';
-            $params['short'] = $data['short_name'] ?? $data['short_code'];
+            $params['short'] = $data['short_name'];
         }
         
         if (isset($data['department'])) {
             $fields[] = 'department = :dept';
             $params['dept'] = $data['department'];
         }
-        if (isset($data['address_line1']) || isset($data['address_line_1'])) {
+        if (isset($data['address_line1'])) {
             $fields[] = 'address_line1 = :addr1';
-            $params['addr1'] = $data['address_line1'] ?? $data['address_line_1'];
+            $params['addr1'] = $data['address_line1'];
         }
         if (isset($data['contact_email'])) {
             $fields[] = 'contact_email = :email';

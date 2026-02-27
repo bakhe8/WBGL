@@ -5,15 +5,17 @@
  * Single endpoint = single decision
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
+use App\Services\GuaranteeMutationPolicyService;
 use App\Repositories\GuaranteeRepository;
 use App\Support\BankNormalizer;
 use App\Support\Input;
 use App\Support\Logger;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_login();
 
 try {
     // Get POST data
@@ -36,7 +38,23 @@ try {
     $db = Database::connect();
     $guaranteeRepo = new GuaranteeRepository($db);
     $currentGuarantee = $guaranteeRepo->find($guaranteeId);
-    $decidedBy = Input::string($input, 'decided_by', 'web_user');
+    $decidedBy = Input::string($input, 'decided_by', wbgl_api_current_user_display());
+
+    $policy = GuaranteeMutationPolicyService::evaluate(
+        (int)$guaranteeId,
+        $input,
+        'save_and_next_decision',
+        $decidedBy
+    );
+    if (!$policy['allowed']) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => 'released_read_only',
+            'message' => $policy['reason'],
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
 
     $resolveBankId = static function (PDO $db, array $candidates): ?int {
         $stmtByAlt = $db->prepare(
@@ -106,12 +124,12 @@ try {
             return;
         }
 
-        $importAtStmt = $db->prepare("SELECT created_at FROM guarantee_history WHERE guarantee_id = ? AND event_type = 'import' ORDER BY datetime(created_at), id LIMIT 1");
+        $importAtStmt = $db->prepare("SELECT created_at FROM guarantee_history WHERE guarantee_id = ? AND event_type = 'import' ORDER BY created_at ASC, id ASC LIMIT 1");
         $importAtStmt->execute([$guaranteeId]);
         $importAt = (string)($importAtStmt->fetchColumn() ?: date('Y-m-d H:i:s'));
         $eventAt = date('Y-m-d H:i:s', strtotime($importAt . ' +1 second'));
 
-        $snapshot = [
+        $beforeSnapshot = [
             'guarantee_number' => $rawData['bg_number'] ?? $rawData['guarantee_number'] ?? '',
             'contract_number' => $rawData['contract_number'] ?? $rawData['document_reference'] ?? '',
             'amount' => $rawData['amount'] ?? 0,
@@ -127,30 +145,30 @@ try {
             'status' => 'pending'
         ];
 
+        $changes = [[
+            'field' => 'bank_name',
+            'old_value' => $rawBankName,
+            'new_value' => $matchedBankName,
+            'trigger' => 'auto'
+        ]];
         $eventDetails = [
             'action' => 'Bank auto-matched',
-            'changes' => [[
-                'field' => 'bank_name',
-                'old_value' => $rawBankName,
-                'new_value' => $matchedBankName,
-                'trigger' => 'auto'
-            ]],
-            'result' => 'Automatically matched during save'
+            'result' => 'Automatically matched during save',
+            'event_time' => $eventAt,
         ];
+        $afterSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
 
-        $insert = $db->prepare(
-            "INSERT INTO guarantee_history (guarantee_id, event_type, event_subtype, snapshot_data, event_details, created_at, created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?)"
-        );
-        $insert->execute([
+        \App\Services\TimelineRecorder::recordStructuredEvent(
             $guaranteeId,
             'auto_matched',
             'bank_match',
-            json_encode($snapshot, JSON_UNESCAPED_UNICODE),
-            json_encode($eventDetails, JSON_UNESCAPED_UNICODE),
-            $eventAt,
-            'System AI'
-        ]);
+            $beforeSnapshot,
+            $changes,
+            'System AI',
+            $eventDetails,
+            null,
+            is_array($afterSnapshot) ? $afterSnapshot : null
+        );
     };
 
     // Track decision source for AI success metrics

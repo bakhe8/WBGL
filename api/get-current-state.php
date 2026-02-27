@@ -10,7 +10,7 @@
  * - Server is the single source of truth
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 use App\Repositories\GuaranteeRepository;
@@ -18,8 +18,10 @@ use App\Repositories\GuaranteeDecisionRepository;
 use App\Repositories\SupplierLearningRepository;
 use App\Repositories\SupplierRepository;
 use App\Repositories\BankRepository;
+use App\Services\GuaranteeVisibilityService;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_login();
 
 // Validate input
 $guaranteeId = $_GET['id'] ?? null;
@@ -29,6 +31,15 @@ if (!$guaranteeId || !is_numeric($guaranteeId)) {
         'success' => false,
         'error' => 'معرف الضمان مطلوب ويجب أن يكون رقم'
     ]);
+    exit;
+}
+
+if (!GuaranteeVisibilityService::canAccessGuarantee((int)$guaranteeId)) {
+    http_response_code(403);
+    echo json_encode([
+        'success' => false,
+        'error' => 'Permission Denied'
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 }
 

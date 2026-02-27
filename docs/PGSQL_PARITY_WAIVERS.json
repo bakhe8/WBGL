@@ -1,0 +1,41 @@
+{
+  "row_count": [
+    {
+      "table": "audit_trail_events",
+      "max_delta": 250,
+      "reason": "Operational logging drift after last sync; does not impact business guarantee state."
+    },
+    {
+      "table": "guarantee_decisions",
+      "max_delta": 100,
+      "reason": "SQLite source contains orphan rows that are intentionally rejected by PostgreSQL FK constraints."
+    },
+    {
+      "table": "guarantee_history",
+      "max_delta": 300,
+      "reason": "SQLite source contains orphan timeline rows that are intentionally rejected by PostgreSQL FK constraints."
+    },
+    {
+      "table": "learning_confirmations",
+      "max_delta": 50,
+      "reason": "Legacy source rows violate integer contract for decision_time_seconds and are skipped in PostgreSQL transfer."
+    },
+    {
+      "table": "notifications",
+      "max_delta": 200,
+      "reason": "Notification queue is operational and can drift between environments during live smoke/integration runs."
+    }
+  ],
+  "type_mismatch": [
+    {
+      "table": "banks",
+      "column": "created_at",
+      "reason": "Legacy SQLite NUM affinity is accepted as TEXT in PostgreSQL target contract."
+    },
+    {
+      "table": "banks",
+      "column": "updated_at",
+      "reason": "Legacy SQLite NUM affinity is accepted as TEXT in PostgreSQL target contract."
+    }
+  ]
+}

@@ -87,6 +87,53 @@ http://localhost:<PORT>
 - `database.db` - SQLite database
 - جداول تُنشأ تلقائياً إذا لم تكن موجودة
 
+### SQL Migrations (Versioned)
+
+تم اعتماد مسار migrations رسمي داخل:
+
+- `database/migrations/*.sql`
+
+أوامر التشغيل:
+
+```bash
+php maint/migration-status.php
+php maint/migrate.php --dry-run
+php maint/migrate.php
+php maint/run-execution-loop.php
+php maint/schedule.php
+```
+
+مرجع التنفيذ المرحلي الحالي:
+
+- `docs/P0_EXECUTION_BASELINE.md`
+- `docs/NO_REINVENTION_POLICY.md`
+
+### Tests (P0 Baseline)
+
+```bash
+vendor/bin/phpunit --testsuite Unit
+vendor/bin/phpunit --testsuite Integration
+npm install
+npx playwright install chromium
+npm run test:e2e
+```
+
+تشمل طبقة التكامل الحرجة:
+
+- `tests/Integration/EnterpriseApiFlowsTest.php`
+  - `auth/rbac`
+  - `print-events`
+  - `history snapshot`
+  - `undo governance`
+  - `scheduler dead-letter`
+  - `operational metrics`
+
+مراجع الحوكمة والتشغيل:
+
+- `docs/WBGL_ENTERPRISE_GRADE_EXECUTION_PLAN.md`
+- `docs/OBSERVABILITY_RUNBOOK.md`
+- `docs/WBGL_EXECUTION_LOOP_STATUS.md`
+
 ## 📝 الترخيص
 
 هذا المشروع خاص ومملوك. جميع الحقوق محفوظة.

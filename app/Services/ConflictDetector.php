@@ -34,7 +34,7 @@ class ConflictDetector
         // Supplier conflicts
         $supplierList = $candidates['supplier']['candidates'] ?? [];
         if (count($supplierList) > 1) {
-            $diff = ($supplierList[0]['score'] ?? 0) - ($supplierList[1]['score'] ?? 0);
+            $diff = $this->confidence($supplierList[0]) - $this->confidence($supplierList[1]);
             if ($diff < $delta) {
                 $conflicts[] = 'مرشحا مورد متقاربان في الدرجة';
             }
@@ -42,15 +42,18 @@ class ConflictDetector
         // Official vs alternative vs override
         if (!empty($supplierList)) {
             $top = $supplierList[0];
-            if (($top['source'] ?? '') === 'alternative' && ($top['score'] ?? 0) < $autoTh) {
+            $topSource = $this->source($top);
+            $topConfidence = $this->confidence($top);
+
+            if ($topSource === 'alternative' && $topConfidence < $autoTh) {
                 $conflicts[] = 'أعلى مرشح من الأسماء البديلة وبدرجة منخفضة، يحتاج مراجعة';
             }
-            if (($top['source'] ?? '') === 'override' && ($top['score'] ?? 0) < $autoTh) {
+            if ($topSource === 'override' && $topConfidence < $autoTh) {
                 $conflicts[] = 'يوجد Override لكن الدرجة منخفضة، راجع المدخلات';
             }
             // إذا وُجد Override وليس هو الأعلى
-            $hasOverride = array_filter($supplierList, fn($c) => ($c['source'] ?? '') === 'override');
-            if ($hasOverride && ($top['source'] ?? '') !== 'override') {
+            $hasOverride = array_filter($supplierList, fn($c) => $this->source($c) === 'override');
+            if ($hasOverride && $topSource !== 'override') {
                 $conflicts[] = 'يوجد Override لكن لم يكن أعلى نتيجة، تحقق من التعارض';
             }
         }
@@ -68,17 +71,20 @@ class ConflictDetector
         // Bank conflicts
         $bankList = $candidates['bank']['candidates'] ?? [];
         if (count($bankList) > 1) {
-            $diff = ($bankList[0]['score'] ?? 0) - ($bankList[1]['score'] ?? 0);
+            $diff = $this->confidence($bankList[0]) - $this->confidence($bankList[1]);
             if ($diff < $delta) {
                 $conflicts[] = 'مرشحا بنك متقاربان في الدرجة';
             }
         }
         if (!empty($bankList)) {
             $top = $bankList[0];
-            if (($top['score'] ?? 0) < $autoTh) {
+            $topSource = $this->source($top);
+            $topConfidence = $this->confidence($top);
+
+            if ($topConfidence < $autoTh) {
                 $conflicts[] = 'أعلى مرشح بنك بدرجة منخفضة، يحتاج مراجعة';
             }
-            if (($top['source'] ?? '') === 'alternative' && ($top['score'] ?? 0) < $autoTh) {
+            if ($topSource === 'alternative' && $topConfidence < $autoTh) {
                 $conflicts[] = 'مرشح بنك بديل بدرجة منخفضة، يفضّل مراجعة الاسم الرسمي';
             }
         }
@@ -93,6 +99,28 @@ class ConflictDetector
         }
 
         return $conflicts;
+    }
+
+    /**
+     * Accept both canonical (confidence/primary_source) and legacy (score/source) keys.
+     *
+     * @param array<string,mixed> $candidate
+     */
+    private function confidence(array $candidate): float
+    {
+        if (array_key_exists('confidence', $candidate)) {
+            return (float)$candidate['confidence'];
+        }
+        return (float)($candidate['score'] ?? 0);
+    }
+
+    /**
+     * @param array<string,mixed> $candidate
+     */
+    private function source(array $candidate): string
+    {
+        $source = $candidate['primary_source'] ?? $candidate['source'] ?? '';
+        return strtolower(trim((string)$source));
     }
     
 }

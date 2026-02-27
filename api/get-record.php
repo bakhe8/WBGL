@@ -4,7 +4,7 @@
  * Returns HTML fragment for record form section
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 
 use App\Support\Database;
@@ -13,6 +13,7 @@ use App\Support\Settings;
 use App\Support\Logger;
 
 header('Content-Type: text/html; charset=utf-8');
+wbgl_api_require_login();
 
 try {
     $index = isset($_GET['index']) ? intval($_GET['index']) : 1;
@@ -141,7 +142,7 @@ try {
         if ($record['bank_id']) {
             $bStmt = $db->prepare('
                 SELECT 
-                    arabic_name as official_name,
+                    arabic_name as bank_name,
                     department,
                     address_line1 as po_box,
                     contact_email as email
@@ -150,7 +151,7 @@ try {
             $bStmt->execute([$record['bank_id']]);
             $bankDetails = $bStmt->fetch(PDO::FETCH_ASSOC);
             if ($bankDetails) {
-                $record['bank_name'] = $bankDetails['official_name'];
+                $record['bank_name'] = $bankDetails['bank_name'];
                 $record['bank_center'] = $bankDetails['department'];
                 $record['bank_po_box'] = $bankDetails['po_box'];
                 $record['bank_email'] = $bankDetails['email'];
@@ -167,43 +168,7 @@ try {
     );
     $record['status_reasons'] = $statusReasons;
     
-    
-    // Get timeline/history for this guarantee (optional - may not exist)
-    $timeline = [];
-    try {
-        $stmtHistory = $db->prepare('
-            SELECT action, change_reason, created_at, created_by 
-            FROM guarantee_history 
-            WHERE guarantee_id = ? 
-            ORDER BY created_at DESC 
-            LIMIT 20
-        ');
-        $stmtHistory->execute([$guaranteeId]);
-        $timeline = $stmtHistory->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Add icons based on action type
-        foreach ($timeline as &$event) {
-            $event['icon'] = match($event['action']) {
-                'imported' => '📥',
-                'extended' => '🔄',
-                'reduced' => '📉',
-                'released' => '📤',
-                'approved' => '✅',
-                'rejected' => '❌',
-                'update'   => '✏️',
-                'auto_matched' => '🤖',
-                'manual_match' => '🔗',
-                default => '📋'
-            };
-            $event['user'] = $event['created_by'] ?? 'System';
-        }
-        unset($event); // Break reference
-    } catch (\PDOException $e) {
-        // History table doesn't exist or query failed - timeline will be empty
-        $timeline = [];
-    }
-
-    // ADR-007: Timeline is audit-only, not UI data source
+    // ADR-007: Timeline is audit-only, not a data source for record rendering.
     $latestEventSubtype = null; // Removed Timeline read
     
     // Get banks for dropdown
@@ -223,54 +188,43 @@ try {
     
     // 1. Supplier Matching
     $supplierMatch = ['score' => 0, 'id' => null, 'name' => '', 'suggestions' => []];
-    // 1. Supplier Matching
-    $supplierMatch = ['score' => 0, 'id' => null, 'name' => '', 'suggestions' => []];
     try {
         // ✅ PHASE 4: Using UnifiedLearningAuthority
         $authority = \App\Services\Learning\AuthorityFactory::create();
         
         if (!empty($record['supplier_name'])) {
             $suggestionDTOs = $authority->getSuggestions($record['supplier_name']);
-            
-            // Map to array format for compatibility
-            $suggestions = array_map(function($dto) {
-                return [
-                    'id' => $dto->supplier_id,
-                    'official_name' => $dto->official_name, // Key used by template logic below
-                    'name' => $dto->official_name,          // Standard key
-                    'score' => $dto->confidence
-                ];
-            }, $suggestionDTOs);
+            $suggestions = array_map(static fn($dto) => $dto->toArray(), $suggestionDTOs);
 
             if (!empty($suggestions)) {
                 $top = $suggestions[0];
                 $supplierMatch = [
-                    'score' => $top['score'],
-                    'id' => $top['id'],
-                    'name' => $top['official_name'],
+                    'score' => (int)($top['confidence'] ?? 0),
+                    'id' => (int)($top['supplier_id'] ?? 0),
+                    'name' => (string)($top['official_name'] ?? ''),
                     'suggestions' => $suggestions // Pass all suggestions for chips
                 ];
                 
                 // Auto-fill if confidence is high and no decision yet
-                if ($record['status'] === 'pending' && $top['score'] >= $autoThreshold) {
+                if ($record['status'] === 'pending' && ((int)($top['confidence'] ?? 0) >= $autoThreshold)) {
                     try {
                         // 1. Capture snapshot BEFORE change
                         $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
                         
                         // 2. Update record data
-                        $record['supplier_name'] = $top['official_name'];
-                        $record['supplier_id'] = $top['id'];
+                        $record['supplier_name'] = (string)($top['official_name'] ?? '');
+                        $record['supplier_id'] = (int)($top['supplier_id'] ?? 0);
                         
                         // 3. Prepare change data
                         $newData = [
-                            'supplier_id' => $top['id'],
-                            'supplier_name' => $top['official_name'],
+                            'supplier_id' => (int)($top['supplier_id'] ?? 0),
+                            'supplier_name' => (string)($top['official_name'] ?? ''),
                             'supplier_trigger' => 'ai_match',
-                            'supplier_confidence' => $top['score']
+                            'supplier_confidence' => (int)($top['confidence'] ?? 0)
                         ];
                         
-                        // 4. Detect changes
-                        $changes = \App\Services\TimelineRecorder::detectChanges($oldSnapshot, $newData);
+                        // 4. Detect changes from canonical patch
+                        $changes = \App\Services\TimelineRecorder::createPatch((array)$oldSnapshot, (array)$newData);
                         
                         // 5. Save to guarantee_decisions
                         if (!empty($changes)) {
@@ -280,21 +234,21 @@ try {
                             $currentDec = $decStmt->fetch(PDO::FETCH_ASSOC);
                             $bankId = $currentDec['bank_id'] ?? null;
                             
-                            $newStatus = ($top['id'] && $bankId) ? 'ready' : 'pending';
+                            $newStatus = (((int)($top['supplier_id'] ?? 0) > 0) && $bankId) ? 'ready' : 'pending';
 
-                            $upsertDecision($guaranteeId, $top['id'], $bankId, $newStatus, 'auto');
+                            $upsertDecision($guaranteeId, (int)($top['supplier_id'] ?? 0), $bankId, $newStatus, 'auto');
 
                             Logger::info('auto_match_decision', [
                                 'guarantee_id' => $guaranteeId,
-                                'supplier_id' => $top['id'],
+                                'supplier_id' => (int)($top['supplier_id'] ?? 0),
                                 'bank_id' => $bankId,
-                                'confidence' => $top['score'],
+                                'confidence' => (int)($top['confidence'] ?? 0),
                                 'threshold' => $autoThreshold,
                                 'source' => 'get-record-supplier'
                             ]);
                             
                             // 6. Save timeline event (Strict UE-01)
-                            \App\Services\TimelineRecorder::recordDecisionEvent($guaranteeId, $oldSnapshot, $newData, true, $top['score']);
+                            \App\Services\TimelineRecorder::recordDecisionEvent($guaranteeId, $oldSnapshot, $newData, true, (int)($top['confidence'] ?? 0));
                             
                             // 7. Save Status Transition (SE-01) if changed
                             \App\Services\TimelineRecorder::recordStatusTransitionEvent($guaranteeId, $oldSnapshot, $newStatus, 'ai_completeness_check');
@@ -311,7 +265,7 @@ try {
         if (!empty($record['bank_name'])) {
             $normalized = \App\Support\BankNormalizer::normalize($record['bank_name']);
             $stmt = $db->prepare("
-                SELECT b.id, b.arabic_name as official_name
+                SELECT b.id, b.arabic_name as bank_name
                 FROM banks b
                 JOIN bank_alternative_names a ON b.id = a.bank_id
                 WHERE a.normalized_name = ?
@@ -324,7 +278,7 @@ try {
                 $bankMatch = [
                     'score' => 100, // Direct match
                     'id' => $bank['id'],
-                    'name' => $bank['official_name']
+                    'name' => $bank['bank_name']
                 ];
                 
                 // Auto-select bank if no decision yet
@@ -339,12 +293,12 @@ try {
                         // 3. Prepare change data
                         $newData = [
                             'bank_id' => $bank['id'],
-                            'bank_name' => $bank['official_name'],
+                            'bank_name' => $bank['bank_name'],
                             'bank_trigger' => 'direct_match'
                         ];
                         
-                        // 4. Detect changes
-                        $changes = \App\Services\TimelineRecorder::detectChanges($oldSnapshot, $newData);
+                        // 4. Detect changes from canonical patch
+                        $changes = \App\Services\TimelineRecorder::createPatch((array)$oldSnapshot, (array)$newData);
                         
                         // 5. Update guarantee_decisions
                         if (!empty($changes)) {

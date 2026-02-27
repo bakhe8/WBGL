@@ -39,15 +39,16 @@ if ($currentUser && $currentUser->roleId) {
     $currentRole = $roleRepo->find($currentUser->roleId);
 }
 ?>
+<?php include __DIR__ . '/ui-bootstrap.php'; ?>
 
 <style>
     .user-profile-header {
         display: flex;
         align-items: center;
         gap: 12px;
-        margin-right: 16px;
-        border-right: 1px solid var(--border-primary);
-        padding-right: 16px;
+        margin-inline-start: 16px;
+        border-inline-start: 1px solid var(--border-primary);
+        padding-inline-start: 16px;
     }
 
     .user-avatar-header {
@@ -68,6 +69,7 @@ if ($currentUser && $currentUser->roleId) {
         display: flex;
         flex-direction: column;
         align-items: flex-end;
+        text-align: end;
     }
 
     .user-name-header {
@@ -86,7 +88,7 @@ if ($currentUser && $currentUser->roleId) {
         color: #ef4444;
         text-decoration: none;
         font-size: 11px;
-        margin-right: 8px;
+        margin-inline-start: 8px;
         transition: opacity 0.2s;
         white-space: nowrap;
     }
@@ -95,10 +97,31 @@ if ($currentUser && $currentUser->roleId) {
         opacity: 0.8;
     }
 
+    .lang-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 28px;
+        height: 18px;
+        border-radius: 12px;
+        background: rgba(37, 99, 235, 0.14);
+        color: var(--accent-primary);
+        font-size: 10px;
+        font-weight: 700;
+        padding: 0 6px;
+    }
+
+    .global-actions .btn-global[type="button"] {
+        border: none;
+        background: transparent;
+        font-family: inherit;
+        cursor: pointer;
+    }
+
     .header-badge {
         position: absolute;
-        top: -4px;
-        right: -4px;
+        inset-block-start: -4px;
+        inset-inline-end: -4px;
         background: #ef4444;
         color: white;
         font-size: 10px;
@@ -113,6 +136,33 @@ if ($currentUser && $currentUser->roleId) {
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         z-index: 10;
     }
+
+    .global-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .global-nav-links {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .theme-pill,
+    .dir-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 32px;
+        height: 18px;
+        border-radius: 12px;
+        background: rgba(148, 163, 184, 0.2);
+        color: var(--text-secondary);
+        font-size: 10px;
+        font-weight: 700;
+        padding: 0 6px;
+    }
 </style>
 
 <header class="top-bar">
@@ -123,7 +173,7 @@ if ($currentUser && $currentUser->roleId) {
         </button>
         <div class="brand">
             <div class="brand-icon">&#x1F4CB;</div>
-            <span class="brand-text">نظام إدارة الضمانات</span>
+            <span class="brand-text" data-i18n="brand.system">نظام إدارة الضمانات</span>
         </div>
     </div>
 
@@ -134,9 +184,9 @@ if ($currentUser && $currentUser->roleId) {
                 <span class="search-icon">🔍</span>
                 <input type="text" name="search"
                     value="<?= isset($_GET['search']) ? htmlspecialchars($_GET['search']) : '' ?>"
-                    placeholder="بحث برقم الضمان، المورد، أو البنك..." class="search-input" autocomplete="off">
+                    placeholder="بحث برقم الضمان، المورد، أو البنك..." data-i18n-placeholder="search.placeholder" class="search-input" autocomplete="off">
                 <?php if (isset($_GET['search']) && !empty($_GET['search'])): ?>
-                    <a href="<?= $basePath ?>index.php" class="clear-search" title="إلغاء البحث">✕</a>
+                    <a href="<?= $basePath ?>index.php" class="clear-search" title="إلغاء البحث" data-i18n-title="search.clear_title">✕</a>
                 <?php endif; ?>
             </div>
         </form>
@@ -146,52 +196,66 @@ if ($currentUser && $currentUser->roleId) {
         <nav class="global-actions">
             <?php
             // ✅ PHASE 11: Task Guidance - Global Badge (Enforced)
-            $badgeDisplay = '';
+            $taskBadgeCount = 0;
             if ($currentUser) {
                 // Fetch real-time count from centralized service
                 $db = \App\Support\Database::connect();
                 $count = \App\Services\StatsService::getPersonalTaskCount($db);
                 if ($count > 0) {
-                    $badgeDisplay = '<span class="header-badge">' . $count . '</span>';
+                    $taskBadgeCount = $count;
                 }
             }
             ?>
-            <a href="<?= $basePath ?>index.php"
-                class="btn-global <?= isActive('index', $currentPage, $currentDir) ? 'active' : '' ?>"
-                style="position: relative;">
-                <span class="nav-icon">🏠</span>
-                <span class="nav-label">الرئيسية</span>
-                <?= $badgeDisplay ?>
-            </a>
-            <a href="<?= $basePath ?>views/batches.php"
-                class="btn-global <?= isActive('batches', $currentPage, $currentDir) ? 'active' : '' ?>">
-                <span class="nav-icon">📦</span>
-                <span class="nav-label">الدفعات</span>
-            </a>
-            <a href="<?= $basePath ?>views/statistics.php"
-                class="btn-global <?= isActive('statistics', $currentPage, $currentDir) ? 'active' : '' ?>">
-                <span class="nav-icon">📊</span>
-                <span class="nav-label">إحصائيات</span>
-            </a>
-            <a href="<?= $basePath ?>views/settings.php"
-                class="btn-global <?= isActive('settings', $currentPage, $currentDir) ? 'active' : '' ?>">
-                <span class="nav-icon">⚙</span>
-                <span class="nav-label">إعدادات</span>
-            </a>
-            <?php if (!$isProductionMode): ?>
-                <a href="<?= $basePath ?>views/maintenance.php"
-                    class="btn-global <?= isActive('maintenance', $currentPage, $currentDir) ? 'active' : '' ?>">
-                    <span class="nav-icon">🛠️</span>
-                    <span class="nav-label">صيانة</span>
-                </a>
-            <?php endif; ?>
-            <?php if (Guard::has('manage_users')): ?>
-                <a href="<?= $basePath ?>views/users.php"
-                    class="btn-global <?= isActive('users', $currentPage, $currentDir) ? 'active' : '' ?>">
-                    <span class="nav-icon">👥</span>
-                    <span class="nav-label">إدارة المستخدمين</span>
-                </a>
-            <?php endif; ?>
+            <div class="global-nav-links"
+                data-nav-root
+                data-nav-base="<?= htmlspecialchars($basePath) ?>"
+                data-nav-current="<?= htmlspecialchars($currentPage) ?>"
+                data-nav-home-badge="<?= (int)$taskBadgeCount ?>"
+                data-nav-production-mode="<?= $isProductionMode ? '1' : '0' ?>">
+                <noscript>
+                    <a href="<?= $basePath ?>index.php"
+                        class="btn-global <?= isActive('index', $currentPage, $currentDir) ? 'active' : '' ?>"
+                        style="position: relative;">
+                        <span class="nav-icon">🏠</span>
+                        <span class="nav-label" data-i18n="nav.home">الرئيسية</span>
+                        <?php if ($taskBadgeCount > 0): ?>
+                            <span class="header-badge"><?= (int)$taskBadgeCount ?></span>
+                        <?php endif; ?>
+                    </a>
+                    <a href="<?= $basePath ?>views/batches.php"
+                        class="btn-global <?= isActive('batches', $currentPage, $currentDir) ? 'active' : '' ?>">
+                        <span class="nav-icon">📦</span>
+                        <span class="nav-label" data-i18n="nav.batches">الدفعات</span>
+                    </a>
+                    <a href="<?= $basePath ?>views/statistics.php"
+                        class="btn-global <?= isActive('statistics', $currentPage, $currentDir) ? 'active' : '' ?>">
+                        <span class="nav-icon">📊</span>
+                        <span class="nav-label" data-i18n="nav.statistics">إحصائيات</span>
+                    </a>
+                    <?php if (Guard::has('manage_users')): ?>
+                        <a href="<?= $basePath ?>views/settings.php"
+                            class="btn-global <?= isActive('settings', $currentPage, $currentDir) ? 'active' : '' ?>">
+                            <span class="nav-icon">⚙</span>
+                            <span class="nav-label" data-i18n="nav.settings">إعدادات</span>
+                        </a>
+                    <?php endif; ?>
+                </noscript>
+            </div>
+            <button type="button" class="btn-global" data-wbgl-lang-toggle data-i18n-title="nav.language">
+                <span class="nav-icon">🌐</span>
+                <span class="nav-label" data-i18n="nav.language">اللغة</span>
+                <span class="lang-pill" id="wbgl-lang-current">AR</span>
+            </button>
+            <button type="button" class="btn-global" data-wbgl-direction-toggle data-i18n-title="nav.direction">
+                <span class="nav-icon">↔</span>
+                <span class="nav-label" data-i18n="nav.direction">الاتجاه</span>
+                <span class="dir-pill" id="wbgl-direction-current">AUTO</span>
+            </button>
+            <button type="button" class="btn-global" data-wbgl-theme-toggle data-i18n-title="nav.theme">
+                <span class="nav-icon">🎨</span>
+                <span class="nav-label" data-i18n="nav.theme">المظهر</span>
+                <span class="theme-pill" id="wbgl-theme-current">SYS</span>
+            </button>
         </nav>
 
         <?php if ($currentUser): ?>
@@ -201,7 +265,7 @@ if ($currentUser && $currentUser->roleId) {
                     <span class="user-role-header"><?= htmlspecialchars($currentRole->name ?? 'مستخدم') ?></span>
                 </div>
                 <div class="user-avatar-header"><?= mb_substr($currentUser->fullName, 0, 1, 'UTF-8') ?></div>
-                <a href="<?= $basePath ?>api/logout.php" class="btn-logout-header" title="تسجيل الخروج">خروج</a>
+                <a href="<?= $basePath ?>api/logout.php" class="btn-logout-header" title="تسجيل الخروج" data-i18n-title="user.logout_title" data-i18n="user.logout">خروج</a>
             </div>
         <?php endif; ?>
 
@@ -211,3 +275,12 @@ if ($currentUser && $currentUser->roleId) {
         </button>
     </div>
 </header>
+
+<script src="<?= $basePath ?>public/js/security.js?v=<?= time() ?>"></script>
+<script src="<?= $basePath ?>public/js/i18n.js?v=<?= time() ?>"></script>
+<script src="<?= $basePath ?>public/js/direction.js?v=<?= time() ?>"></script>
+<script src="<?= $basePath ?>public/js/theme.js?v=<?= time() ?>"></script>
+<script src="<?= $basePath ?>public/js/policy.js?v=<?= time() ?>"></script>
+<script src="<?= $basePath ?>public/js/nav-manifest.js?v=<?= time() ?>"></script>
+<script src="<?= $basePath ?>public/js/ui-runtime.js?v=<?= time() ?>"></script>
+<script src="<?= $basePath ?>public/js/global-shortcuts.js?v=<?= time() ?>"></script>

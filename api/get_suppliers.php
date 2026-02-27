@@ -1,6 +1,8 @@
 <?php
-require_once __DIR__ . '/../app/Support/Database.php';
+require_once __DIR__ . '/_bootstrap.php';
 use App\Support\Database;
+
+wbgl_api_require_login();
 
 try {
     $db = Database::connect();

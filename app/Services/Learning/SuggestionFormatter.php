@@ -84,6 +84,7 @@ class SuggestionFormatter
     ): string {
         // Base reason by signal type
         $baseReason = match($primarySource) {
+            'override_exact' => 'مطابقة مخصصة (Override)',
             'alias_exact' => 'تطابق دقيق',
             'entity_anchor_unique' => 'تطابق بالكيان المميز',
             'entity_anchor_generic' => 'تطابق بالكيان العام',

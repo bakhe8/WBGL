@@ -34,14 +34,36 @@ if (!window.TimelineController) {
             BglLogger.debug('✅ Timeline Controller initialized');
         }
 
+        normalizeEventId(rawId) {
+            const text = String(rawId ?? '').trim();
+            if (!text) {
+                return null;
+            }
+
+            if (/^\d+$/.test(text)) {
+                return parseInt(text, 10);
+            }
+
+            const match = text.match(/(\d+)$/);
+            if (!match) {
+                return null;
+            }
+
+            return parseInt(match[1], 10);
+        }
+
         processTimelineClick(element) {
             // DEBOUNCE: Prevent rapid double-clicks
             if (this.isProcessing) return;
             this.isProcessing = true;
             setTimeout(() => { this.isProcessing = false; }, 300);
 
-            const eventId = element.dataset.eventId;
+            const eventId = this.normalizeEventId(element.dataset.eventId);
             const snapshotData = element.dataset.snapshot;
+            if (eventId === null) {
+                this.showError('تعذر تحديد الحدث التاريخي');
+                return;
+            }
 
             try {
                 let snapshot = null;
@@ -57,17 +79,14 @@ if (!window.TimelineController) {
                 // Add active class to clicked card
                 element.querySelector('.timeline-event-card')?.classList.add('active-event');
 
-                // If no snapshot (New System), reconstruct from deltas
+                // Use resolved before-state snapshot from timeline payload.
                 if (!snapshot || Object.keys(snapshot).length === 0) {
-                    this.reconstructState(eventId).then(reconstructed => {
-                        this.displayHistoricalState(reconstructed, eventId);
-                        document.dispatchEvent(new CustomEvent('guarantee:updated'));
-                    });
-                } else {
-                    // Legacy: use stored snapshot
-                    this.displayHistoricalState(snapshot, eventId);
-                    document.dispatchEvent(new CustomEvent('guarantee:updated'));
+                    this.showError('لا توجد بيانات تاريخية لهذا الحدث');
+                    return;
                 }
+
+                this.displayHistoricalState(snapshot, eventId);
+                document.dispatchEvent(new CustomEvent('guarantee:updated'));
 
             } catch (error) {
                 console.error('Error handling timeline click:', error);
@@ -89,7 +108,7 @@ if (!window.TimelineController) {
                 }
             }
 
-            // Check if snapshot is empty or legacy
+            // Check if snapshot is empty
             if (!snapshotData || Object.keys(snapshotData).length === 0) { // Removed snapshotData._no_snapshot check
                 BglLogger.warn('⚠️ No snapshot data available after reconstruction attempt');
                 if (window.showToast) window.showToast('لا توجد بيانات تاريخية لهذا الحدث', 'error');
@@ -119,34 +138,20 @@ if (!window.TimelineController) {
 
                 const letterSnapshotRaw = eventElement?.dataset.letterSnapshot;
 
-                if (letterSnapshotRaw && letterSnapshotRaw !== 'null') {
-                    // Check if it's HTML (not JSON)
-                    if (!letterSnapshotRaw.trim().startsWith('{')) {
-                        BglLogger.debug('✨ Using HTML letter_snapshot (After State) for action event');
+                if (letterSnapshotRaw && letterSnapshotRaw !== 'null' && !letterSnapshotRaw.trim().startsWith('{')) {
+                    BglLogger.debug('✨ Using HTML letter_snapshot (After State) for action event');
 
-                        // Replace preview section with pre-rendered HTML
-                        const previewSection = document.getElementById('preview-section');
-                        if (previewSection) {
-                            previewSection.innerHTML = letterSnapshotRaw;
+                    // Replace preview section with pre-rendered HTML
+                    const previewSection = document.getElementById('preview-section');
+                    if (previewSection) {
+                        previewSection.innerHTML = letterSnapshotRaw;
 
-                            // ✨ Apply unified formatting layer (digits, text direction)
-                            if (window.PreviewFormatter) {
-                                window.PreviewFormatter.applyFormatting();
-                            }
-
-                            htmlSnapshotUsed = true;
+                        // ✨ Apply unified formatting layer (digits, text direction)
+                        if (window.PreviewFormatter) {
+                            window.PreviewFormatter.applyFormatting();
                         }
-                    } else {
-                        // Fallback: old JSON snapshot
-                        try {
-                            const letterSnapshot = JSON.parse(letterSnapshotRaw);
-                            if (letterSnapshot && Object.keys(letterSnapshot).length > 0) {
-                                BglLogger.debug('📦 Using JSON letter_snapshot (legacy)');
-                                dataToDisplay = letterSnapshot;
-                            }
-                        } catch (e) {
-                            BglLogger.warn('⚠️ Failed to parse letter_snapshot, using snapshot_data');
-                        }
+
+                        htmlSnapshotUsed = true;
                     }
                 }
             }
@@ -180,9 +185,6 @@ if (!window.TimelineController) {
                 eventSubtypeInput.value = this.currentEventSubtype || '';
             }
 
-            // Show historical banner
-            this.showHistoricalBanner();
-
             // Disable editing
             this.disableEditing();
 
@@ -191,98 +193,6 @@ if (!window.TimelineController) {
                 window.recordsController.updatePreviewFromDOM();
             }
         }
-
-        /**
-         * ✨ NEW: Reconstruct State from Deltas (Reverse Replay)
-         * Starts from latest state (server) and reverses events backwards
-         */
-        async reconstructState(targetEventId) {
-            BglLogger.debug('⏳ Reconstructing state for event:', targetEventId);
-
-            // 1. Fetch current latest state from server
-            const currentId = document.querySelector('[data-record-id]')?.dataset.recordId;
-            if (!currentId) return null;
-
-            try {
-                const response = await fetch(`/api/get-current-state.php?id=${currentId}`);
-                const data = await response.json();
-                if (!data.success) throw new Error(data.error);
-
-                let state = data.snapshot; // Start from LATEST
-                BglLogger.debug('🚀 Baseline state (Latest):', state);
-
-                // 2. Get all timeline events from DOM (they are in descending order)
-                const events = Array.from(document.querySelectorAll('.timeline-event-wrapper'));
-
-                // 3. Process events backwards (from latest to target)
-                for (let i = 0; i < events.length; i++) {
-                    const eventEl = events[i];
-                    const eventId = parseInt(eventEl.dataset.eventId);
-
-                    // 🛡️ LEDGER LOGIC: If this event has a full snapshot, it's a "Safety Anchor"
-                    // We can immediately ground our state to this snapshot!
-                    const eventSnapshotRaw = eventEl.dataset.snapshot;
-                    if (eventSnapshotRaw && eventSnapshotRaw !== '{}' && eventSnapshotRaw !== 'null') {
-                        try {
-                            const checkpoint = JSON.parse(eventSnapshotRaw);
-                            state = checkpoint;
-                            BglLogger.debug(`⚓ Snap-to-Checkpoint: Grounding reconstruction to anchor at event ${eventId}`);
-
-                            // If this IS the target event, we've found the final state!
-                            if (eventId === parseInt(targetEventId)) {
-                                break;
-                            }
-                            // Otherwise, we continue reversing from this new baseline
-                        } catch (e) {
-                            BglLogger.warn('⚠️ Failed to parse anchor snapshot:', eventId);
-                        }
-                    }
-
-                    if (eventId <= parseInt(targetEventId)) {
-                        // We've reached the point in time.
-                        break;
-                    }
-
-                    // Reverse this event's changes
-                    const detailsRaw = eventEl.dataset.eventDetails;
-                    if (detailsRaw) {
-                        try {
-                            const details = JSON.parse(detailsRaw);
-                            const changes = details.changes || [];
-
-                            BglLogger.debug(`⏪ Reversing event ${eventId}:`, changes);
-
-                            changes.forEach(change => {
-                                const field = change.field;
-                                const oldValue = change.old_value;
-
-                                // Reverse logic: Set state[field] = oldValue
-                                if (field === 'supplier_id' || field === 'bank_id') {
-                                    state[field] = oldValue ? oldValue.id : null;
-                                    state[field.replace('_id', '_name')] = oldValue ? oldValue.name : '';
-                                } else if (field === 'status' || field === 'workflow_step') {
-                                    state[field] = oldValue;
-                                    BglLogger.debug(`⏪ Reversing lifecycle field: ${field} -> ${oldValue}`);
-                                } else {
-                                    state[field] = oldValue;
-                                }
-                            });
-                        } catch (e) {
-                            BglLogger.warn('⚠️ Failed to parse event details for reconstruction:', eventId);
-                        }
-                    }
-                }
-
-                BglLogger.debug('✅ Reconstructed state:', state);
-                return state;
-
-            } catch (error) {
-                console.error('State reconstruction failed:', error);
-                return null;
-            }
-        }
-
-
 
         updateFormFields(snapshot) {
             BglLogger.debug('🔄 Updating fields with snapshot:', snapshot);
@@ -362,7 +272,6 @@ if (!window.TimelineController) {
             // Update status badge
             const statusBadge = document.querySelector('.status-badge');
             if (statusBadge && snapshot.status) {
-                this.updateStatusBadge(statusBadge, snapshot.status);
                 this.updateStatusBadge(statusBadge, snapshot.status);
                 BglLogger.debug('✓ Updated status:', snapshot.status);
             }

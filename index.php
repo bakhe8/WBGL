@@ -116,6 +116,7 @@ if (!$currentRecord) {
         WHERE 1=1
     ';
     $defaultRecordParams = [];
+    $expiryDateExpr = "(g.raw_data::jsonb ->> 'expiry_date')";
 
     // Production Mode: Exclude test data
     if ($settings->isProductionMode()) {
@@ -162,14 +163,14 @@ if (!$currentRecord) {
         // Apply filter conditions
         if ($statusFilter === 'released') {
             // Show only released
-            $defaultRecordQuery .= ' AND d.is_locked = 1';
+            $defaultRecordQuery .= ' AND d.is_locked = TRUE';
         } else {
             // Exclude released for other filters
-            $defaultRecordQuery .= ' AND (d.is_locked IS NULL OR d.is_locked = 0)';
+            $defaultRecordQuery .= ' AND (d.is_locked IS NULL OR d.is_locked = FALSE)';
 
             // Apply specific status filter
             if ($statusFilter === 'ready') {
-                $defaultRecordQuery .= ' AND d.status = "ready"';
+                $defaultRecordQuery .= " AND d.status = 'ready'";
             } elseif ($statusFilter === 'actionable') {
                 // ✅ PHASE 11: Real Interaction - Filter by user permissions
                 $allowedStages = ['\'dummy\'']; // Prevent empty IN clause
@@ -195,11 +196,11 @@ if (!$currentRecord) {
                     $defaultRecordQuery .= " AND d.workflow_step = " . $db->quote($stageFilter);
                 }
             } elseif ($statusFilter === 'pending') {
-                $defaultRecordQuery .= ' AND (d.id IS NULL OR d.status = "pending")';
+                $defaultRecordQuery .= " AND (d.id IS NULL OR d.status = 'pending')";
             } elseif ($statusFilter === 'expiring_30') {
-                $defaultRecordQuery .= " AND json_extract(g.raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+30 days')";
+                $defaultRecordQuery .= " AND {$expiryDateExpr} IS NOT NULL AND ({$expiryDateExpr})::date BETWEEN CURRENT_DATE AND (CURRENT_DATE + INTERVAL '30 days')";
             } elseif ($statusFilter === 'expiring_90') {
-                $defaultRecordQuery .= " AND json_extract(g.raw_data, '$.expiry_date') BETWEEN date('now') AND date('now', '+90 days')";
+                $defaultRecordQuery .= " AND {$expiryDateExpr} IS NOT NULL AND ({$expiryDateExpr})::date BETWEEN CURRENT_DATE AND (CURRENT_DATE + INTERVAL '90 days')";
             }
             // 'all' filter has no additional conditions
         }
@@ -464,6 +465,7 @@ $formattedSuppliers = array_map(function ($s) {
     <script src="public/js/convert-to-real.js"></script>
 
     <!-- Main Application Styles -->
+    <link rel="stylesheet" href="public/css/a11y.css">
     <link rel="stylesheet" href="public/css/index-main.css">
     <link rel="stylesheet" href="public/css/mobile.css?v=<?= time() + 7 ?>"> <!-- Mobile Retrofit (Cache Busted V8) -->
 
@@ -865,15 +867,30 @@ $formattedSuppliers = array_map(function ($s) {
                     <div class="toolbar-label">إدخال جديد</div>
                 <?php endif; ?>
                 <div class="toolbar-actions">
-                    <button class="btn-input" title="إدخال يدوي" data-action="showManualInput">
+                    <button class="btn-input"
+                        title="إدخال يدوي"
+                        data-action="showManualInput"
+                        data-authorize-resource="guarantee"
+                        data-authorize-action="manual-entry"
+                        data-authorize-mode="hide">
                         <span>&#x270D;</span>
                         <span>يدوي</span>
                     </button>
-                    <button class="btn-input" title="رفع ملف Excel" data-action="showImportModal">
+                    <button class="btn-input"
+                        title="رفع ملف Excel"
+                        data-action="showImportModal"
+                        data-authorize-resource="imports"
+                        data-authorize-action="create"
+                        data-authorize-mode="hide">
                         <span>&#x1F4CA;</span>
                         <span>ملف</span>
                     </button>
-                    <button class="btn-input" title="لصق بيانات" data-action="showPasteModal">
+                    <button class="btn-input"
+                        title="لصق بيانات"
+                        data-action="showPasteModal"
+                        data-authorize-resource="imports"
+                        data-authorize-action="create"
+                        data-authorize-mode="hide">
                         <span>&#x1F4CB;</span>
                         <span>لصق</span>
                     </button>
@@ -1185,6 +1202,7 @@ $formattedSuppliers = array_map(function ($s) {
     <!-- Modal no longer needed - Selection IS the confirmation -->
 
     <script src="/public/js/preview-formatter.js?v=<?= time() ?>"></script>
+    <script src="/public/js/print-audit.js?v=<?= time() ?>"></script>
     <script src="/public/js/main.js?v=<?= time() ?>"></script>
     <script src="/public/js/input-modals.controller.js?v=<?= time() ?>"></script>
     <script src="/public/js/timeline.controller.js?v=<?= time() ?>"></script>

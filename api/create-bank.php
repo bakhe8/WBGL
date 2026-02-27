@@ -9,12 +9,13 @@
  * @version 2.0 (unified)
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 use App\Services\BankManagementService;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_permission('manage_data');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

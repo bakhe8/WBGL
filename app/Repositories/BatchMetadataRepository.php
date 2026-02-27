@@ -47,7 +47,7 @@ class BatchMetadataRepository
             // Insert new
             $insert = $this->db->prepare("
                 INSERT INTO batch_metadata (import_source, batch_name, status, created_at)
-                VALUES (?, ?, 'active', datetime('now'))
+                VALUES (?, ?, 'active', CURRENT_TIMESTAMP)
             ");
             $insert->execute([$importSource, $arabicName]);
         }

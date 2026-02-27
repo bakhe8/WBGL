@@ -8,19 +8,25 @@
  * 
  * Required variables (extracted from $letterData):
  * @var array $header - Bank information
- * @var string $subject - Subject line (plain string)
  * @var array $subject_parts - Subject parts (for proper lang attributes)
  * @var array $content - Content paragraphs and address box
  * @var array $signature - Signature details
  * @var array|null $cc - CC recipients (null if not applicable)
  * @var string $action - Action type (extension, release, etc.)
+ * @var int|null $guarantee_id - Current guarantee id (if available)
  */
 ?>
-<div class="letter-preview">
+<div class="letter-preview" data-guarantee-id="<?= isset($guarantee_id) ? (int)$guarantee_id : 0 ?>">
     <main class="letter-paper" style="position: relative;">
         
         <!-- Print Button Overlay (Only for screen) -->
-        <button onclick="window.print()" class="btn-print-overlay" title="طباعة الخطاب">
+        <button
+            onclick="return (window.WBGLPrintAudit && window.WBGLPrintAudit.handleOverlayPrint)
+                ? window.WBGLPrintAudit.handleOverlayPrint(this)
+                : (window.print(), false)"
+            class="btn-print-overlay"
+            title="طباعة الخطاب"
+            aria-label="طباعة الخطاب">
             🖨️
         </button>
         <style>

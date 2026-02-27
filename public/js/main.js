@@ -4,17 +4,18 @@ window.Toast = {
     show(message, type = 'info', duration = 3500) {
         let container = document.getElementById('toast-container');
         if (!container) {
+            const isRtl = (document.documentElement.getAttribute('dir') || 'rtl') === 'rtl';
             container = document.createElement('div');
             container.id = 'toast-container';
             container.style.cssText = [
                 'position: fixed',
                 'top: 20px',
-                'right: 20px',
+                isRtl ? 'right: 20px' : 'left: 20px',
                 'z-index: 9999',
                 'display: flex',
                 'flex-direction: column',
                 'gap: 10px',
-                'direction: rtl'
+                `direction: ${isRtl ? 'rtl' : 'ltr'}`
             ].join(';');
             document.body.appendChild(container);
         }
@@ -43,7 +44,7 @@ window.Toast = {
             'padding: 12px 16px',
             'border-radius: 10px',
             'box-shadow: 0 10px 20px rgba(0,0,0,0.12)',
-            `border-right: 4px solid ${borderColor}`,
+            `border-inline-start: 4px solid ${borderColor}`,
             'min-width: 240px',
             'max-width: 420px',
             'font-family: inherit',
@@ -88,7 +89,146 @@ window.BglLogger = window.BglLogger || {
     error: (...args) => { console.error(...args); }
 };
 
+function wbglCanHandleGlobalShortcut(event) {
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+        return false;
+    }
+    const target = event.target;
+    if (!target) {
+        return true;
+    }
+    const tag = (target.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+        return false;
+    }
+    if (target.isContentEditable) {
+        return false;
+    }
+    return true;
+}
+
+function wbglFocusSearchInput() {
+    const input = document.querySelector('.search-input, input[name="search"], input[type="search"]');
+    if (input && typeof input.focus === 'function') {
+        input.focus();
+        if (typeof input.select === 'function') {
+            input.select();
+        }
+    }
+}
+
+function wbglNavigateTo(path) {
+    if (!path) return;
+    window.location.href = path;
+}
+
+function wbglEnsureShortcutModal() {
+    let modal = document.getElementById('wbgl-shortcuts-modal');
+    if (modal) {
+        return modal;
+    }
+
+    const t = (key, fallback) => window.WBGLI18n ? window.WBGLI18n.t(key, fallback) : fallback;
+    modal = document.createElement('div');
+    modal.id = 'wbgl-shortcuts-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.style.cssText = [
+        'display:none',
+        'position:fixed',
+        'inset:0',
+        'background:rgba(0,0,0,0.45)',
+        'z-index:11000',
+        'align-items:center',
+        'justify-content:center',
+        'padding:16px'
+    ].join(';');
+
+    modal.innerHTML = `
+        <div style="background:#fff;max-width:520px;width:100%;border-radius:14px;padding:20px;box-shadow:0 25px 50px rgba(0,0,0,0.25);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                <h3 style="margin:0;font-size:18px;">${t('shortcuts.title', 'اختصارات النظام')}</h3>
+                <button type="button" id="wbgl-shortcuts-close" style="border:none;background:#f1f5f9;border-radius:8px;padding:6px 10px;cursor:pointer;">${t('shortcuts.close', 'إغلاق')}</button>
+            </div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px 12px;font-size:14px;">
+                <code>G</code><span>${t('shortcuts.open_main', 'الانتقال إلى الرئيسية')}</span>
+                <code>B</code><span>${t('shortcuts.open_batches', 'فتح صفحة الدفعات')}</span>
+                <code>S</code><span>${t('shortcuts.open_settings', 'فتح الإعدادات')}</span>
+                <code>T</code><span>${t('shortcuts.open_stats', 'فتح الإحصائيات')}</span>
+                <code>/</code><span>${t('shortcuts.focus_search', 'تركيز البحث')}</span>
+                <code>?</code><span>${t('shortcuts.toggle_help', 'فتح/إغلاق نافذة الاختصارات')}</span>
+            </div>
+        </div>
+    `;
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+
+    document.body.appendChild(modal);
+
+    const closeBtn = document.getElementById('wbgl-shortcuts-close');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+    }
+
+    return modal;
+}
+
+function wbglToggleShortcutsModal() {
+    const modal = wbglEnsureShortcutModal();
+    modal.style.display = modal.style.display === 'flex' ? 'none' : 'flex';
+}
+
+function wbglBindGlobalShortcuts() {
+    if (window.__wbglShortcutsBound) {
+        return;
+    }
+    window.__wbglShortcutsBound = true;
+
+    document.addEventListener('keydown', (event) => {
+        if (!wbglCanHandleGlobalShortcut(event)) {
+            return;
+        }
+
+        const key = (event.key || '').toLowerCase();
+        if (key === '?') {
+            event.preventDefault();
+            wbglToggleShortcutsModal();
+            return;
+        }
+
+        if (key === '/') {
+            event.preventDefault();
+            wbglFocusSearchInput();
+            return;
+        }
+
+        if (key === 'g') {
+            wbglNavigateTo('/index.php');
+            return;
+        }
+        if (key === 'b') {
+            wbglNavigateTo('/views/batches.php');
+            return;
+        }
+        if (key === 's') {
+            wbglNavigateTo('/views/settings.php');
+            return;
+        }
+        if (key === 't') {
+            wbglNavigateTo('/views/statistics.php');
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    wbglBindGlobalShortcuts();
+
     const fileInput = document.getElementById('import-file-input');
     if (fileInput) {
         fileInput.addEventListener('change', async (e) => {

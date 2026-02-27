@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 
 use App\Repositories\GuaranteeRepository;
@@ -10,6 +10,7 @@ use App\Support\Database;
 use App\Models\Guarantee;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_permission('manage_data');
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -47,6 +48,7 @@ try {
 
         if ($index === 0) {
             // Transform the Draft record (the first one)
+            $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($sourceDraftId);
             $repo->updateRawData($sourceDraftId, json_encode($rawData, JSON_UNESCAPED_UNICODE));
             
             // Set guarantee_number and status
@@ -56,7 +58,11 @@ try {
             $createdIds[] = $sourceDraftId;
             
             // Record Event
-            \App\Services\TimelineRecorder::recordManualEditEvent($sourceDraftId, $rawData);
+            \App\Services\TimelineRecorder::recordManualEditEvent(
+                $sourceDraftId,
+                $rawData,
+                is_array($oldSnapshot) ? $oldSnapshot : null
+            );
         } else {
             // Create New Guarantee
             $model = new Guarantee(

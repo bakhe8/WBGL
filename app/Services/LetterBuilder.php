@@ -29,8 +29,8 @@ class LetterBuilder
         $relatedTo = $guaranteeData['related_to'] ?? 'contract';
 
         return [
+            'guarantee_id' => isset($guaranteeData['id']) ? (int)$guaranteeData['id'] : 0,
             'header' => self::buildHeader($guaranteeData),
-            'subject' => self::buildSubjectString($guaranteeData, $action, $relatedTo),
             'subject_parts' => self::buildSubjectParts($guaranteeData, $action, $relatedTo),
             'content' => self::buildContent($guaranteeData, $action, $relatedTo),
             'signature' => self::getSignature($action),
@@ -75,21 +75,6 @@ class LetterBuilder
                 ? PreviewFormatter::toArabicNumerals(htmlspecialchars($data['contract_number'] ?? ''))
                 : htmlspecialchars($data['contract_number'] ?? ''),
         ];
-    }
-
-    /**
-     * Build subject line as plain string (for backward compatibility)
-     */
-    private static function buildSubjectString(array $data, string $action, string $relatedTo): string
-    {
-        $parts = self::buildSubjectParts($data, $action, $relatedTo);
-        return sprintf(
-            '%s الضمان البنكي رقم (%s) والعائد %s (%s).',
-            $parts['text'],
-            $parts['guarantee_number'],
-            $parts['related_label'],
-            $parts['contract_number']
-        );
     }
 
     /**

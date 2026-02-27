@@ -27,6 +27,7 @@ namespace App\Support;
 class Settings
 {
     private string $path;
+    private string $localPath;
 
     /**
      * Default settings with documentation
@@ -46,6 +47,7 @@ class Settings
 
         // Base Scores (used by ConfidenceCalculatorV2)
         // These are the ACTUAL scores used in the matching system
+        'BASE_SCORE_OVERRIDE_EXACT' => 100,           // Explicit override exact match
         'BASE_SCORE_ALIAS_EXACT' => 100,              // Exact alias match
         'BASE_SCORE_ENTITY_ANCHOR_UNIQUE' => 90,      // Unique entity anchor
         'BASE_SCORE_ENTITY_ANCHOR_GENERIC' => 75,     // Generic entity anchor
@@ -69,38 +71,61 @@ class Settings
         // System Settings
         'TIMEZONE' => 'Asia/Riyadh',                  // System timezone (configurable from UI)
         'PRODUCTION_MODE' => false,                   // Enable production mode (disables debug logging)
-        'HISTORICAL_IMPORT_ENABLED' => false,         // Toggle historical letters import module endpoints
+        'HISTORY_ANCHOR_INTERVAL' => 10,              // Periodic anchor cadence for hybrid ledger
+        'HISTORY_TEMPLATE_VERSION' => 'v1',           // Template version stamped in letter_context
+        'BREAK_GLASS_ENABLED' => true,                // Emergency override stays available for governed exceptions
+        'BREAK_GLASS_REQUIRE_TICKET' => true,         // Require incident/ticket reference for emergency override
+        'BREAK_GLASS_DEFAULT_TTL_MINUTES' => 60,      // Default emergency override validity window
+        'BREAK_GLASS_MAX_TTL_MINUTES' => 240,         // Maximum allowed emergency override window
+        'SECURITY_HEADERS_ENABLED' => true,           // Apply centralized HTTP security headers
+        'CSRF_ENFORCE_MUTATING' => true,              // Enforce CSRF token for POST/PUT/PATCH/DELETE
+        'SESSION_IDLE_TIMEOUT_SECONDS' => 1800,       // Inactive user session timeout (30 minutes)
+        'SESSION_ABSOLUTE_TIMEOUT_SECONDS' => 43200,  // Absolute session timeout (12 hours)
+        'LOG_FORMAT' => 'json',                       // Application log format: json|text
+        'DEFAULT_LOCALE' => 'ar',                     // Organization-level UI locale default
+        'DEFAULT_THEME' => 'system',                  // Organization-level UI theme default
+        'DEFAULT_DIRECTION' => 'auto',                // Organization-level direction override (auto/rtl/ltr)
+
+        // Observability Alert Thresholds
+        'OBS_ALERT_API_DENIED_SPIKE_24H' => 25,       // Trigger when denied API calls within 24h exceed this threshold
+        'OBS_ALERT_OPEN_DEAD_LETTERS' => 5,           // Trigger when open dead letters exceed this threshold
+        'OBS_ALERT_SCHEDULER_FAILURES_24H' => 3,      // Trigger when scheduler failures in 24h exceed this threshold
+        'OBS_ALERT_PENDING_UNDO_REQUESTS' => 10,      // Trigger when pending undo requests exceed this threshold
+        'OBS_ALERT_SCHEDULER_STALE_HOURS' => 24,      // Trigger when no scheduler run happened for this many hours
+
+        // Enterprise DB Runtime Defaults (PostgreSQL-only)
+        'DB_DRIVER' => 'pgsql',                       // pgsql
+        'DB_DATABASE' => '',
+        'DB_HOST' => '127.0.0.1',
+        'DB_PORT' => 5432,
+        'DB_NAME' => 'wbgl',
+        'DB_USER' => '',
+        'DB_PASS' => '',
+        'DB_SSLMODE' => 'prefer',
 
         // Limits
         'CANDIDATES_LIMIT' => 20,        // Max suggestions shown
     ];
 
-    public function __construct(string $path = '')
+    public function __construct(string $path = '', string $localPath = '')
     {
         $this->path = $path ?: (__DIR__ . '/../../storage/settings.json');
+        $this->localPath = $localPath ?: (__DIR__ . '/../../storage/settings.local.json');
     }
 
     public function all(): array
     {
-        if (!file_exists($this->path)) {
-            $defaults = $this->defaults;
-            $defaults['MATCH_AUTO_THRESHOLD'] = $this->normalizePercentage($defaults['MATCH_AUTO_THRESHOLD']);
-            return $defaults;
-        }
-        $data = json_decode((string) file_get_contents($this->path), true);
-        if (!is_array($data)) {
-            $defaults = $this->defaults;
-            $defaults['MATCH_AUTO_THRESHOLD'] = $this->normalizePercentage($defaults['MATCH_AUTO_THRESHOLD']);
-            return $defaults;
-        }
-        $merged = array_merge($this->defaults, $data);
+        $primary = $this->loadPrimary();
+        $local = $this->loadFileData($this->localPath);
+        $merged = array_merge($primary, $local);
         $merged['MATCH_AUTO_THRESHOLD'] = $this->normalizePercentage($merged['MATCH_AUTO_THRESHOLD'] ?? null);
         return $merged;
     }
 
     public function save(array $data): array
     {
-        $current = $this->all();
+        // Save only to primary settings.json; local secret overrides stay in settings.local.json.
+        $current = $this->loadPrimary();
         $merged = array_merge($current, $data);
         file_put_contents($this->path, json_encode($merged, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         return $merged;
@@ -148,5 +173,32 @@ class Settings
             }
         }
         return $value;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function loadPrimary(): array
+    {
+        $data = $this->loadFileData($this->path);
+        $merged = array_merge($this->defaults, $data);
+        $merged['MATCH_AUTO_THRESHOLD'] = $this->normalizePercentage($merged['MATCH_AUTO_THRESHOLD'] ?? null);
+        return $merged;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function loadFileData(string $path): array
+    {
+        if (!file_exists($path)) {
+            return [];
+        }
+        $raw = file_get_contents($path);
+        if ($raw === false || trim($raw) === '') {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? $decoded : [];
     }
 }

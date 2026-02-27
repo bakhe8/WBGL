@@ -1,9 +1,10 @@
 <?php
-require_once __DIR__ . '/../app/Support/Database.php';
+require_once __DIR__ . '/_bootstrap.php';
 use App\Support\Database;
 
 header('Content-Type: application/json');
 header('Content-Disposition: attachment; filename="banks.json"');
+wbgl_api_require_login();
 
 try {
     $db = Database::connect();

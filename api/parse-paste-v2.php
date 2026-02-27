@@ -12,14 +12,16 @@ require_once __DIR__ . '/../app/Support/Database.php';
 require_once __DIR__ . '/../app/Models/Guarantee.php';
 require_once __DIR__ . '/../app/Repositories/GuaranteeRepository.php';
 require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 use App\Support\Input;
+use App\Support\Settings;
 use App\Services\ParseCoordinatorService;
 use App\Services\SmartPaste\ConfidenceCalculator;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_login();
 
 try {
     // Get input
@@ -28,6 +30,18 @@ try {
         $input = [];
     }
     $text = Input::string($input, 'text', '');
+    $isTestData = !empty($input['is_test_data']);
+
+    // Production Mode: Block test data creation
+    $settings = Settings::getInstance();
+    if ($isTestData && $settings->isProductionMode()) {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'error' => 'لا يمكن إنشاء بيانات اختبار في وضع الإنتاج'
+        ]);
+        exit;
+    }
 
     if (empty($text)) {
         throw new \RuntimeException("لم يتم إدخال أي نص للتحليل");
@@ -37,7 +51,6 @@ try {
     $db = Database::connect();
     
     // ✅ NEW: Extract test data parameters (Phase 1)
-    $isTestData = !empty($input['is_test_data']);
     $testBatchId = Input::string($input, 'test_batch_id', null);
     $testNote = Input::string($input, 'test_note', null);
     

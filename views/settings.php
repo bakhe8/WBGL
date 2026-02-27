@@ -2,6 +2,9 @@
 require_once __DIR__ . '/../app/Support/autoload.php';
 
 use App\Support\Settings;
+use App\Support\ViewPolicy;
+
+ViewPolicy::guardView('settings.php');
 
 // Load current settings
 $settings = new Settings();
@@ -17,8 +20,8 @@ $currentSettings = $settings->all();
     <!-- Design System CSS -->
     <link rel="stylesheet" href="../public/css/design-system.css">
     <link rel="stylesheet" href="../public/css/components.css">
-
     <link rel="stylesheet" href="../public/css/layout.css">
+    <link rel="stylesheet" href="../public/css/a11y.css">
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -187,7 +190,7 @@ $currentSettings = $settings->all();
         .close-modal { cursor: pointer; background: none; border: none; font-size: 1.5rem; }
     </style>
 </head>
-<body>
+<body data-i18n-namespaces="common,settings">
     
     <!-- Unified Header -->
     <?php include __DIR__ . '/../partials/unified-header.php'; ?>
@@ -195,19 +198,20 @@ $currentSettings = $settings->all();
     <div class="container">
 
         <!-- Alert Messages -->
-        <div id="alertSuccess" class="alert alert-success alert-hidden"></div>
-        <div id="alertError" class="alert alert-error alert-hidden"></div>
+        <div id="alertSuccess" class="alert alert-success alert-hidden" role="status" aria-live="polite"></div>
+        <div id="alertError" class="alert alert-error alert-hidden" role="alert" aria-live="assertive"></div>
 
         <!-- Tabs Navigation -->
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('general')">🛠️ الإعدادات العامة</button>
-            <button class="tab-btn" onclick="switchTab('banks')">🏦 البنوك</button>
-            <button class="tab-btn" onclick="switchTab('suppliers')">📦 الموردين</button>
-            <button class="tab-btn" onclick="switchTab('learning')">🧠 التعلم الآلي</button>
+        <div class="tabs" role="tablist" aria-label="أقسام الإعدادات">
+            <button id="tab-general" class="tab-btn active" role="tab" aria-selected="true" aria-controls="general" onclick="switchTab('general')">🛠️ الإعدادات العامة</button>
+            <button id="tab-banks" class="tab-btn" role="tab" aria-selected="false" aria-controls="banks" onclick="switchTab('banks')">🏦 البنوك</button>
+            <button id="tab-suppliers" class="tab-btn" role="tab" aria-selected="false" aria-controls="suppliers" onclick="switchTab('suppliers')">📦 الموردين</button>
+            <button id="tab-overrides" class="tab-btn" role="tab" aria-selected="false" aria-controls="overrides" onclick="switchTab('overrides')">🎯 Overrides</button>
+            <button id="tab-learning" class="tab-btn" role="tab" aria-selected="false" aria-controls="learning" onclick="switchTab('learning')">🧠 التعلم الآلي</button>
         </div>
         
         <!-- Tab 1: General Settings -->
-        <div id="general" class="tab-content active">
+        <div id="general" class="tab-content active" role="tabpanel" aria-labelledby="tab-general">
             <form id="settingsForm">
                 <!-- Matching Thresholds -->
                 <div class="card">
@@ -229,6 +233,11 @@ $currentSettings = $settings->all();
                     <h2 class="card-title">🎯 Base Scores (نقاط الأساس حسب نوع الإشارة)</h2>
                     <p class="form-help" style="margin-bottom: 15px;">هذه هي النقاط الأساسية المستخدمة فعلياً في نظام المطابقة. كل نوع إشارة له نقاط أساسية مختلفة حسب قوته.</p>
                     <div class="grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Override مطابقة صريحة</label>
+                            <span class="form-help">مطابقة قادمة من جدول overrides (أعلى أولوية)</span>
+                            <input type="number" class="form-input" name="BASE_SCORE_OVERRIDE_EXACT" value="<?= $currentSettings['BASE_SCORE_OVERRIDE_EXACT'] ?? 100 ?>" min="0" max="100" step="1" required>
+                        </div>
                         <div class="form-group">
                             <label class="form-label">مطابقة تامة (Alias Exact)</label>
                             <span class="form-help">مطابقة تامة مع اسم بديل محفوظ</span>
@@ -370,7 +379,7 @@ $currentSettings = $settings->all();
         </div>
 
         <!-- Tab 2: Banks -->
-        <div id="banks" class="tab-content">
+        <div id="banks" class="tab-content" role="tabpanel" aria-labelledby="tab-banks" hidden>
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h2 class="card-title" style="margin-bottom: 0; border-bottom: none; padding-bottom: 0;">إدارة البنوك</h2>
@@ -386,7 +395,7 @@ $currentSettings = $settings->all();
         </div>
 
         <!-- Tab 3: Suppliers -->
-        <div id="suppliers" class="tab-content">
+        <div id="suppliers" class="tab-content" role="tabpanel" aria-labelledby="tab-suppliers" hidden>
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h2 class="card-title" style="margin-bottom: 0; border-bottom: none; padding-bottom: 0;">إدارة الموردين</h2>
@@ -401,12 +410,31 @@ $currentSettings = $settings->all();
             </div>
         </div>
 
+        <!-- Tab 4: Matching Overrides -->
+        <div id="overrides" class="tab-content" role="tabpanel" aria-labelledby="tab-overrides" hidden>
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 class="card-title" style="margin-bottom: 0; border-bottom: none; padding-bottom: 0;">إدارة Matching Overrides</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-secondary" onclick="exportData('overrides')">⬇️ تصدير JSON</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('importOverridesFile').click()">⬆️ استيراد JSON</button>
+                        <input type="file" id="importOverridesFile" hidden accept=".json" onchange="importData('overrides', this)">
+                        <button class="btn btn-primary" onclick="openModal('addOverrideModal')">+ إضافة Override</button>
+                    </div>
+                </div>
+                <p class="form-help" style="margin-bottom: 12px;">
+                    أي Override نشط يعطي أولوية مطابقة حاسمة (`override_exact`) على النص الخام المطبع.
+                </p>
+                <div id="overridesTableContainer">جاري التحميل...</div>
+            </div>
+        </div>
+
         <!-- Merge Supplier Modal -->
-        <div id="mergeSupplierModal" class="modal-overlay">
-            <div class="modal">
+        <div id="mergeSupplierModal" class="modal-overlay" aria-hidden="true">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mergeSupplierModalTitle" tabindex="-1">
                 <div class="modal-header">
-                    <span>🔗 دمج مورد مكرر</span>
-                    <button class="close-modal" onclick="closeModal('mergeSupplierModal')">&times;</button>
+                    <h2 id="mergeSupplierModalTitle">🔗 دمج مورد مكرر</h2>
+                    <button type="button" class="close-modal" aria-label="إغلاق نافذة دمج المورد" onclick="closeModal('mergeSupplierModal')">&times;</button>
                 </div>
                 <div class="modal-body">
                     <div style="background: #fdf2f2; border: 1px solid #f87171; border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 13px;">
@@ -433,8 +461,8 @@ $currentSettings = $settings->all();
             </div>
         </div>
 
-        <!-- Tab 4: Machine Learning -->
-        <div id="learning" class="tab-content">
+        <!-- Tab 5: Machine Learning -->
+        <div id="learning" class="tab-content" role="tabpanel" aria-labelledby="tab-learning" hidden>
             <!-- Learning Stats -->
             <div class="card">
                 <h2 class="card-title">🧠 حالة نظام التعلم</h2>
@@ -468,11 +496,11 @@ $currentSettings = $settings->all();
     
     <!-- Modals (AddBank, AddSupplier, Confirm) remain unchanged -->
     <!-- Add Bank Modal -->
-    <div id="addBankModal" class="modal-overlay">
-        <div class="modal">
+    <div id="addBankModal" class="modal-overlay" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addBankModalTitle" tabindex="-1">
             <div class="modal-header">
-                <span>إضافة بنك جديد</span>
-                <button class="close-modal" onclick="closeModal('addBankModal')">&times;</button>
+                <h2 id="addBankModalTitle">إضافة بنك جديد</h2>
+                <button type="button" class="close-modal" aria-label="إغلاق نافذة إضافة بنك" onclick="closeModal('addBankModal')">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="addBankForm" onsubmit="event.preventDefault(); createBank();">
@@ -489,7 +517,7 @@ $currentSettings = $settings->all();
                             <input type="text" class="form-input alias-input" placeholder='مثال: "alrajhi"' style="margin-bottom: 10px;">
                             <input type="text" class="form-input alias-input" placeholder='مثال: "rajhi"' style="margin-bottom: 10px;">
                         </div>
-                        <button type="button" onclick="addAliasFieldSettings()" class="btn btn-secondary" style="margin-top: 8px; font-size: 12px; padding: 6px 12px;">
+                        <button type="button" onclick="addAliasFieldSettings()" class="btn btn-secondary" style="margin-top: 8px; font-size: 12px; padding: 6px 12px;" aria-label="إضافة حقل صيغة بديلة">
                             + إضافة صيغة أخرى
                         </button>
                     </div>
@@ -500,18 +528,18 @@ $currentSettings = $settings->all();
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('addBankModal')">إلغاء</button>
-                <button class="btn btn-primary" onclick="document.getElementById('addBankForm').dispatchEvent(new Event('submit'))">حفظ</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addBankModal')">إلغاء</button>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('addBankForm').dispatchEvent(new Event('submit'))">حفظ</button>
             </div>
         </div>
     </div>
 
     <!-- Add Supplier Modal -->
-    <div id="addSupplierModal" class="modal-overlay">
-         <div class="modal">
+    <div id="addSupplierModal" class="modal-overlay" aria-hidden="true">
+         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addSupplierModalTitle" tabindex="-1">
             <div class="modal-header">
-                <span>إضافة مورد جديد</span>
-                <button class="close-modal" onclick="closeModal('addSupplierModal')">&times;</button>
+                <h2 id="addSupplierModalTitle">إضافة مورد جديد</h2>
+                <button type="button" class="close-modal" aria-label="إغلاق نافذة إضافة مورد" onclick="closeModal('addSupplierModal')">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="addSupplierForm" onsubmit="event.preventDefault(); createSupplier();">
@@ -527,22 +555,60 @@ $currentSettings = $settings->all();
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('addSupplierModal')">إلغاء</button>
-                <button class="btn btn-primary" onclick="document.getElementById('addSupplierForm').dispatchEvent(new Event('submit'))">حفظ</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addSupplierModal')">إلغاء</button>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('addSupplierForm').dispatchEvent(new Event('submit'))">حفظ</button>
             </div>
         </div>
     </div>
-    <!-- Confirmation Modal -->
-    <div id="confirmModal" class="modal-overlay">
-        <div class="modal" style="max-width: 400px;">
+
+    <!-- Add Override Modal -->
+    <div id="addOverrideModal" class="modal-overlay" aria-hidden="true">
+         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addOverrideModalTitle" tabindex="-1">
             <div class="modal-header">
-                <span>تأكيد الإجراء</span>
-                <button class="close-modal" onclick="closeModal('confirmModal')">&times;</button>
+                <h2 id="addOverrideModalTitle">إضافة Matching Override</h2>
+                <button type="button" class="close-modal" aria-label="إغلاق نافذة إضافة Override" onclick="closeModal('addOverrideModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="addOverrideForm" onsubmit="event.preventDefault(); createOverride();">
+                    <div class="form-group">
+                        <label class="form-label">النص الخام (Raw Name) *</label>
+                        <input required name="raw_name" class="form-input" placeholder="مثال: مؤسسة الكهرباء">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">معرف المورد (Supplier ID) *</label>
+                        <input required name="supplier_id" type="number" class="form-input" min="1" placeholder="123">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">السبب (اختياري)</label>
+                        <input name="reason" class="form-input" placeholder="سبب إضافة override">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">الحالة</label>
+                        <select name="is_active" class="form-input">
+                            <option value="1" selected>نشط</option>
+                            <option value="0">معطل</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addOverrideModal')">إلغاء</button>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('addOverrideForm').dispatchEvent(new Event('submit'))">حفظ</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="modal-overlay" aria-hidden="true">
+        <div class="modal" style="max-width: 400px;" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle" tabindex="-1">
+            <div class="modal-header">
+                <h2 id="confirmModalTitle">تأكيد الإجراء</h2>
+                <button type="button" class="close-modal" aria-label="إغلاق نافذة التأكيد" onclick="closeModal('confirmModal')">&times;</button>
             </div>
             <div class="modal-body">
                 <p id="confirmMessage" style="color: var(--text-secondary); margin-bottom: 20px;">هل أنت متأكد؟</p>
                 <div class="modal-footer">
-                    <button class="btn btn-secondary" onclick="closeModal('confirmModal')">إلغاء</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('confirmModal')">إلغاء</button>
                     <button id="confirmBtn" class="btn btn-danger">نعم، تابع</button>
                 </div>
             </div>
@@ -566,10 +632,61 @@ $currentSettings = $settings->all();
             successAlert.classList.add('alert-hidden');
             errorAlert.classList.add('alert-hidden');
         }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
         
         // --- Modals ---
-        function openModal(id) { document.getElementById(id).style.display = 'flex'; }
-        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        const modalState = {
+            activeId: null,
+            lastFocused: null
+        };
+
+        function getFocusableElements(container) {
+            return Array.from(container.querySelectorAll(
+                'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            ));
+        }
+
+        function openModal(id) {
+            const modal = document.getElementById(id);
+            if (!modal) return;
+
+            modalState.lastFocused = document.activeElement;
+            modalState.activeId = id;
+            modal.style.display = 'flex';
+            modal.setAttribute('aria-hidden', 'false');
+
+            const dialog = modal.querySelector('[role="dialog"], .modal');
+            const focusTarget = dialog || modal;
+            const focusable = getFocusableElements(focusTarget);
+            if (focusable.length > 0) {
+                focusable[0].focus();
+            } else if (typeof focusTarget.focus === 'function') {
+                focusTarget.focus();
+            }
+        }
+
+        function closeModal(id) {
+            const modal = document.getElementById(id);
+            if (!modal) return;
+
+            modal.style.display = 'none';
+            modal.setAttribute('aria-hidden', 'true');
+            if (modalState.activeId === id) {
+                modalState.activeId = null;
+            }
+            if (modalState.lastFocused && typeof modalState.lastFocused.focus === 'function') {
+                modalState.lastFocused.focus();
+                modalState.lastFocused = null;
+            }
+        }
         
         // Confirm Modal Logic
         let confirmCallback = null;
@@ -587,9 +704,38 @@ $currentSettings = $settings->all();
         // Close modal on outside click
         window.onclick = function(event) {
             if (event.target.classList.contains('modal-overlay')) {
-                event.target.style.display = 'none';
+                closeModal(event.target.id);
             }
         }
+
+        // ESC + basic focus trap for active modal
+        document.addEventListener('keydown', (event) => {
+            if (!modalState.activeId) return;
+            const modal = document.getElementById(modalState.activeId);
+            if (!modal || modal.style.display === 'none') return;
+
+            if (event.key === 'Escape') {
+                closeModal(modalState.activeId);
+                return;
+            }
+
+            if (event.key !== 'Tab') return;
+            const dialog = modal.querySelector('[role="dialog"], .modal');
+            if (!dialog) return;
+            const focusable = getFocusableElements(dialog);
+            if (focusable.length === 0) return;
+
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            const active = document.activeElement;
+            if (event.shiftKey && active === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && active === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        });
 
         async function createBank() {
             const form = document.getElementById('addBankForm');
@@ -647,22 +793,49 @@ $currentSettings = $settings->all();
             } catch(e) { showAlert('error', '❌ فشل الإضافة: ' + e.message); }
         }
 
+        async function createOverride() {
+            const form = document.getElementById('addOverrideForm');
+            const data = Object.fromEntries(new FormData(form));
+            data.supplier_id = parseInt(data.supplier_id || '0', 10);
+            data.is_active = String(data.is_active || '1') === '1' ? 1 : 0;
+
+            try {
+                const response = await fetch('../api/matching-overrides.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error(result.error || 'فشل الإضافة');
+                }
+
+                showAlert('success', '✅ تم إضافة الـ Override بنجاح');
+                closeModal('addOverrideModal');
+                form.reset();
+                loadMatchingOverrides();
+            } catch (e) {
+                showAlert('error', '❌ فشل الإضافة: ' + e.message);
+            }
+        }
+
         // Tab Switching Logic
         function switchTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-            
-            document.getElementById(tabId).classList.add('active');
-            // Find the button by matching the tab id
-            const buttons = {
-                'general': 0,
-                'banks': 1,
-                'suppliers': 2,
-                'learning': 3
-            };
-            if (buttons[tabId] !== undefined) {
-                document.querySelectorAll('.tab-btn')[buttons[tabId]].classList.add('active');
-            }
+            const tabs = ['general', 'banks', 'suppliers', 'overrides', 'learning'];
+            tabs.forEach((name) => {
+                const panel = document.getElementById(name);
+                const tabButton = document.getElementById(`tab-${name}`);
+                const isActive = name === tabId;
+
+                if (panel) {
+                    panel.classList.toggle('active', isActive);
+                    panel.hidden = !isActive;
+                }
+                if (tabButton) {
+                    tabButton.classList.toggle('active', isActive);
+                    tabButton.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                }
+            });
 
             // Lazy load content
             if (tabId === 'banks' && document.getElementById('banksTableContainer').innerText === 'جاري التحميل...') {
@@ -671,10 +844,38 @@ $currentSettings = $settings->all();
             if (tabId === 'suppliers' && document.getElementById('suppliersTableContainer').innerText === 'جاري التحميل...') {
                 loadSuppliers();
             }
+            if (tabId === 'overrides' && document.getElementById('overridesTableContainer').innerText === 'جاري التحميل...') {
+                loadMatchingOverrides();
+            }
             if (tabId === 'learning') {
                 loadLearningData();
             }
         }
+
+        // Keyboard navigation for tabs (ArrowLeft/ArrowRight/Home/End)
+        document.addEventListener('keydown', (event) => {
+            const active = document.activeElement;
+            if (!active || active.getAttribute('role') !== 'tab') return;
+
+            const ids = ['general', 'banks', 'suppliers', 'overrides', 'learning'];
+            const currentId = (active.id || '').replace('tab-', '');
+            const currentIndex = ids.indexOf(currentId);
+            if (currentIndex < 0) return;
+
+            let nextIndex = currentIndex;
+            if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % ids.length;
+            if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + ids.length) % ids.length;
+            if (event.key === 'Home') nextIndex = 0;
+            if (event.key === 'End') nextIndex = ids.length - 1;
+
+            if (nextIndex !== currentIndex) {
+                event.preventDefault();
+                const nextId = ids[nextIndex];
+                switchTab(nextId);
+                const nextButton = document.getElementById(`tab-${nextId}`);
+                if (nextButton) nextButton.focus();
+            }
+        });
 
 
         // Mock Fetch Loaders (Will implement real fetch next)
@@ -708,6 +909,81 @@ $currentSettings = $settings->all();
                 showAlert('error', 'فشل تحميل الموردين: ' + e.message);
                 container.classList.remove('loading');
             }
+        }
+
+        async function loadMatchingOverrides() {
+            const container = document.getElementById('overridesTableContainer');
+            if (container.classList.contains('loading')) return;
+
+            container.classList.add('loading');
+            try {
+                const res = await fetch('../api/matching-overrides.php?limit=500');
+                const data = await res.json();
+                if (!data.success) {
+                    throw new Error(data.error || 'فشل تحميل overrides');
+                }
+                container.innerHTML = renderOverridesTable(data.items || []);
+            } catch (e) {
+                showAlert('error', 'فشل تحميل overrides: ' + e.message);
+                container.innerHTML = '<div class="alert alert-error">فشل تحميل overrides</div>';
+            } finally {
+                container.classList.remove('loading');
+            }
+        }
+
+        function renderOverridesTable(items) {
+            if (!Array.isArray(items) || items.length === 0) {
+                return '<div class="alert">لا توجد Overrides حالياً.</div>';
+            }
+
+            let html = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Raw Name</th>
+                        <th>Normalized</th>
+                        <th>Supplier ID</th>
+                        <th>Supplier</th>
+                        <th>Reason</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+            items.forEach((item) => {
+                const id = parseInt(item.id, 10) || 0;
+                const isActive = String(item.is_active) === '1';
+                const rawName = escapeHtml(item.raw_name);
+                const normalizedName = escapeHtml(item.normalized_name);
+                const supplierId = parseInt(item.supplier_id, 10) || 0;
+                const supplierName = escapeHtml(item.supplier_official_name || '');
+                const reason = escapeHtml(item.reason || '');
+
+                html += `
+                <tr data-override-id="${id}">
+                    <td>${id}</td>
+                    <td><input class="row-input" name="raw_name" value="${rawName}"></td>
+                    <td><code style="font-size:12px;">${normalizedName}</code></td>
+                    <td><input class="row-input" name="supplier_id" type="number" min="1" value="${supplierId}"></td>
+                    <td>${supplierName}</td>
+                    <td><input class="row-input" name="reason" value="${reason}"></td>
+                    <td>
+                        <select class="row-input" name="is_active">
+                            <option value="1" ${isActive ? 'selected' : ''}>نشط</option>
+                            <option value="0" ${!isActive ? 'selected' : ''}>معطل</option>
+                        </select>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm" style="padding: 4px 8px; font-size: 12px; margin-left: 5px;" onclick="updateOverride(${id}, this)">✏️ تحديث</button>
+                        <button class="btn btn-sm btn-danger" style="padding: 4px 8px; font-size: 12px;" onclick="deleteOverride(${id})">🗑️ حذف</button>
+                    </td>
+                </tr>`;
+            });
+
+            html += '</tbody></table>';
+            return html;
         }
         
         async function loadLearningData() {
@@ -929,6 +1205,78 @@ $currentSettings = $settings->all();
                 btn.disabled = false;
             }
         }
+
+        async function updateOverride(id, btn) {
+            const row = btn.closest('tr');
+            if (!row) return;
+
+            const rawName = row.querySelector('[name="raw_name"]')?.value?.trim() || '';
+            const supplierId = parseInt(row.querySelector('[name="supplier_id"]')?.value || '0', 10);
+            const reason = row.querySelector('[name="reason"]')?.value || '';
+            const isActive = parseInt(row.querySelector('[name="is_active"]')?.value || '1', 10) === 1 ? 1 : 0;
+
+            if (!rawName || !supplierId) {
+                showAlert('error', 'raw_name و supplier_id مطلوبان');
+                return;
+            }
+
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⏳ جار الحفظ...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('../api/matching-overrides.php', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id,
+                        raw_name: rawName,
+                        supplier_id: supplierId,
+                        reason,
+                        is_active: isActive
+                    })
+                });
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.error || 'فشل التحديث');
+                }
+
+                btn.innerHTML = '✅ تم الحفظ';
+                btn.classList.add('btn-success');
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.classList.remove('btn-success');
+                    btn.disabled = false;
+                }, 1500);
+
+                loadMatchingOverrides();
+            } catch (e) {
+                showAlert('error', 'فشل تحديث override: ' + e.message);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        async function deleteOverride(id) {
+            showConfirm('هل أنت متأكد من حذف هذا override؟', async () => {
+                try {
+                    const response = await fetch('../api/matching-overrides.php', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id })
+                    });
+                    const result = await response.json();
+                    if (!result.success) {
+                        throw new Error(result.error || 'فشل الحذف');
+                    }
+                    showAlert('success', '✅ تم حذف override بنجاح');
+                    loadMatchingOverrides();
+                } catch (e) {
+                    showAlert('error', 'فشل حذف override: ' + e.message);
+                }
+            });
+        }
         
         async function deleteBank(id) {
             showConfirm('هل أنت متأكد من حذف هذا البنك؟ لا يمكن التراجع عن هذا الإجراء.', async () => {
@@ -990,7 +1338,12 @@ $currentSettings = $settings->all();
 
         // --- Export / Import ---
         function exportData(type) {
-            const url = type === 'banks' ? '../api/export_banks.php' : '../api/export_suppliers.php';
+            let url = '../api/export_suppliers.php';
+            if (type === 'banks') {
+                url = '../api/export_banks.php';
+            } else if (type === 'overrides') {
+                url = '../api/export_matching_overrides.php';
+            }
             window.location.href = url;
         }
 
@@ -1000,7 +1353,12 @@ $currentSettings = $settings->all();
             const formData = new FormData();
             formData.append('file', file);
             
-            const url = type === 'banks' ? '../api/import_banks.php' : '../api/import_suppliers.php';
+            let url = '../api/import_suppliers.php';
+            if (type === 'banks') {
+                url = '../api/import_banks.php';
+            } else if (type === 'overrides') {
+                url = '../api/import_matching_overrides.php';
+            }
             const btn = input.previousElementSibling; // The Import button
             const originalText = btn.innerText;
 
@@ -1017,8 +1375,13 @@ $currentSettings = $settings->all();
                 if (result.success) {
                     showAlert('success', result.message);
                     // Refresh Table
-                    if (type === 'banks') loadBanks();
-                    else loadSuppliers();
+                    if (type === 'banks') {
+                        loadBanks();
+                    } else if (type === 'overrides') {
+                        loadMatchingOverrides();
+                    } else {
+                        loadSuppliers();
+                    }
                 } else {
                     showAlert('error', 'فشل الاستيراد: ' + result.error);
                 }

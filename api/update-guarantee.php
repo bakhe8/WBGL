@@ -1,18 +1,20 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 
 use App\Repositories\GuaranteeRepository;
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Repositories\SupplierRepository;
+use App\Services\GuaranteeMutationPolicyService;
 use App\Support\Database;
 use App\Support\Input;
 use App\Support\Settings;
 use App\Models\Guarantee;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_permission('manage_data');
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -41,11 +43,22 @@ try {
 
     $db = Database::connect();
     $repo = new GuaranteeRepository($db);
+    $actor = wbgl_api_current_user_display();
     
     // Check existence
     $existing = $repo->find($guaranteeId);
     if (!$existing) {
         throw new \RuntimeException("الضمان غير موجود");
+    }
+
+    $policy = GuaranteeMutationPolicyService::evaluate(
+        (int)$guaranteeId,
+        $input,
+        'guarantee_update',
+        $actor
+    );
+    if (!$policy['allowed']) {
+        throw new \RuntimeException($policy['reason']);
     }
 
     $guaranteeNumber = Input::string($input, 'guarantee_number', '');
@@ -83,6 +96,9 @@ try {
         'related_to' => $relatedTo,
     ]);
 
+    // Snapshot contract: always capture state BEFORE mutation.
+    $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
+
     // Update DB
     $updateSql = "UPDATE guarantees SET raw_data = ?, imported_at = CURRENT_TIMESTAMP";
     $params = [json_encode($newRaw, JSON_UNESCAPED_UNICODE), $guaranteeId];
@@ -99,10 +115,15 @@ try {
     // Record Event
     \App\Services\TimelineRecorder::recordManualEditEvent(
         $guaranteeId,
-        $newRaw
+        $newRaw,
+        is_array($oldSnapshot) ? $oldSnapshot : null
     );
 
-    echo json_encode(['success' => true, 'message' => 'تم تعديل الضمان بنجاح']);
+    echo json_encode([
+        'success' => true,
+        'message' => 'تم تعديل الضمان بنجاح',
+        'break_glass' => $policy['break_glass']
+    ], JSON_UNESCAPED_UNICODE);
 
 } catch (\Throwable $e) {
     http_response_code(400);

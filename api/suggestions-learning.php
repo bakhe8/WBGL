@@ -10,9 +10,10 @@
  */
 
 header('Content-Type: text/html; charset=utf-8');
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Services\Learning\AuthorityFactory;
+wbgl_api_require_login();
 
 // Get input
 $rawInput = $_GET['raw'] ?? '';
@@ -30,21 +31,7 @@ try {
     // 🔥 LIMIT: Show only top 10 highest confidence suggestions
     $suggestionDTOs = array_slice($suggestionDTOs, 0, 10);
     
-    // Convert DTOs to array format for view
-    $suggestions = array_map(function($dto) {
-        return [
-            'id' => $dto->supplier_id,
-            'official_name' => $dto->official_name,
-            'english_name' => $dto->english_name,
-            'score' => $dto->confidence,
-            'level' => $dto->level,
-            'reason_ar' => $dto->reason_ar,
-            'usage_count' => $dto->usage_count,
-            'confirmation_count' => $dto->confirmation_count,
-            'rejection_count' => $dto->rejection_count,
-            'source' => $dto->primary_source ?? 'authority'
-        ];
-    }, $suggestionDTOs);
+    $suggestions = array_map(static fn($dto) => $dto->toArray(), $suggestionDTOs);
     
     // Return HTML Fragment
     include __DIR__ . '/../partials/suggestions.php';

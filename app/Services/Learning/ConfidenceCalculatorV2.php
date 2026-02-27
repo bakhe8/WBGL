@@ -35,6 +35,7 @@ class ConfidenceCalculatorV2
     private function loadBaseScores(): void
     {
         $this->baseScores = [
+            'override_exact' => (int) $this->settings->get('BASE_SCORE_OVERRIDE_EXACT', 100),
             'alias_exact' => (int) $this->settings->get('BASE_SCORE_ALIAS_EXACT', 100),
             'entity_anchor_unique' => (int) $this->settings->get('BASE_SCORE_ENTITY_ANCHOR_UNIQUE', 90),
             'entity_anchor_generic' => (int) $this->settings->get('BASE_SCORE_ENTITY_ANCHOR_GENERIC', 75),
@@ -50,12 +51,6 @@ class ConfidenceCalculatorV2
      * Base scores by signal type (loaded from Settings)
      */
     private array $baseScores = [];
-
-    /**
-     * Minimum confidence threshold for display
-     * @deprecated Use Settings::MATCH_WEAK_THRESHOLD instead
-     */
-    private const MIN_DISPLAY_THRESHOLD = 40;
 
     /**
      * Calculate confidence from aggregated signals
@@ -125,13 +120,18 @@ class ConfidenceCalculatorV2
      */
     public function meetsDisplayThreshold(int $confidence): bool
     {
-        // Use MATCH_REVIEW_THRESHOLD as the cutoff for display logic if strict
-        // But traditionally we might show "Low confidence" items
-        // Let's use MATCH_WEAK_THRESHOLD if available, or strict floor
-        // For now, let's allow showing anything above 40 (hard floor) to avoid empty lists
-        // regardless of settings, because user might want to see "Low Confidence" options
-        
-        return $confidence >= 40; 
+        $raw = $this->settings->get(
+            'MATCH_WEAK_THRESHOLD',
+            $this->settings->get('MATCH_REVIEW_THRESHOLD', 0.70)
+        );
+
+        $threshold = (float)$raw;
+        if ($threshold >= 0.0 && $threshold <= 1.0) {
+            $threshold *= 100.0;
+        }
+        $threshold = max(0.0, min(100.0, $threshold));
+
+        return $confidence >= (int)round($threshold);
     }
 
     /**

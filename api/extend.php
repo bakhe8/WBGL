@@ -4,15 +4,17 @@
  * Returns HTML fragment for updated record section
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Repositories\GuaranteeRepository;
+use App\Services\GuaranteeMutationPolicyService;
 use App\Support\Database;
 use App\Support\Input;
 
 header('Content-Type: text/html; charset=utf-8');
+wbgl_api_require_permission('manage_data');
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -31,6 +33,21 @@ try {
     $db = Database::connect();
     $decisionRepo = new GuaranteeDecisionRepository($db);
     $guaranteeRepo = new GuaranteeRepository($db);
+
+    $policy = GuaranteeMutationPolicyService::evaluate(
+        (int)$guaranteeId,
+        $input,
+        'guarantee_extend',
+        $decidedBy
+    );
+    $isBreakGlass = !empty($policy['break_glass']);
+    if (!$policy['allowed']) {
+        http_response_code(400);
+        echo '<div id="record-form-section" class="card" data-current-event-type="current">';
+        echo '<div class="card-body" style="color: red;">' . htmlspecialchars($policy['reason']) . '</div>';
+        echo '</div>';
+        exit;
+    }
     
     // ===== LIFECYCLE GATE: Prevent extension on pending guarantees =====
     $statusCheck = $db->prepare("
@@ -50,7 +67,7 @@ try {
     }
     
     // Check if locked (released)
-    if ($decision['is_locked']) {
+    if ($decision['is_locked'] && !$isBreakGlass) {
         http_response_code(400);
         echo '<div id="record-form-section" class="card" data-current-event-type="current">';
         echo '<div class="card-body" style="color: red;">لا يمكن تمديد ضمان مُفرَج عنه. الضمان مقفل بسبب: ' . 
@@ -60,7 +77,7 @@ try {
     }
     
     // Check if ready
-    if ($decision['status'] !== 'ready') {
+    if ($decision['status'] !== 'ready' && !$isBreakGlass) {
         http_response_code(400);
         echo '<div id="record-form-section" class="card" data-current-event-type="current">';
         echo '<div class="card-body" style="color: red;">لا يمكن تمديد ضمان غير مكتمل. يجب اختيار المورد والبنك أولاً.</div>';

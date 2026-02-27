@@ -4,21 +4,15 @@
  * API Endpoint: Delete User
  */
 
-require_once __DIR__ . '/../../app/Support/autoload.php';
+require_once __DIR__ . '/../_bootstrap.php';
 
+use App\Services\AuditTrailService;
 use App\Support\AuthService;
 use App\Support\Database;
-use App\Support\Guard;
 use App\Repositories\UserRepository;
 
 header('Content-Type: application/json; charset=utf-8');
-
-// 1. Auth Check
-if (!AuthService::isLoggedIn() || !Guard::has('manage_users')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Permission Denied']);
-    exit;
-}
+wbgl_api_require_permission('manage_users');
 
 $input = json_decode(file_get_contents('php://input'), true);
 $userId = $input['user_id'] ?? null;
@@ -41,14 +35,27 @@ try {
         exit;
     }
 
-    // Check if user exists
-    if (!$repo->find((int)$userId)) {
+    $user = $repo->find((int)$userId);
+    if (!$user) {
         http_response_code(404);
         echo json_encode(['success' => false, 'error' => 'المستخدم غير موجود']);
         exit;
     }
 
     $repo->delete((int)$userId);
+
+    AuditTrailService::record(
+        'user_deleted',
+        'delete',
+        'user',
+        (string)$userId,
+        [
+            'username' => $user->username,
+            'full_name' => $user->fullName,
+            'role_id' => $user->roleId,
+        ],
+        'critical'
+    );
 
     echo json_encode(['success' => true, 'message' => 'تم حذف المستخدم بنجاح']);
 } catch (\Exception $e) {

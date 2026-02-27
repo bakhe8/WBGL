@@ -113,14 +113,14 @@ class SmartProcessingService
                     $shouldLogBankMatch = $bankNameChanged || !$hasBankDecisionBefore;
                     
                     if ($shouldLogBankMatch) {
-                        // Log bank match when value changed OR when bank_id is assigned for first time
-                        $this->logBankAutoMatchEvent($guaranteeId, $rawBankName, $finalBankName);
-                        $stats['banks_matched']++;
-
                         // Update raw_data display name only when textual bank value changed
                         if ($bankNameChanged) {
                             $this->updateBankNameInRawData($guaranteeId, $finalBankName);
                         }
+
+                        // Log bank match when value changed OR when bank_id is assigned for first time
+                        $this->logBankAutoMatchEvent($guaranteeId, $rawBankName, $finalBankName);
+                        $stats['banks_matched']++;
                     }
 
                 }
@@ -131,23 +131,9 @@ class SmartProcessingService
             // =====================================================================
             $supplierId = null;
             
-            // ✅ Get suggestions from UnifiedLearningAuthority
+            // ✅ Get canonical suggestions from UnifiedLearningAuthority (SuggestionDTO[])
             $suggestionDTOs = $this->authority->getSuggestions($supplierName);
-            
-            // Convert DTOs to array format for compatibility with existing code
-            $supplierSuggestions = array_map(function($dto) {
-                return [
-                    'id' => $dto->supplier_id,
-                    'official_name' => $dto->official_name,
-                    'english_name' => $dto->english_name,
-                    'score' => $dto->confidence,
-                    'level' => $dto->level,
-                    'reason_ar' => $dto->reason_ar,
-                    'source' => $dto->primary_source ?? 'authority',
-                    'confirmation_count' => $dto->confirmation_count,
-                    'rejection_count' => $dto->rejection_count
-                ];
-            }, $suggestionDTOs);
+            $supplierSuggestions = array_map(static fn($dto) => $dto->toArray(), $suggestionDTOs);
             
             $supplierConfidence = 0;
             $finalSupplierName = '';
@@ -158,16 +144,16 @@ class SmartProcessingService
                 
                 // Evaluate trust using new Explainable Trust Gate
                 $trustDecision = $this->evaluateTrust(
-                    $top['id'],
-                    $top['source'] ?? null,
-                    $top['score'],
+                    (int)($top['supplier_id'] ?? 0),
+                    $this->normalizeSuggestionSource($top['primary_source'] ?? null),
+                    (int)($top['confidence'] ?? 0),
                     $supplierName
                 );
                 
                 if ($trustDecision->allowed) {
-                    $supplierId = $top['id'];
-                    $finalSupplierName = $top['official_name'];
-                    $supplierConfidence = $top['score'];
+                    $supplierId = (int)($top['supplier_id'] ?? 0);
+                    $finalSupplierName = (string)($top['official_name'] ?? '');
+                    $supplierConfidence = (int)($top['confidence'] ?? 0);
                     
                     // PHASE 2: Apply Targeted Negative Learning if Override occurred
                     if ($trustDecision->shouldApplyTargetedPenalty()) {
@@ -369,6 +355,17 @@ class SmartProcessingService
         return $row ?: null;
     }
 
+    private function normalizeSuggestionSource(?string $primarySource): string
+    {
+        $source = strtolower(trim((string)$primarySource));
+        return match (true) {
+            $source === 'override_exact' => 'override',
+            $source === 'alias_exact' => 'alias',
+            str_starts_with($source, 'fuzzy_official_') => 'official',
+            default => $source !== '' ? $source : 'authority',
+        };
+    }
+
     /**
      * Log timeline events for transparency
      * Note: Bank matching is now automatic and deterministic, so we only log supplier events
@@ -404,32 +401,32 @@ class SmartProcessingService
         ];
 
         // 2. Prepare Event Details with 'changes'
+        $afterSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
+        $newSupplierId = $afterSnapshot['supplier_id'] ?? null;
+        $changes = [[
+            'field' => 'supplier_id',
+            'old_value' => ['id' => null, 'name' => $raw['supplier'] ?? ''],
+            'new_value' => ['id' => $newSupplierId, 'name' => $supName],
+            'trigger' => 'ai_match'
+        ]];
+
         $eventDetails = [
             'action' => 'Auto-matched and approved',
-            'changes' => [[
-                'field' => 'supplier_id',
-                'old_value' => ['id' => null, 'name' => $raw['supplier']],
-                'new_value' => ['id' => 'matched', 'name' => $supName], // ID is technically the new ID, but name is what matters for display
-                'trigger' => 'ai_match'
-            ]],
-            'supplier' => ['raw' => $raw['supplier'], 'matched' => $supName, 'score' => $supScore],
+            'supplier' => ['raw' => $raw['supplier'] ?? '', 'matched' => $supName, 'score' => $supScore],
             'result' => 'Automatically approved based on high confidence match'
         ];
 
-        $histStmt = $this->db->prepare("
-            INSERT INTO guarantee_history (guarantee_id, event_type, event_subtype, snapshot_data, event_details, created_at, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ");
-
-        $histStmt->execute([
+        TimelineRecorder::recordStructuredEvent(
             $guaranteeId,
             'auto_matched',
             'ai_match',
-            json_encode($snapshot),
-            json_encode($eventDetails),
-            date('Y-m-d H:i:s'),
-            'System AI'
-        ]);
+            $snapshot,
+            $changes,
+            'System AI',
+            $eventDetails,
+            null,
+            is_array($afterSnapshot) ? $afterSnapshot : null
+        );
     }
     
     /**
@@ -499,29 +496,29 @@ class SmartProcessingService
             'status' => 'pending'
         ];
         
-        $histStmt = $this->db->prepare("
-            INSERT INTO guarantee_history (guarantee_id, event_type, event_subtype, snapshot_data, event_details, created_at, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ");
-        
-        $histStmt->execute([
+        $changes = [[
+            'field' => 'bank_name',
+            'old_value' => $rawBankName,
+            'new_value' => $matchedBankName,
+            'trigger' => 'auto'
+        ]];
+        $eventDetails = [
+            'action' => 'Bank auto-matched',
+            'result' => 'Automatically matched during import'
+        ];
+        $afterSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
+
+        TimelineRecorder::recordStructuredEvent(
             $guaranteeId,
             'auto_matched',
             'bank_match',
-            json_encode($snapshot),  // Full state BEFORE change
-            json_encode([
-                'action' => 'Bank auto-matched',
-                'changes' => [[
-                    'field' => 'bank_name',
-                    'old_value' => $rawBankName,
-                    'new_value' => $matchedBankName,
-                    'trigger' => 'auto'
-                ]],
-                'result' => 'Automatically matched during import'
-            ]),
-            date('Y-m-d H:i:s'),
-            'System AI'
-        ]);
+            $snapshot,
+            $changes,
+            'System AI',
+            $eventDetails,
+            null,
+            is_array($afterSnapshot) ? $afterSnapshot : null
+        );
     }
 
     /**
@@ -551,6 +548,10 @@ class SmartProcessingService
                 TrustDecision::REASON_LOW_CONFIDENCE,
                 $score
             );
+        }
+
+        if ($source === 'override') {
+            return TrustDecision::allow(TrustDecision::REASON_HIGH_CONFIDENCE, $score);
         }
 
         // Rule 2: Alias source - check for conflicts AND check alias trust

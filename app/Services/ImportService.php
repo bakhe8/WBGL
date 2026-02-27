@@ -95,7 +95,6 @@ class ImportService
         $duplicates = 0;  // Decision #6: Track duplicate imports
         $skipped = [];
         $errors = [];
-        $importedIds = []; // Track IDs for timeline events
         $importedIdsWithData = []; // Track full records for timeline events
 
         // Decision #25: One batch per import (fixed identifier for this file)
@@ -181,8 +180,6 @@ class ImportService
 
                 try {
                     $created = $this->guaranteeRepo->create($guarantee);
-                    $importedIds[] = $created->id; // Track ID
-                    
                     // ✅ [NEW] Record First Occurrence
                     $this->recordOccurrence($created->id, $batchIdentifier, 'excel');
 
@@ -221,8 +218,7 @@ class ImportService
         return [
             'imported' => $imported,
             'duplicates' => $duplicates,  // Decision #6: Report duplicate count
-            'imported_ids' => $importedIds, // Keep for backward compat
-            'imported_records' => $importedIdsWithData ?? [], // New full tracking
+            'imported_records' => $importedIdsWithData, // Canonical full tracking contract
 
             'total_rows' => count($dataRows),
             'skipped' => $skipped,

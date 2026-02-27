@@ -5,6 +5,7 @@ namespace App\Services\Learning;
 use App\Services\Learning\UnifiedLearningAuthority;
 use App\Services\Learning\ConfidenceCalculatorV2;
 use App\Services\Learning\SuggestionFormatter;
+use App\Services\Learning\Feeders\OverrideSignalFeeder;
 use App\Services\Learning\Feeders\AliasSignalFeeder;
 use App\Services\Learning\Feeders\LearningSignalFeeder;
 use App\Services\Learning\Feeders\FuzzySignalFeeder;
@@ -13,6 +14,7 @@ use App\Services\Learning\Feeders\HistoricalSignalFeeder;
 use App\Support\Normalizer;
 use App\Repositories\SupplierRepository;
 use App\Repositories\SupplierAlternativeNameRepository;
+use App\Repositories\SupplierOverrideRepository;
 use App\Repositories\LearningRepository;
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Services\Suggestions\ArabicEntityExtractor;
@@ -57,6 +59,7 @@ class AuthorityFactory
 
         // 3. Register all feeders
         $authority
+            ->registerFeeder(self::createOverrideFeeder())
             ->registerFeeder(self::createAliasFeeder())
             ->registerFeeder(self::createLearningFeeder())
             ->registerFeeder(self::createFuzzyFeeder())
@@ -73,6 +76,15 @@ class AuthorityFactory
     {
         $aliasRepo = new SupplierAlternativeNameRepository();
         return new AliasSignalFeeder($aliasRepo);
+    }
+
+    /**
+     * Create Override Signal Feeder
+     */
+    private static function createOverrideFeeder(): OverrideSignalFeeder
+    {
+        $overrideRepo = new SupplierOverrideRepository();
+        return new OverrideSignalFeeder($overrideRepo);
     }
 
     /**

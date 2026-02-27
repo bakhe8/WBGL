@@ -1,41 +1,35 @@
 <?php
+declare(strict_types=1);
+
 /**
- * API: Get Guarantee History
+ * Legacy endpoint retired.
+ *
+ * Use:
+ * - /api/get-timeline.php
+ * - /api/get-history-snapshot.php
  */
-require_once __DIR__ . '/../app/Support/autoload.php';
 
-use App\Repositories\GuaranteeHistoryRepository;
+require_once __DIR__ . '/_bootstrap.php';
 
-header('Content-Type: application/json');
+use App\Support\Logger;
 
-$guaranteeId = $_GET['guarantee_id'] ?? null;
+header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_login();
 
-if (!$guaranteeId) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'Missing guarantee_id']);
-    exit;
-}
+http_response_code(410);
 
-try {
-    $repo = new GuaranteeHistoryRepository();
-    $history = $repo->getHistory((int)$guaranteeId);
-    
-    // Transform for UI (hide full snapshot unless needed)
-    $data = array_map(function($item) {
-        return [
-            'id' => $item['id'],
-            'action' => $item['action'],
-            'reason' => $item['change_reason'],
-            'created_at' => $item['created_at'],
-            'created_by' => $item['created_by'],
-            // We don't return full snapshot to save bandwidth, unless requested?
-            // For print button we just need ID.
-        ];
-    }, $history);
+Logger::info('legacy_endpoint_retired', [
+    'endpoint' => 'api/history.php',
+    'user' => wbgl_api_current_user_display(),
+    'query' => $_GET,
+]);
 
-    echo json_encode(['success' => true, 'data' => $data]);
-
-} catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-}
+echo json_encode([
+    'success' => false,
+    'error' => 'api/history.php retired',
+    'code' => 'LEGACY_ENDPOINT_RETIRED',
+    'replacement' => [
+        'timeline' => '/api/get-timeline.php',
+        'snapshot' => '/api/get-history-snapshot.php',
+    ],
+], JSON_UNESCAPED_UNICODE);

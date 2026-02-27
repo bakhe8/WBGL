@@ -4,61 +4,45 @@
  * Fetches a specific history event and renders the record form as it was at that time.
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
+use App\Services\GuaranteeVisibilityService;
+use App\Services\TimelineHybridLedger;
 
 header('Content-Type: text/html; charset=utf-8');
+wbgl_api_require_login();
 
 try {
     if (!isset($_GET['history_id'])) {
         throw new Exception('History ID is required');
     }
 
-    $rawHistoryId = $_GET['history_id'];
-    $db = Database::connect();
-    $event = null;
-
-    // Check for "Synthetic Import" ID
-    if (strpos($rawHistoryId, 'import_synthetic_') === 0) {
-        // Extract Guarantee ID
-        $gId = (int)str_replace('import_synthetic_', '', $rawHistoryId);
-        
-        // Fetch Guarantee Info for Import Event
-        $stmtG = $db->prepare('SELECT id, imported_at, imported_by FROM guarantees WHERE id = ?');
-        $stmtG->execute([$gId]);
-        $gInfo = $stmtG->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$gInfo) throw new Exception('Guarantee not found for import event');
-        
-        // Construct Fake Event
-        $event = [
-            'id' => 0, // Mock
-            'guarantee_id' => $gInfo['id'],
-            'created_at' => $gInfo['imported_at'],
-            'change_reason' => 'Initial Import from ' . ($gInfo['import_source'] ?? 'Excel'),
-            'action' => 'import',
-            'snapshot_data' => '{}', // Base state = Raw Data
-            'created_by' => $gInfo['imported_by'] ?? 'System'
-        ];
-        
-    } else {
-        // Normal History Lookup
-        $historyId = (int)$rawHistoryId;
-        $stmt = $db->prepare('SELECT * FROM guarantee_history WHERE id = ?');
-        $stmt->execute([$historyId]);
-        $event = $stmt->fetch(PDO::FETCH_ASSOC);
+    $rawHistoryId = trim((string)$_GET['history_id']);
+    if ($rawHistoryId === '' || preg_match('/^\d+$/', $rawHistoryId) !== 1) {
+        throw new Exception('history_id must be a numeric event id');
     }
+
+    $historyId = (int)$rawHistoryId;
+    $db = Database::connect();
+    $stmt = $db->prepare('SELECT * FROM guarantee_history WHERE id = ?');
+    $stmt->execute([$historyId]);
+    $event = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$event) {
         throw new Exception('History event not found');
     }
 
-    // 2. Decode the snapshot data
-    $snapshot = json_decode($event['snapshot_data'] ?? '{}', true);
+    if (!GuaranteeVisibilityService::canAccessGuarantee((int)$event['guarantee_id'])) {
+        http_response_code(403);
+        echo '<div style="color:red">Permission Denied</div>';
+        exit;
+    }
+
+    // 2. Decode / reconstruct snapshot from unified hybrid ledger fields
+    $snapshot = TimelineHybridLedger::resolveEventSnapshot($db, $event);
     if (!is_array($snapshot)) {
         $snapshot = [];
-        // Optional: We could log this or just show base record
     }
 
     // 3. Reconstruct the $record object
@@ -101,7 +85,7 @@ try {
     
     // Resolve IDs to Names if Snapshot only had IDs
     if (!empty($record['supplier_id']) && empty($snapshot['supplier_name'])) {
-        $supStmt = $db->prepare('SELECT standardized_name FROM suppliers WHERE id = ?');
+        $supStmt = $db->prepare('SELECT official_name FROM suppliers WHERE id = ?');
         $supStmt->execute([$record['supplier_id']]);
         $name = $supStmt->fetchColumn();
         if ($name) $record['supplier_name'] = $name;
@@ -118,7 +102,7 @@ try {
     $isHistorical = true;
     $bannerData = [
         'timestamp' => $event['created_at'],
-        'reason' => $event['change_reason'] ?? $event['action']
+        'reason' => $event['change_reason'] ?? $event['event_type'] ?? 'unknown'
     ];
     
     // DEPENDENCIES FOR PARTIALS

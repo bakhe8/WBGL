@@ -4,12 +4,15 @@
  * Handles all batch-level operations
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Services\BatchService;
 use App\Support\Input;
+use App\Support\Guard;
+use App\Services\BreakGlassService;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_permission('manage_data');
 
 $method = $_SERVER['REQUEST_METHOD'];
 $service = new BatchService();
@@ -97,7 +100,7 @@ try {
                 break;
                 
             case 'close':
-                $result = $service->closeBatch($importSource, Input::string($input, 'closed_by', 'web_user'));
+                $result = $service->closeBatch($importSource, wbgl_api_current_user_display());
                 break;
                 
             case 'update_metadata':  // Decision #2
@@ -109,7 +112,36 @@ try {
                 break;
                 
             case 'reopen':  // Decision #7
-                $result = $service->reopenBatch($importSource, Input::string($input, 'reopened_by', 'web_user'));
+                $actor = wbgl_api_current_user_display();
+                $reason = Input::string($input, 'reason', '');
+                $reason = trim($reason);
+
+                // Permanent governance policy: reason is always required for batch reopen.
+                if ($reason === '') {
+                    throw new \RuntimeException('سبب إعادة فتح الدفعة مطلوب');
+                }
+
+                $breakGlass = null;
+                if (BreakGlassService::isRequested($input)) {
+                    $breakGlass = BreakGlassService::authorizeAndRecord(
+                        $input,
+                        'batch_reopen',
+                        'batch',
+                        $importSource,
+                        $actor
+                    );
+                }
+
+                if (!Guard::has('reopen_batch') && $breakGlass === null) {
+                    throw new \RuntimeException('ليس لديك صلاحية إعادة فتح الدفعات');
+                }
+
+                $result = $service->reopenBatch(
+                    $importSource,
+                    $actor,
+                    $reason,
+                    $breakGlass
+                );
                 break;
                 
             case 'summary':

@@ -29,26 +29,30 @@ class StatsService
      */
     public static function getImportStats(PDO $db): array
     {
-        // Production Mode: Exclude test data
+        $where = ' WHERE 1=1 ';
+        $params = [];
+
         $settings = \App\Support\Settings::getInstance();
-        $testDataFilter = '';
         if ($settings->isProductionMode()) {
-            $testDataFilter = ' WHERE (g.is_test_data = 0 OR g.is_test_data IS NULL)';
+            $where .= ' AND g.is_test_data = 0';
         }
+        $visibility = GuaranteeVisibilityService::buildSqlFilter('g', 'd');
+        $where .= $visibility['sql'];
+        $params = array_merge($params, $visibility['params']);
 
         $query = $db->prepare('
             SELECT
                 COUNT(*) as total,
-                SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = 0) AND d.status = "ready" THEN 1 ELSE 0 END) as ready,
-                SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = 0) AND d.status = "ready" AND (d.active_action IS NULL OR d.active_action = "") THEN 1 ELSE 0 END) as actionable,
-                SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = 0) AND (d.id IS NULL OR d.status != "ready") THEN 1 ELSE 0 END) as pending,
-                SUM(CASE WHEN d.is_locked = 1 THEN 1 ELSE 0 END) as released
+                SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = FALSE) AND d.status = \'ready\' THEN 1 ELSE 0 END) as ready,
+                SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = FALSE) AND d.status = \'ready\' AND (d.active_action IS NULL OR d.active_action = \'\') THEN 1 ELSE 0 END) as actionable,
+                SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = FALSE) AND (d.id IS NULL OR d.status != \'ready\') THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN d.is_locked = TRUE THEN 1 ELSE 0 END) as released
             FROM guarantees g
             LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
-            ' . $testDataFilter . '
+            ' . $where . '
         ');
 
-        $query->execute();
+        $query->execute($params);
         $stats = $query->fetch(PDO::FETCH_ASSOC);
 
         // Ensure integers (NULL from SUM becomes 0)
@@ -67,11 +71,16 @@ class StatsService
      */
     public static function getWorkflowStats(PDO $db): array
     {
+        $where = ' WHERE 1=1 ';
+        $params = [];
+
         $settings = \App\Support\Settings::getInstance();
-        $testDataFilter = '';
         if ($settings->isProductionMode()) {
-            $testDataFilter = ' WHERE (g.is_test_data = 0 OR g.is_test_data IS NULL)';
+            $where .= ' AND g.is_test_data = 0';
         }
+        $visibility = GuaranteeVisibilityService::buildSqlFilter('g', 'd');
+        $where .= $visibility['sql'];
+        $params = array_merge($params, $visibility['params']);
 
         $query = $db->prepare('
             SELECT
@@ -79,11 +88,11 @@ class StatsService
                 COUNT(*) as count
             FROM guarantees g
             LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
-            ' . $testDataFilter . '
+            ' . $where . '
             GROUP BY d.workflow_step
         ');
 
-        $query->execute();
+        $query->execute($params);
         $results = $query->fetchAll(PDO::FETCH_KEY_PAIR);
 
         // Ensure default stages exist in the array

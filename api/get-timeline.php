@@ -4,13 +4,14 @@
  * Returns the HTML for the timeline sidebar
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
-require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
+require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../app/Services/TimelineDisplayService.php';
 
 use App\Support\Database;
-use App\Services\TimelineRecorder;
+use App\Services\TimelineDisplayService;
 
 header('Content-Type: text/html; charset=utf-8');
+wbgl_api_require_login();
 
 try {
     $index = isset($_GET['index']) ? (int)$_GET['index'] : 1;
@@ -36,7 +37,7 @@ try {
     $timeline = [];
 
     if ($guaranteeId) {
-        $timeline = TimelineRecorder::getTimeline($guaranteeId);
+        $timeline = TimelineDisplayService::getEventsForDisplay($db, (int)$guaranteeId);
     }
     
     // Use the comprehensive partial for rendering

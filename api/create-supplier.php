@@ -4,20 +4,20 @@
  * Adds a new supplier to the master list
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 use App\Support\Input;
 
 header('Content-Type: application/json; charset=utf-8');
+wbgl_api_require_permission('manage_data');
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
     if (!is_array($input)) {
         $input = [];
     }
-    $fallbackName = Input::string($input, 'name', '');
-    $officialName = Input::string($input, 'official_name', $fallbackName);
+    $officialName = Input::string($input, 'official_name', '');
     $englishName = Input::string($input, 'english_name', '');
     $isConfirmed = Input::int($input, 'is_confirmed');
     
@@ -55,11 +55,7 @@ try {
     echo json_encode([
         'success' => true,
         'supplier_id' => $result['supplier_id'],
-        'official_name' => $result['official_name'],
-        'supplier' => [
-            'id' => $result['supplier_id'],
-            'name' => $result['official_name']
-        ]
+        'official_name' => $result['official_name']
     ]);
     
 } catch (\Throwable $e) {

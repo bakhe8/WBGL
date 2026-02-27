@@ -1,56 +1,97 @@
 <?php
-require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../app/Support/autoload.php';
 
 use App\Repositories\GuaranteeRepository;
+use App\Services\OperationalAlertService;
+use App\Services\OperationalMetricsService;
 use App\Support\Database;
 use App\Support\Settings;
+use App\Support\ViewPolicy;
+
+ViewPolicy::guardView('maintenance.php');
 
 $db = Database::connect();
 $repo = new GuaranteeRepository($db);
+$settings = Settings::getInstance();
+$isProd = $settings->isProductionMode();
 
 // Get statistics
 $stats = $repo->getTestDataStats();
 $realCount = $repo->count();
 $testCount = $repo->count(['test_data_only' => true]);
 $totalCount = $repo->count(['include_test_data' => true]);
+$opsMetrics = OperationalMetricsService::snapshot();
+$opsAlerts = OperationalAlertService::evaluate($opsMetrics);
+$opsCounters = is_array($opsMetrics['counters'] ?? null) ? $opsMetrics['counters'] : [];
+$opsAlertRows = is_array($opsAlerts['alerts'] ?? null) ? $opsAlerts['alerts'] : [];
+$opsTriggered = array_values(array_filter(
+    $opsAlertRows,
+    static fn(array $row): bool => (string)($row['status'] ?? '') === 'triggered'
+));
+$opsGeneratedAt = (string)($opsMetrics['generated_at'] ?? date('c'));
 
 // Handle deletion requests
 $deleteResult = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    $confirmation = $_POST['confirmation'] ?? '';
-    
-    if ($confirmation !== 'DELETE') {
-        $deleteResult = ['success' => false, 'message' => 'كلمة التأكيد غير صحيحة'];
+    if ($isProd) {
+        $deleteResult = [
+            'success' => false,
+            'message' => 'غير مسموح بإدارة أو حذف بيانات الاختبار أثناء تفعيل وضع الإنتاج'
+        ];
     } else {
-        try {
-            $action = $_POST['action'];
-            
-            switch ($action) {
-                case 'delete_test_data':
-                    $deleted = $repo->deleteTestData();
-                    $deleteResult = ['success' => true, 'message' => "تم حذف {$deleted} ضمان اختباري بنجاح"];
-                    break;
-                    
-                default:
-                    $deleteResult = ['success' => false, 'message' => 'إجراء غير معروف'];
+        $confirmation = $_POST['confirmation'] ?? '';
+
+        if ($confirmation !== 'DELETE') {
+            $deleteResult = ['success' => false, 'message' => 'كلمة التأكيد غير صحيحة'];
+        } else {
+            try {
+                $action = (string)($_POST['action'] ?? '');
+
+                switch ($action) {
+                    case 'delete_test_data':
+                    case 'delete_all':
+                        $deleted = $repo->deleteTestData();
+                        $deleteResult = ['success' => true, 'message' => "تم حذف {$deleted} ضمان اختباري بنجاح"];
+                        break;
+
+                    case 'delete_batch':
+                        $batchId = trim((string)($_POST['batch_id'] ?? ''));
+                        if ($batchId === '') {
+                            $deleteResult = ['success' => false, 'message' => 'معرف الدفعة مطلوب'];
+                            break;
+                        }
+                        $deleted = $repo->deleteTestData($batchId);
+                        $deleteResult = ['success' => true, 'message' => "تم حذف {$deleted} ضمان اختباري من الدفعة {$batchId}"];
+                        break;
+
+                    case 'delete_older':
+                        $olderThan = trim((string)($_POST['older_than'] ?? ''));
+                        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $olderThan)) {
+                            $deleteResult = ['success' => false, 'message' => 'تاريخ غير صالح'];
+                            break;
+                        }
+                        $deleted = $repo->deleteTestData(null, $olderThan);
+                        $deleteResult = ['success' => true, 'message' => "تم حذف {$deleted} ضمان اختباري أقدم من {$olderThan}"];
+                        break;
+
+                    default:
+                        $deleteResult = ['success' => false, 'message' => 'إجراء غير معروف'];
+                }
+
+                // Refresh stats after deletion
+                if ($deleteResult['success']) {
+                    $stats = $repo->getTestDataStats();
+                    $realCount = $repo->count();
+                    $testCount = $repo->count(['test_data_only' => true]);
+                    $totalCount = $repo->count(['include_test_data' => true]);
+                }
+
+            } catch (Exception $e) {
+                $deleteResult = ['success' => false, 'message' => 'خطأ: ' . $e->getMessage()];
             }
-            
-            // Refresh stats after deletion
-            if ($deleteResult['success']) {
-                $stats = $repo->getTestDataStats();
-                $realCount = $repo->count();
-                $testCount = $repo->count(['test_data_only' => true]);
-                $totalCount = $repo->count(['include_test_data' => true]);
-            }
-            
-        } catch (Exception $e) {
-            $deleteResult = ['success' => false, 'message' => 'خطأ: ' . $e->getMessage()];
         }
     }
 }
-
-$settings = Settings::getInstance();
-$isProd = $settings->isProductionMode();
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -163,6 +204,71 @@ $isProd = $settings->isProductionMode();
             width: 200px;
             margin-left: 1rem;
         }
+
+        .ops-section {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .ops-meta {
+            color: #6b7280;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .ops-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .ops-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 0.9rem;
+            background: #f9fafb;
+        }
+
+        .ops-card-value {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: #111827;
+        }
+
+        .ops-card-label {
+            font-size: 0.8rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+
+        .ops-alerts {
+            border-top: 1px solid #e5e7eb;
+            padding-top: 0.85rem;
+        }
+
+        .ops-alert-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 0.5rem 0.65rem;
+            border: 1px solid #ef4444;
+            background: #fef2f2;
+            color: #991b1b;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+        }
+
+        .ops-alert-ok {
+            border: 1px solid #10b981;
+            background: #ecfdf5;
+            color: #065f46;
+            border-radius: 6px;
+            padding: 0.65rem;
+        }
     </style>
 </head>
 <body>
@@ -174,6 +280,52 @@ $isProd = $settings->isProductionMode();
         <div class="maintenance-header">
             <h1 style="margin: 0;">🛠️ أدوات الصيانة والتنظيف</h1>
             <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">إدارة بيانات الاختبار وتنظيف قاعدة البيانات</p>
+        </div>
+
+        <div class="ops-section">
+            <h2 style="margin-top: 0;">📈 لوحة المراقبة التشغيلية</h2>
+            <div class="ops-meta">
+                آخر تحديث: <?= htmlspecialchars(date('Y-m-d H:i:s', strtotime($opsGeneratedAt) ?: time())) ?> |
+                التنبيهات النشطة: <?= count($opsTriggered) ?>
+            </div>
+            <div class="ops-grid">
+                <div class="ops-card">
+                    <div class="ops-card-value"><?= (int)($opsCounters['open_dead_letters'] ?? 0) ?></div>
+                    <div class="ops-card-label">Dead Letters مفتوحة</div>
+                </div>
+                <div class="ops-card">
+                    <div class="ops-card-value"><?= (int)($opsCounters['scheduler_failures_24h'] ?? 0) ?></div>
+                    <div class="ops-card-label">فشل Scheduler (24h)</div>
+                </div>
+                <div class="ops-card">
+                    <div class="ops-card-value"><?= (int)($opsCounters['api_access_denied_24h'] ?? 0) ?></div>
+                    <div class="ops-card-label">رفض API (24h)</div>
+                </div>
+                <div class="ops-card">
+                    <div class="ops-card-value"><?= (int)($opsCounters['unread_notifications'] ?? 0) ?></div>
+                    <div class="ops-card-label">إشعارات غير مقروءة</div>
+                </div>
+                <div class="ops-card">
+                    <div class="ops-card-value"><?= (int)($opsCounters['pending_undo_requests'] ?? 0) ?></div>
+                    <div class="ops-card-label">Undo Requests معلقة</div>
+                </div>
+            </div>
+            <div class="ops-alerts">
+                <h3 style="margin: 0 0 0.75rem 0;">🚨 التنبيهات</h3>
+                <?php if (empty($opsTriggered)): ?>
+                    <div class="ops-alert-ok">لا توجد تنبيهات تشغيلية نشطة حاليًا.</div>
+                <?php else: ?>
+                    <?php foreach ($opsTriggered as $alert): ?>
+                        <div class="ops-alert-row">
+                            <div><?= htmlspecialchars((string)($alert['label'] ?? 'تنبيه')) ?></div>
+                            <div>
+                                القيمة: <?= htmlspecialchars((string)($alert['value'] ?? '-')) ?> |
+                                الحد: <?= htmlspecialchars((string)($alert['threshold'] ?? '-')) ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
         </div>
         
         <?php if ($deleteResult): ?>
@@ -244,6 +396,7 @@ $isProd = $settings->isProductionMode();
                     <p>سيتم حذف <strong><?= $testCount ?></strong> ضماناً تجريبياً وجميع السجلات المرتبطة بها.</p>
                     
                     <form method="POST" onsubmit="return confirm('هل أنت متأكد تماماً؟ هذا الإجراء لا يمكن التراجع عنه!');">
+                        <?= wbgl_csrf_input() ?>
                         <input type="hidden" name="action" value="delete_all">
                         <label>
                             اكتب <code>DELETE</code> للتأكيد:
@@ -259,6 +412,7 @@ $isProd = $settings->isProductionMode();
                     <p>حذف فقط بيانات الاختبار التي تنتمي لدفعة معينة.</p>
                     
                     <form method="POST" onsubmit="return confirm('حذف هذه الدفعة؟');">
+                        <?= wbgl_csrf_input() ?>
                         <input type="hidden" name="action" value="delete_batch">
                         <label>
                             معرف الدفعة (test_batch_id):
@@ -278,6 +432,7 @@ $isProd = $settings->isProductionMode();
                     <p>حذف بيانات الاختبار التي تم إنشاؤها قبل التاريخ المحدد.</p>
                     
                     <form method="POST" onsubmit="return confirm('حذف البيانات الأقدم من هذا التاريخ؟');">
+                        <?= wbgl_csrf_input() ?>
                         <input type="hidden" name="action" value="delete_older">
                         <label>
                             التاريخ:

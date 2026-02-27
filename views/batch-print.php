@@ -7,12 +7,17 @@
 require_once __DIR__ . '/../app/Support/autoload.php';
 
 use App\Support\Database;
+use App\Support\ViewPolicy;
 use App\Repositories\GuaranteeRepository;
 use App\Repositories\BankRepository;
 use App\Repositories\SupplierRepository;
 
+ViewPolicy::guardView('batch-print.php');
+
 // 1. Inputs
 $idsParam = $_GET['ids'] ?? '';
+$batchIdentifier = isset($_GET['batch_identifier']) ? trim((string)$_GET['batch_identifier']) : '';
+$batchIdentifier = $batchIdentifier !== '' ? $batchIdentifier : null;
 
 if (!$idsParam) {
     die('<div style="padding: 20px; font-family: sans-serif; text-align: center;">معرفات السجلات مفقودة.</div>');
@@ -37,7 +42,7 @@ if ($settings->isProductionMode() && !empty($guaranteeIds)) {
     $stmt = $db->prepare("
         SELECT id FROM guarantees 
         WHERE id IN ($placeholders) 
-        AND (is_test_data = 0 OR is_test_data IS NULL)
+        AND is_test_data = 0
     ");
     $stmt->execute($guaranteeIds);
     $guaranteeIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
@@ -77,6 +82,7 @@ if (!empty($guaranteeIds)) {
         $lastActions[(int) $row['guarantee_id']] = $row['last_action'];
     }
 }
+
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -84,8 +90,10 @@ if (!empty($guaranteeIds)) {
 <head>
     <meta charset="UTF-8">
     <title>طباعة مجمعة - <?= count($guaranteeIds) ?> خطابات</title>
+    <?php include __DIR__ . '/../partials/ui-bootstrap.php'; ?>
 
     <!-- Link to external CSS instead of copying -->
+    <link rel="stylesheet" href="/public/css/a11y.css">
     <link rel="stylesheet" href="/assets/css/letter.css">
 
     <!-- Fonts -->
@@ -195,7 +203,7 @@ if (!empty($guaranteeIds)) {
 <body>
 
     <div class="floating-actions no-print">
-        <button onclick="window.print()" class="action-btn">
+        <button onclick="handleBatchPrint()" class="action-btn">
             🖨️ طباعة الكل (<?= count($guaranteeIds) ?>)
         </button>
         <button onclick="window.close()" class="action-btn close">
@@ -222,6 +230,7 @@ if (!empty($guaranteeIds)) {
 
         // Prepare data array
         $record = [
+            'id' => (int)$guaranteeId,
             'guarantee_number' => $guarantee->guaranteeNumber,
             'contract_number' => $guarantee->rawData['contract_number'] ?? '',
             'amount' => $guarantee->rawData['amount'] ?? 0,
@@ -305,6 +314,39 @@ if (!empty($guaranteeIds)) {
         ?>
     <?php endforeach; ?>
 
+<script src="/public/js/security.js?v=<?= time() ?>"></script>
+<script src="/public/js/i18n.js?v=<?= time() ?>"></script>
+<script src="/public/js/direction.js?v=<?= time() ?>"></script>
+<script src="/public/js/theme.js?v=<?= time() ?>"></script>
+<script src="/public/js/policy.js?v=<?= time() ?>"></script>
+<script src="/public/js/nav-manifest.js?v=<?= time() ?>"></script>
+<script src="/public/js/ui-runtime.js?v=<?= time() ?>"></script>
+<script src="/public/js/global-shortcuts.js?v=<?= time() ?>"></script>
+<script src="/public/js/print-audit.js?v=<?= time() ?>"></script>
+    <script>
+        const wbglBatchPrintIds = <?= json_encode(array_values(array_map('intval', $guaranteeIds)), JSON_UNESCAPED_UNICODE) ?>;
+        const wbglBatchIdentifier = <?= json_encode($batchIdentifier, JSON_UNESCAPED_UNICODE) ?>;
+
+        function handleBatchPrint() {
+            const audit = window.WBGLPrintAudit;
+            if (audit && typeof audit.recordBatchPrint === 'function') {
+                audit.recordBatchPrint(wbglBatchPrintIds, wbglBatchIdentifier, {
+                    trigger: 'floating_print_button'
+                }).finally(() => window.print());
+                return;
+            }
+            window.print();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const audit = window.WBGLPrintAudit;
+            if (audit && typeof audit.recordBatchOpen === 'function') {
+                audit.recordBatchOpen(wbglBatchPrintIds, wbglBatchIdentifier, {
+                    source: 'batch_print_view'
+                }).catch(() => {});
+            }
+        });
+    </script>
 </body>
 
 </html>

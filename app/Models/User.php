@@ -16,6 +16,9 @@ class User
         public string $fullName,
         public ?string $email = null,
         public ?int $roleId = null,
+        public string $preferredLanguage = 'ar',
+        public string $preferredTheme = 'system',
+        public string $preferredDirection = 'auto',
         public ?string $lastLogin = null,
         public ?string $createdAt = null
     ) {}
@@ -28,6 +31,9 @@ class User
             'full_name' => $this->fullName,
             'email' => $this->email,
             'role_id' => $this->roleId,
+            'preferred_language' => $this->preferredLanguage,
+            'preferred_theme' => $this->preferredTheme,
+            'preferred_direction' => $this->preferredDirection,
             'last_login' => $this->lastLogin,
             'created_at' => $this->createdAt,
         ];
