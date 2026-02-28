@@ -1,0 +1,3 @@
+2026-02-28 04:17:33 EXCEPTION: الملف فارغ أو لا يحتوي على بيانات
+Stack: #0 C:\Users\Bakheet\Documents\Projects\Work\WBGL\api\import.php(73): App\Services\ImportService->importFromExcel('C:\\Users\\Bakhee...', 'web_user', 'sim_import_10ro...', false)
+#1 {main}

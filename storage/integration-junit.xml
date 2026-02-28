@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="C:\Users\Bakheet\Documents\Projects\Work\WBGL\phpunit.xml" tests="9" assertions="104" errors="0" failures="0" skipped="0" time="1.787126">
+    <testsuite name="Integration" tests="9" assertions="104" errors="0" failures="0" skipped="0" time="1.787126">
+      <testsuite name="EnterpriseApiFlowsTest" file="C:\Users\Bakheet\Documents\Projects\Work\WBGL\tests\Integration\EnterpriseApiFlowsTest.php" tests="9" assertions="104" errors="0" failures="0" skipped="0" time="1.787126">
+        <testcase name="testAuthFlowRequiresBearerAndAcceptsToken" file="C:\Users\Bakheet\Documents\Projects\Work\WBGL\tests\Integration\EnterpriseApiFlowsTest.php" line="101" class="EnterpriseApiFlowsTest" classname="EnterpriseApiFlowsTest" assertions="7" time="0.105054"/>
+        <testcase name="testPrintEventsApiFlow" file="C:\Users\Bakheet\Documents\Projects\Work\WBGL\tests\Integration\EnterpriseApiFlowsTest.php" line="122" class="EnterpriseApiFlowsTest" classname="EnterpriseApiFlowsTest" assertions="8" time="0.131298"/>
+        <testcase name="testHistorySnapshotTimeMachineFlow" file="C:\Users\Bakheet\Documents\Projects\Work\WBGL\tests\Integration\EnterpriseApiFlowsTest.php" line="174" class="EnterpriseApiFlowsTest" classname="EnterpriseApiFlowsTest" assertions="2" time="0.081878"/>
+        <testcase name="testUndoGovernanceWorkflowEnforcesDualControl" file="C:\Users\Bakheet\Documents\Projects\Work\WBGL\tests\Integration\EnterpriseApiFlowsTest.php" line="191" class="EnterpriseApiFlowsTest" classname="EnterpriseApiFlowsTest" assertions="15" time="0.272978"/>
+        <testcase name="testLifecycleMutationFlowWritesTimelineHybridEvents" file="C:\Users\Bakheet\Documents\Projects\Work\WBGL\tests\Integration\EnterpriseApiFlowsTest.php" line="257" class="EnterpriseApiFlowsTest" classname="EnterpriseApiFlowsTest" assertions="38" time="0.535424"/>
+        <testcase name="testSchedulerDeadLetterResolveFlow" file="C:\Users\Bakheet\Documents\Projects\Work\WBGL\tests\Integration\EnterpriseApiFlowsTest.php" line="376" class="EnterpriseApiFlowsTest" classname="EnterpriseApiFlowsTest" assertions="10" time="0.210271"/>
+        <testcase name="testMetricsEndpointRequiresManageUsersAndReturnsSnapshot" file="C:\Users\Bakheet\Documents\Projects\Work\WBGL\tests\Integration\EnterpriseApiFlowsTest.php" line="444" class="EnterpriseApiFlowsTest" classname="EnterpriseApiFlowsTest" assertions="10" time="0.248204"/>
+        <testcase name="testAlertsEndpointRequiresManageUsersAndReturnsAlertPayload" file="C:\Users\Bakheet\Documents\Projects\Work\WBGL\tests\Integration\EnterpriseApiFlowsTest.php" line="478" class="EnterpriseApiFlowsTest" classname="EnterpriseApiFlowsTest" assertions="10" time="0.139685"/>
+        <testcase name="testRequestIdHeaderIsReturnedAndEchoedWhenProvided" file="C:\Users\Bakheet\Documents\Projects\Work\WBGL\tests\Integration\EnterpriseApiFlowsTest.php" line="512" class="EnterpriseApiFlowsTest" classname="EnterpriseApiFlowsTest" assertions="4" time="0.062334"/>
+      </testsuite>
+    </testsuite>
+  </testsuite>
+</testsuites>
