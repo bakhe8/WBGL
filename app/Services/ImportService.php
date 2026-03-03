@@ -9,6 +9,7 @@ use App\Models\Guarantee;
 use App\Support\SimpleXlsxReader;
 use App\Support\TypeNormalizer;
 use App\Repositories\BatchMetadataRepository; // ✅ NEW
+use PDO;
 use RuntimeException;
 
 /**
@@ -20,6 +21,7 @@ use RuntimeException;
 class ImportService
 {
     private GuaranteeRepository $guaranteeRepo;
+    private static ?string $occurrenceTypeColumn = null;
     
     public function __construct(?GuaranteeRepository $guaranteeRepo = null)
     {
@@ -572,11 +574,50 @@ class ImportService
         $stmt->execute([$guaranteeId, $batchIdentifier]);
         
         if (!$stmt->fetch()) {
-            $insert = $db->prepare("
-                INSERT INTO guarantee_occurrences (guarantee_id, batch_identifier, batch_type, occurred_at)
-                VALUES (?, ?, ?, ?)
-            ");
+            $typeColumn = self::resolveOccurrenceTypeColumn($db);
+            $insert = $db->prepare(sprintf(
+                'INSERT INTO guarantee_occurrences (guarantee_id, batch_identifier, %s, occurred_at)
+                 VALUES (?, ?, ?, ?)',
+                $typeColumn
+            ));
             $insert->execute([$guaranteeId, $batchIdentifier, $type, date('Y-m-d H:i:s')]);
         }
+    }
+
+    private static function resolveOccurrenceTypeColumn(PDO $db): string
+    {
+        if (self::$occurrenceTypeColumn !== null) {
+            return self::$occurrenceTypeColumn;
+        }
+
+        $stmt = $db->prepare(
+            "SELECT column_name
+             FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name = 'guarantee_occurrences'"
+        );
+        $stmt->execute();
+
+        $columns = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $columnName = $row['column_name'] ?? null;
+            if (is_string($columnName) && $columnName !== '') {
+                $columns[] = $columnName;
+            }
+        }
+
+        if (in_array('batch_type', $columns, true)) {
+            self::$occurrenceTypeColumn = 'batch_type';
+            return self::$occurrenceTypeColumn;
+        }
+
+        if (in_array('import_source', $columns, true)) {
+            self::$occurrenceTypeColumn = 'import_source';
+            return self::$occurrenceTypeColumn;
+        }
+
+        throw new RuntimeException(
+            "guarantee_occurrences must expose either 'batch_type' or 'import_source' column."
+        );
     }
 }

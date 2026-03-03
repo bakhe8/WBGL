@@ -13,7 +13,7 @@ class SchedulerJobCatalog
         return [
             [
                 'name' => 'notify-expiry',
-                'path' => base_path('maint/notify-expiry.php'),
+                'path' => base_path('app/Scripts/notify-expiry.php'),
                 'max_attempts' => 2,
             ],
         ];

@@ -28,9 +28,10 @@ class NavigationService
         PDO $db,
         ?int $currentId,
         string $statusFilter = 'all',
-        ?string $searchTerm = null
+        ?string $searchTerm = null,
+        ?string $stageFilter = null
     ): array {
-        $filter = self::buildFilterConditions($statusFilter, $searchTerm);
+        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter);
 
         // Get total count
         $totalRecords = self::getTotalCount($db, $filter);
@@ -62,9 +63,27 @@ class NavigationService
     }
 
     /**
+     * Count records for a given filter scope.
+     * This is the canonical count source used by list/navigation/statistics.
+     */
+    public static function countByFilter(
+        PDO $db,
+        string $statusFilter = 'all',
+        ?string $searchTerm = null,
+        ?string $stageFilter = null
+    ): int {
+        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter);
+        return self::getTotalCount($db, $filter);
+    }
+
+    /**
      * Build SQL WHERE conditions based on status filter
      */
-    private static function buildFilterConditions(string $filter, ?string $searchTerm = null): array
+    public static function buildFilterConditions(
+        string $filter,
+        ?string $searchTerm = null,
+        ?string $stageFilter = null
+    ): array
     {
         $visibility = GuaranteeVisibilityService::buildSqlFilter('g', 'd');
         $expiryDateExpr = "(g.raw_data::jsonb ->> 'expiry_date')";
@@ -103,12 +122,20 @@ class NavigationService
         } else {
             // Exclude released for other filters
             $conditions = ' AND (d.is_locked IS NULL OR d.is_locked = FALSE)';
+            $params = $visibility['params'];
 
             // Apply specific status filter
             if ($filter === 'ready') {
                 $conditions .= " AND d.status = 'ready'";
             } elseif ($filter === 'actionable') {
-                $conditions .= " AND d.status = 'ready' AND (d.active_action IS NULL OR d.active_action = '')";
+                $predicate = ActionabilityPolicyService::buildActionableSqlPredicate(
+                    'd',
+                    $stageFilter,
+                    null,
+                    'actionable_stage_nav'
+                );
+                $conditions .= $predicate['sql'];
+                $params = array_merge($params, $predicate['params']);
             } elseif ($filter === 'pending') {
                 $conditions .= " AND (d.id IS NULL OR d.status = 'pending')";
             } elseif ($filter === 'expiring_30') {
@@ -120,7 +147,7 @@ class NavigationService
 
             return [
                 'sql' => $conditions . $testDataFilter . $visibility['sql'],
-                'params' => $visibility['params'],
+                'params' => $params,
             ];
         }
     }
@@ -224,12 +251,13 @@ class NavigationService
         PDO $db,
         int $index,
         string $statusFilter = 'all',
-        ?string $searchTerm = null
+        ?string $searchTerm = null,
+        ?string $stageFilter = null
     ): ?int {
         if ($index < 1)
             return null;
 
-        $filter = self::buildFilterConditions($statusFilter, $searchTerm);
+        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter);
 
         try {
             // Offset is index - 1
@@ -253,5 +281,32 @@ class NavigationService
         } catch (\Exception $e) {
             return null;
         }
+    }
+
+    /**
+     * Check whether a specific guarantee id belongs to current filtered scope.
+     */
+    public static function isIdInFilter(
+        PDO $db,
+        int $id,
+        string $statusFilter = 'all',
+        ?string $searchTerm = null,
+        ?string $stageFilter = null
+    ): bool {
+        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter);
+
+        $query = '
+            SELECT 1
+            FROM guarantees g
+            LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
+            LEFT JOIN suppliers s ON d.supplier_id = s.id
+            WHERE g.id = :current_id
+        ' . $filter['sql'] . '
+            LIMIT 1
+        ';
+
+        $stmt = $db->prepare($query);
+        $stmt->execute(array_merge(['current_id' => $id], $filter['params']));
+        return (bool)$stmt->fetchColumn();
     }
 }

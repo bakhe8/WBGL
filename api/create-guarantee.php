@@ -8,6 +8,7 @@ use App\Repositories\GuaranteeRepository;
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Repositories\SupplierRepository;
 use App\Repositories\BatchMetadataRepository;
+use App\Services\ImportService;
 use App\Support\Database;
 use App\Support\Input;
 use App\Support\Settings;
@@ -113,11 +114,8 @@ try {
     $savedGuarantee = $repo->create($guaranteeModel);
     $guaranteeId = $savedGuarantee->id;
 
-    // ✅ ARCHITECTURAL COMPLIANCE: Record occurrence for manual entry
-    $db->prepare("
-        INSERT INTO guarantee_occurrences (guarantee_id, batch_identifier, import_source, occurred_at)
-        VALUES (?, ?, 'manual', ?)
-    ")->execute([$guaranteeId, $batchId, date('Y-m-d H:i:s')]);
+    // Record occurrence through the shared schema-aware contract path.
+    ImportService::recordOccurrence($guaranteeId, $batchId, 'manual');
     
     // ✅ NEW: Handle test data marking (Phase 1)
     if (!empty($input['is_test_data'])) {

@@ -2,6 +2,13 @@
  * Controller: Smart Workstation
  * Manages the multi-guarantee batch entry workstation
  */
+const wsT = (key, fallback, params) => {
+    if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
+        return window.WBGLI18n.t(key, fallback || key, params || {});
+    }
+    return fallback || key;
+};
+
 window.SmartWorkstation = {
     state: {
         draftId: null,
@@ -38,7 +45,7 @@ window.SmartWorkstation = {
     },
 
     open(draftData) {
-        console.log('Opening Workstation for Draft:', draftData);
+        console.log('SMART_WS_OPEN_DRAFT', draftData);
 
         // Reset state
         this.state.draftId = draftData.id;
@@ -51,7 +58,7 @@ window.SmartWorkstation = {
         }
 
         if (!pdfFile) {
-            Swal.fire('خطأ', 'لم يتم العثور على ملف PDF في هذا الإيميل.', 'error');
+            Swal.fire(wsT('index.workstation.alert.error_title', ''), wsT('index.workstation.errors.missing_pdf', ''), 'error');
             return;
         }
 
@@ -76,16 +83,24 @@ window.SmartWorkstation = {
         }];
 
         this.renderEntry();
-        document.getElementById('smartWorkstation').style.display = 'flex';
-        document.body.style.overflow = 'hidden'; // Lock scrolling
+        const workstation = document.getElementById('smartWorkstation');
+        if (workstation) {
+            workstation.classList.remove('ws-hidden');
+            workstation.setAttribute('aria-hidden', 'false');
+        }
+        document.body.classList.add('wbgl-lock-scroll');
     },
 
     close() {
         if (this.state.entries.length > 1 || this.isFormModified()) {
-            if (!confirm('لديك بيانات غير محفوظة في هذه الجلسة. هل تريد الإغلاق؟')) return;
+            if (!confirm(wsT('index.workstation.confirm.close_unsaved', ''))) return;
         }
-        document.getElementById('smartWorkstation').style.display = 'none';
-        document.body.style.overflow = '';
+        const workstation = document.getElementById('smartWorkstation');
+        if (workstation) {
+            workstation.classList.add('ws-hidden');
+            workstation.setAttribute('aria-hidden', 'true');
+        }
+        document.body.classList.remove('wbgl-lock-scroll');
     },
 
     isFormModified() {
@@ -127,13 +142,23 @@ window.SmartWorkstation = {
         document.getElementById('btnWsPrev').disabled = (this.state.currentIndex === 0);
 
         const isLast = (this.state.currentIndex === this.state.entries.length - 1);
-        document.getElementById('btnWsNext').textContent = isLast ? '➕ إضافة جديد' : 'التالي ➡️';
+        document.getElementById('btnWsNext').textContent = isLast
+            ? wsT('index.workstation.actions.add_next', '')
+            : wsT('index.workstation.actions.next', '');
     },
 
     nextEntry() {
         // Validate current form before moving
         if (!document.getElementById('wsGuarantee').value || !document.getElementById('wsAmount').value) {
-            Swal.fire({ title: 'تنبيه', text: 'يرجى إدخال رقم الضمان والمبلغ أولاً', icon: 'warning', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+            Swal.fire({
+                title: wsT('index.workstation.alert.warning_title', ''),
+                text: wsT('index.workstation.warnings.enter_guarantee_amount', ''),
+                icon: 'warning',
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 3000
+            });
             return;
         }
 
@@ -168,7 +193,7 @@ window.SmartWorkstation = {
     },
 
     resetForm() {
-        if (!confirm('هل تريد مسح بيانات الضمان الحالي؟')) return;
+        if (!confirm(wsT('index.workstation.confirm.reset_current', ''))) return;
         document.getElementById('wsGuarantee').value = '';
         document.getElementById('wsAmount').value = '';
         document.getElementById('wsExpiry').value = '';
@@ -181,17 +206,17 @@ window.SmartWorkstation = {
         // Validate all entries
         const invalid = this.state.entries.find(e => !e.guarantee_number || !e.amount);
         if (invalid) {
-            Swal.fire('خطأ', 'يرجى إكمال بيانات كافة الضمانات التي قمت بإضافتها (رقم الضمان والمبلغ مطلوبان)', 'error');
+            Swal.fire(wsT('index.workstation.alert.error_title', ''), wsT('index.workstation.errors.complete_all_required', ''), 'error');
             return;
         }
 
         const result = await Swal.fire({
-            title: 'تأكيد الحفظ',
-            text: `هل أنت متأكد من حفظ ${this.state.entries.length} ضمانات في قاعدة البيانات؟`,
+            title: wsT('index.workstation.confirm.save_title', ''),
+            text: wsT('index.workstation.confirm.save_message', '', { count: this.state.entries.length }),
             icon: 'question',
             showCancelButton: true,
-            confirmButtonText: 'نعم، حفظ الكل',
-            cancelButtonText: 'إلغاء',
+            confirmButtonText: wsT('index.workstation.confirm.save_all', ''),
+            cancelButtonText: wsT('index.workstation.close', ''),
             confirmButtonColor: '#059669'
         });
 
@@ -210,13 +235,13 @@ window.SmartWorkstation = {
 
             const data = await response.json();
             if (data.success) {
-                await Swal.fire('تم بنجاح', data.message, 'success');
+                await Swal.fire(wsT('index.workstation.success.saved', ''), data.message, 'success');
                 window.location.href = `/index.php?id=${data.redirect_id}`;
             } else {
                 throw new Error(data.error);
             }
         } catch (error) {
-            Swal.fire('فشل الحفظ', error.message, 'error');
+            Swal.fire(wsT('index.workstation.errors.save_failed', ''), error.message, 'error');
         }
     }
 };

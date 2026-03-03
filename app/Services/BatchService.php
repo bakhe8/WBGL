@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Support\Database;
+use App\Support\Guard;
 use App\Support\Logger;
 use PDO;
 
@@ -75,7 +76,18 @@ class BatchService
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Defense-in-depth: keep object-level visibility enforcement centralized.
+        // For broad admin operators this remains unrestricted.
+        if (Guard::has('manage_data') || Guard::has('manage_users')) {
+            return $rows;
+        }
+
+        return array_values(array_filter(
+            $rows,
+            static fn(array $row): bool => GuaranteeVisibilityService::canAccessGuarantee((int)($row['id'] ?? 0))
+        ));
     }
     
     /**

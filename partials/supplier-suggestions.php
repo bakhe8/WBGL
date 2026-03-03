@@ -13,7 +13,7 @@ if (!isset($suggestions)) {
 
 <div id="supplier-suggestions" class="chips-row">
     <?php if (empty($suggestions)): ?>
-        <div style="font-size: 11px; color: #94a3b8; padding: 4px;">لا توجد اقتراحات</div>
+        <div class="record-suggestions-empty" data-i18n="index.suggestions.empty">لا توجد اقتراحات</div>
     <?php else: ?>
         <?php foreach ($suggestions as $sugg): ?>
         <button 
@@ -24,16 +24,7 @@ if (!isset($suggestions)) {
             <span class="chip-text">
                 <?= htmlspecialchars($sugg['official_name']) ?>
                 <?php if ($sugg['is_learning'] ?? false): ?>
-                    <?php 
-                    // UI LOGIC PROJECTION (Phase 3): Enhanced learning badge with SAFE LEARNING context
-                    $learningTooltip = "🛡️ تعلم آلي\n" .
-                                      "تم تعلمه من قرار سابق\n" .
-                                      "النتيجة: 90% (محجوب تلقائياً)\n\n" .
-                                      "لماذا؟\n" .
-                                      "سياسة SAFE LEARNING تمنع " .
-                                      "الموافقة التلقائية للأسماء المتعلمة";
-                    ?>
-                    <span class="badge badge-learning" title="<?= htmlspecialchars($learningTooltip) ?>">تعلم آلي</span>
+                    <span class="badge badge-learning" title="" data-i18n-title="index.suggestions.learning_tooltip" data-i18n="index.suggestions.learning_badge">تعلم آلي</span>
                 <?php endif; ?>
             </span>
             <?php if (isset($sugg['star_rating'])): ?>

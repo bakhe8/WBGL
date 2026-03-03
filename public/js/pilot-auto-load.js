@@ -37,8 +37,15 @@
 
         // 🔧 FIX: Don't overwrite supplier name if record is already "ready" or "released"
         const decisionStatus = document.getElementById('decisionStatus');
-        if (decisionStatus && (decisionStatus.value === 'ready' || decisionStatus.value === 'released')) {
+        const normalizedStatus = String(decisionStatus?.value || '').trim().toLowerCase();
+        if (['ready', 'released', 'approved', 'issued', 'signed'].includes(normalizedStatus)) {
             safeLogger.debug('[Pilot] Skipping auto-load - record already has matched supplier');
+            return;
+        }
+
+        const suggestionsContainer = document.getElementById('supplier-suggestions');
+        if (suggestionsContainer && suggestionsContainer.hidden) {
+            safeLogger.debug('[Pilot] Skipping auto-load - suggestions are hidden for this state');
             return;
         }
 

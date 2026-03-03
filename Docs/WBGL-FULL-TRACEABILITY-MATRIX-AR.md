@@ -76,7 +76,7 @@
 | FR-22 | Refuted | المرحلة 1 `P0-3` | Covered-with-Action |
 | FR-23 | Refuted | المرحلة 2-14 | Covered-with-Action |
 | FR-24 | Refuted | المرحلة 2-9 + المرحلة 1 `P0-2` (object scope) | Covered-with-Action |
-| FR-25 | Confirmed | المرحلة 1 `P0-4` | Covered-with-Action |
+| FR-25 | Confirmed | المرحلة 1 `P0-4` + التسلسل الإلزامي `P1-01` (Feature Freeze Gate) | Covered-with-Action |
 
 ---
 
@@ -86,7 +86,7 @@
 |---|---|---|---|
 | R01 | هيكل أوضح | المرحلة 3-5 | Covered-with-Action |
 | R02 | صيانة أعلى | المرحلة 3-5/6 | Covered-with-Action |
-| R03 | أثر تغيير متوقع | المرحلة 1 + حوكمة القسم 7 | Covered-with-Action |
+| R03 | أثر تغيير متوقع | المرحلة 1 + حوكمة القسم 7 + `P1-01` (منع زحف الميزات) | Covered-with-Action |
 | R04 | اتساق كود/تنفيذ | المرحلة 2-1 + المرحلة 3-5 | Covered-with-Action |
 | R05 | فصل مسؤوليات | المرحلة 3-5 | Covered-with-Action |
 | R06 | نموذج بيانات منظم | المرحلة 1 `P0-4` + المرحلة 3-6 | Covered-with-Action |
@@ -109,7 +109,7 @@
 |---|---|---|
 | G01 | المرحلة 3-5 (Architecture Boundaries) | Covered-with-Action |
 | G02 | المرحلة 3-5 + KPI الصيانة | Covered-with-Action |
-| G03 | القسم 7 (Gates/Rollback/Change Control) + `P0-6` | Covered-with-Action |
+| G03 | القسم 7 (Gates/Rollback/Change Control) + `P0-6` + `P1-01` (Merge Freeze Gate) | Covered-with-Action |
 | G04 | المرحلة 3-5 + Policy/Contract discipline | Covered-with-Action |
 | G05 | المرحلة 3-5 + Guardrail timeline | Covered-with-Action |
 | G06 | المرحلة 3-6 (Typed Core Model) | Covered-with-Action |
@@ -185,4 +185,3 @@
 - هذه المصفوفة تعتمد كمرجع تدقيق إلزامي قبل الانتقال بين المراحل.
 - أي بند جديد في `Docs` يضاف هنا قبل اعتباره ضمن نطاق التنفيذ.
 - لا يعتبر البرنامج منتهيًا حتى تتحول كل عناصر `Covered-with-Action` إلى `Done` بأدلة تحقق.
-

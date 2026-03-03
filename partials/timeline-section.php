@@ -19,62 +19,125 @@ $eventCount = count($timeline);
     <header class="timeline-header mb-2 relative">
         <div class="timeline-title">
             <span>⏲️</span>
-            <span>Timeline</span>
+            <span data-i18n="timeline.header.title">Timeline</span>
         </div>
-        <span class="timeline-count cursor-help" title="<?= $eventCount ?> أحداث">
-            <span><?= $eventCount ?></span> حدث
+        <span class="timeline-count cursor-help" data-event-count="<?= $eventCount ?>">
+            <span><?= $eventCount ?></span>
+            <span data-i18n="timeline.header.event_label">حدث</span>
         </span>
     </header>
-    <div class="timeline-body h-full overflow-y-auto" style="padding-right: 4px;">
+    <div class="timeline-body timeline-body--compact h-full overflow-y-auto">
         <div class="timeline-list">
 
             <?php if (empty($timeline)): ?>
                 <div class="text-center text-gray-400 text-sm py-8">
-                    لا توجد أحداث في التاريخ
+                    <span data-i18n="timeline.empty.no_events">لا توجد أحداث في التاريخ</span>
                 </div>
             <?php else: ?>
                 <?php foreach ($timeline as $index => $event):
                     // Use TimelineRecorder for labels and icons
                     $eventLabel = \App\Services\TimelineRecorder::getEventDisplayLabel($event);
                     $eventIcon = \App\Services\TimelineRecorder::getEventIcon($event);
+                    $eventLabelKeyMap = [
+                        'استيراد' => 'timeline.event_label.import',
+                        'Import' => 'timeline.event_label.import',
+                        'استيراد مكرر' => 'timeline.event_label.reimport',
+                        'Reimport' => 'timeline.event_label.reimport',
+                        'تطابق تلقائي' => 'timeline.event_label.auto_match',
+                        'Auto match' => 'timeline.event_label.auto_match',
+                        'تطابق يدوي' => 'timeline.event_label.manual_match',
+                        'Manual match' => 'timeline.event_label.manual_match',
+                        'اعتماد' => 'timeline.event_label.approval',
+                        'Approval' => 'timeline.event_label.approval',
+                        'تمديد' => 'timeline.event_label.extend',
+                        'Extend' => 'timeline.event_label.extend',
+                        'تخفيض' => 'timeline.event_label.reduce',
+                        'Reduce' => 'timeline.event_label.reduce',
+                        'إفراج' => 'timeline.event_label.release',
+                        'Release' => 'timeline.event_label.release',
+                        'تغيير حالة' => 'timeline.event_label.status_change',
+                        'Status change' => 'timeline.event_label.status_change',
+                        'إعادة فتح' => 'timeline.event_label.reopen',
+                        'Reopen' => 'timeline.event_label.reopen',
+                        'تصحيح بيانات' => 'timeline.event_label.correction',
+                        'Correction' => 'timeline.event_label.correction',
+                        'تحديث المرحلة' => 'timeline.event_label.stage_update',
+                        'Stage update' => 'timeline.event_label.stage_update',
+                        'تم التدقيق' => 'timeline.event_label.audited',
+                        'Audited' => 'timeline.event_label.audited',
+                        'تم التحليل' => 'timeline.event_label.analyzed',
+                        'Analyzed' => 'timeline.event_label.analyzed',
+                        'تم الإشراف' => 'timeline.event_label.supervised',
+                        'Supervised' => 'timeline.event_label.supervised',
+                        'تم الاعتماد' => 'timeline.event_label.approved',
+                        'Approved' => 'timeline.event_label.approved',
+                        'تم التوقيع' => 'timeline.event_label.signed',
+                        'Signed' => 'timeline.event_label.signed',
+                        'تحديث مسار العمل' => 'timeline.event_label.workflow_advance',
+                        'Workflow advance' => 'timeline.event_label.workflow_advance',
+                        'اختيار القرار' => 'timeline.event_label.decision_select',
+                        'Decision select' => 'timeline.event_label.decision_select',
+                        'تحديث' => 'timeline.event_label.update',
+                        'Update' => 'timeline.event_label.update',
+                    ];
+                    $eventLabelKey = $eventLabelKeyMap[$eventLabel] ?? null;
                     $eventId = (int)($event['event_id'] ?? $event['id'] ?? 0);
+                    $eventType = (string)($event['event_type'] ?? '');
+                    $eventSubtype = (string)($event['event_subtype'] ?? '');
 
                     // Parse event_details JSON
                     $eventDetailsRaw = $event['event_details'] ?? null;
                     $details = $eventDetailsRaw ? json_decode($eventDetailsRaw, true) : [];
                     $changes = $details['changes'] ?? [];
                     $statusChange = $details['status_change'] ?? null;
-                    $trigger = $details['trigger'] ?? 'manual';
+                    $snapshotPayload = htmlspecialchars($event['snapshot_data'] ?? '{}', ENT_QUOTES, 'UTF-8');
+                    $eventDetailsPayload = htmlspecialchars($event['event_details'] ?? '{}', ENT_QUOTES, 'UTF-8');
+                    $letterSnapshotPayload = htmlspecialchars($event['letter_snapshot'] ?? 'null', ENT_QUOTES, 'UTF-8');
 
-                    // Color mapping based on event label
-                    $labelColors = [
-                        'استيراد' => ['border' => '#64748b', 'text' => '#334155'],
-                        'محاولة استيراد مكرر' => ['border' => '#f59e0b', 'text' => '#92400e'],
-                        'تطابق تلقائي' => ['border' => '#3b82f6', 'text' => '#1e40af'],
-                        'تطابق يدوي' => ['border' => '#059669', 'text' => '#047857'],
-                        'تعديل يدوي' => ['border' => '#059669', 'text' => '#047857'],
-                        'تمديد' => ['border' => '#ca8a04', 'text' => '#a16207'],
-                        'تخفيض' => ['border' => '#7c3aed', 'text' => '#5b21b6'],
-                        'إفراج' => ['border' => '#dc2626', 'text' => '#991b1b'],
-                    ];
+                    // Tone mapping based on event type/subtype (locale-safe)
+                    $tone = 'muted';
+                    if ($eventType === 'import') {
+                        $tone = 'slate';
+                    }
+                    if ($eventType === 'reimport' || str_starts_with($eventSubtype, 'duplicate_')) {
+                        $tone = 'warning';
+                    }
+                    if (
+                        $eventType === 'auto_matched' ||
+                        in_array($eventSubtype, ['ai_match', 'auto_match', 'bank_match', 'bank_change'], true)
+                    ) {
+                        $tone = 'info';
+                    }
+                    if (in_array($eventSubtype, ['manual_edit', 'supplier_change'], true)) {
+                        $tone = 'success';
+                    }
+                    if ($eventSubtype === 'extension') {
+                        $tone = 'amber';
+                    }
+                    if ($eventSubtype === 'reduction') {
+                        $tone = 'violet';
+                    }
+                    if (
+                        $eventSubtype === 'release' ||
+                        in_array($eventType, ['release', 'released'], true)
+                    ) {
+                        $tone = 'danger';
+                    }
 
-                    $colors = $labelColors[$eventLabel] ?? ['border' => '#94a3b8', 'text' => '#475569'];
-                    $isFirst = $index === 0;
-                    $isLatest = $index === 0;  // Latest event (current state)
+                    $isLatest = $index === 0; // Latest event (current state)
                 ?>
-                    <div class="timeline-event-wrapper"
+                    <div class="timeline-event-wrapper timeline-event-wrapper--interactive"
                         data-event-id="<?= $eventId ?>"
-                        data-event-type="<?= $event['event_type'] ?? 'unknown' ?>"
-                        data-event-subtype="<?= $event['event_subtype'] ?? '' ?>"
-                        data-snapshot='<?= htmlspecialchars($event['snapshot_data'] ?? '{}', ENT_QUOTES, 'UTF-8') ?>'
-                        data-event-details='<?= htmlspecialchars($event['event_details'] ?? '{}', ENT_QUOTES, 'UTF-8') ?>'
-                        data-letter-snapshot='<?= htmlspecialchars($event['letter_snapshot'] ?? 'null', ENT_QUOTES, 'UTF-8') ?>'
-                        data-is-latest="<?= $isLatest ? '1' : '0' ?>"
-                        style="position: relative; padding-right: 12px; margin-bottom: 10px; cursor: pointer;">
+                        data-event-type="<?= $eventType !== '' ? $eventType : 'unknown' ?>"
+                        data-event-subtype="<?= $eventSubtype ?>"
+                        data-snapshot='<?= $snapshotPayload ?>'
+                        data-event-details='<?= $eventDetailsPayload ?>'
+                        data-letter-snapshot='<?= $letterSnapshotPayload ?>'
+                        data-is-latest="<?= $isLatest ? '1' : '0' ?>">
 
                         <!-- Timeline Connector -->
                         <?php if ($index < count($timeline) - 1): ?>
-                            <div style="position: absolute; right: 3px; top: 14px; bottom: -10px; width: 2px; background: #e2e8f0;"></div>
+                            <div class="timeline-event-connector"></div>
                         <?php endif; ?>
 
                         <?php
@@ -82,23 +145,21 @@ $eventCount = count($timeline);
                         $hasAnchor = !empty($event['anchor_snapshot']) && $event['anchor_snapshot'] !== '{}' && $event['anchor_snapshot'] !== 'null';
                         ?>
                         <!-- Dot -->
-                        <div class="timeline-dot <?= ($hasSnapshot || $hasAnchor) ? 'timeline-dot-anchor' : '' ?>" style="position: absolute; right: -2px; top: 8px; width: 10px; height: 10px; border-radius: 50%; background: <?= $colors['border'] ?>; border: 2px solid white; box-shadow: 0 0 0 1px #e2e8f0; z-index: 1;"></div>
+                        <div class="timeline-dot timeline-dot--event timeline-tone--<?= htmlspecialchars($tone) ?> <?= ($hasSnapshot || $hasAnchor) ? 'timeline-dot-anchor' : '' ?>"></div>
 
                         <!-- Event Card -->
-                        <div class="timeline-event-card" style="background: white; border: 1px solid #e2e8f0; border-right: 3px solid <?= $colors['border'] ?>; border-radius: 4px; padding: 10px 12px; margin-right: 16px; transition: all 0.2s;"
-                            onmouseover="this.style.borderRightWidth='4px'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.1)'"
-                            onmouseout="this.style.borderRightWidth='3px'; this.style.boxShadow='none'">
+                        <div class="timeline-event-card timeline-event-card--interactive timeline-tone--<?= htmlspecialchars($tone) ?>">
 
                             <!-- Event Header -->
-                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                                <div style="display: flex; align-items: center; gap: 6px;">
-                                    <span style="font-size: 14px;"><?= $eventIcon ?></span>
-                                    <span style="font-weight: 600; color: <?= $colors['text'] ?>; font-size: 13px;">
+                            <div class="timeline-event-header">
+                                <div class="timeline-event-title-group">
+                                    <span class="timeline-event-icon"><?= $eventIcon ?></span>
+                                    <span class="timeline-event-label timeline-tone-text"<?= $eventLabelKey ? ' data-i18n="' . htmlspecialchars($eventLabelKey, ENT_QUOTES, 'UTF-8') . '"' : '' ?>>
                                         <?= htmlspecialchars($eventLabel) ?>
                                     </span>
                                 </div>
                                 <?php if ($isLatest): ?>
-                                    <span style="background: #1e293b; color: white; font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 2px;">آخر حدث</span>
+                                    <span class="timeline-latest-badge" data-i18n="timeline.badges.latest_event">آخر حدث</span>
                                 <?php endif; ?>
                             </div>
 
@@ -106,45 +167,58 @@ $eventCount = count($timeline);
 
                             <?php
                             // 🆕 Show import source for import/reimport events
-                            if (in_array($event['event_type'] ?? '', ['import', 'reimport'])):
+                            if (in_array($eventType, ['import', 'reimport'], true)):
                                 $sourceLabels = [
-                                    'excel' => ['text' => '📁 ملف Excel', 'color' => '#3b82f6'],
-                                    'smart_paste' => ['text' => '⚡ لصق ذكي', 'color' => '#8b5cf6'],
-                                    'smart_paste_multi' => ['text' => '⚡ لصق ذكي', 'color' => '#8b5cf6'],
-                                    'duplicate_smart_paste' => ['text' => '🔄 لصق مكرر', 'color' => '#f59e0b'],
-                                    'duplicate_excel' => ['text' => '🔄 استيراد مكرر', 'color' => '#f59e0b'],
-                                    'manual' => ['text' => '✍️ إدخال يدوي', 'color' => '#10b981']
+                                    'excel' => ['label_key' => 'timeline.source.excel', 'tone' => 'info'],
+                                    'smart_paste' => ['label_key' => 'timeline.source.smart_paste', 'tone' => 'violet'],
+                                    'smart_paste_multi' => ['label_key' => 'timeline.source.smart_paste_multi', 'tone' => 'violet'],
+                                    'duplicate_smart_paste' => ['label_key' => 'timeline.source.duplicate_smart_paste', 'tone' => 'warning'],
+                                    'duplicate_excel' => ['label_key' => 'timeline.source.duplicate_excel', 'tone' => 'warning'],
+                                    'manual' => ['label_key' => 'timeline.source.manual', 'tone' => 'success']
                                 ];
                                 // Fix: Check if event_subtype exists, if not check event_details
-                                $source = $event['event_subtype'] ?? '';
+                                $source = $eventSubtype;
                                 if (!$source) {
                                     $details = json_decode($event['event_details'] ?? '{}', true);
                                     $source = $details['source'] ?? 'excel';
                                 }
 
-                                $sourceInfo = $sourceLabels[$source] ?? ['text' => '📁 استيراد ملف', 'color' => '#6b7280'];
+                                $sourceInfo = $sourceLabels[$source] ?? ['label_key' => 'timeline.source.file_import', 'tone' => 'muted'];
                             ?>
-                                <div style="font-size: 11px; color: <?= $sourceInfo['color'] ?>; font-weight: 500; margin: 6px 0; padding: 4px 8px; background: <?= $sourceInfo['color'] ?>15; border-radius: 3px; border-left: 3px solid <?= $sourceInfo['color'] ?>;">
-                                    <?= $sourceInfo['text'] ?>
+                                <div class="timeline-source-badge timeline-source--<?= htmlspecialchars($sourceInfo['tone']) ?>">
+                                    <span data-i18n="<?= htmlspecialchars($sourceInfo['label_key']) ?>"></span>
                                 </div>
                             <?php endif; ?>
 
-                            <?php if (($event['event_type'] ?? '') === 'modified' && $index < 2): ?>
-                                <!-- DEBUG EVENT <?= $event['id'] ?>: raw=<?= htmlspecialchars(substr($event['event_details'] ?? 'NULL', 0, 100)) ?> | changes_count=<?= count($changes) ?> -->
-                            <?php endif; ?>
                             <?php if (!empty($changes)): ?>
-                                <div style="font-size: 12px; color: #475569; line-height: 1.6; margin: 6px 0; padding: 6px 8px; background: #f8fafc; border-radius: 3px;">
+                                <div class="timeline-change-block">
                                     <?php
                                     // STRICT RENDERING RULE: Only show fields allowed for this event type
-                                    $allowedFields = [];
-                                    if ($eventLabel === 'تمديد الضمان') $allowedFields = ['expiry_date'];
-                                    elseif ($eventLabel === 'تخفيض قيمة الضمان') $allowedFields = ['amount'];
-                                    elseif ($eventLabel === 'اعتماد بيانات المورد أو البنك') $allowedFields = ['supplier_id', 'bank_id'];
-                                    elseif ($eventLabel === 'تطابق تلقائي') $allowedFields = ['bank_name', 'supplier_name', 'supplier_id', 'bank_id'];
-                                    elseif ($eventLabel === 'إفراج الضمان') $allowedFields = ['status']; // Usually handled by status logic, but implicit change might exist
-                                    elseif ($eventLabel === 'تحديث بيانات') $allowedFields = []; // Show nothing for generic updates to avoid noise
-                                    elseif (str_starts_with($eventLabel, 'تم ') || $eventLabel === 'تحديث المرحلة') $allowedFields = ['workflow_step', 'signatures_received'];
-                                    else $allowedFields = ['supplier_id', 'bank_id', 'amount', 'expiry_date', 'status', 'workflow_step']; // Fallback for pure debug? Or restrict? Let's restrict.
+                                    $allowedFields = ['supplier_id', 'bank_id', 'amount', 'expiry_date', 'status', 'workflow_step'];
+                                    if ($eventSubtype === 'extension') {
+                                        $allowedFields = ['expiry_date'];
+                                    } elseif ($eventSubtype === 'reduction') {
+                                        $allowedFields = ['amount'];
+                                    } elseif (in_array($eventSubtype, ['supplier_change', 'manual_edit'], true)) {
+                                        $allowedFields = ['supplier_id', 'bank_id'];
+                                    } elseif (
+                                        $eventType === 'auto_matched' ||
+                                        in_array($eventSubtype, ['ai_match', 'auto_match', 'bank_match', 'bank_change'], true)
+                                    ) {
+                                        $allowedFields = ['bank_name', 'supplier_name', 'supplier_id', 'bank_id'];
+                                    } elseif (
+                                        $eventSubtype === 'release' ||
+                                        in_array($eventType, ['release', 'released'], true)
+                                    ) {
+                                        $allowedFields = ['status'];
+                                    } elseif (
+                                        $eventSubtype === 'workflow_advance' ||
+                                        $eventType === 'status_change'
+                                    ) {
+                                        $allowedFields = ['workflow_step', 'signatures_received', 'status'];
+                                    } elseif ($eventType === 'modified' && $eventSubtype === '') {
+                                        $allowedFields = [];
+                                    }
 
                                     // Filter changes
                                     $visibleChanges = array_filter($changes, function ($change) use ($allowedFields) {
@@ -154,21 +228,24 @@ $eventCount = count($timeline);
 
                                     <?php foreach ($visibleChanges as $change): ?>
                                         <?php
-                                        $fieldLabels = [
-                                            'supplier_id' => 'المورد',
-                                            'bank_id' => 'البنك',
-                                            'bank_name' => 'البنك',
-                                            'supplier_name' => 'المورد',
-                                            'amount' => 'المبلغ',
-                                            'expiry_date' => 'تاريخ الانتهاء',
-                                            'status' => 'الحالة',
-                                            'workflow_step' => 'مرحلة الاعتماد'
+                                        $fieldLabelKeys = [
+                                            'supplier_id' => 'timeline.fields.supplier',
+                                            'bank_id' => 'timeline.fields.bank',
+                                            'bank_name' => 'timeline.fields.bank',
+                                            'supplier_name' => 'timeline.fields.supplier',
+                                            'amount' => 'timeline.fields.amount',
+                                            'expiry_date' => 'timeline.fields.expiry_date',
+                                            'status' => 'timeline.fields.status',
+                                            'workflow_step' => 'timeline.fields.workflow_step'
                                         ];
-                                        $fieldLabel = $fieldLabels[$change['field']] ?? $change['field'];
+                                        $fieldLabelKey = $fieldLabelKeys[$change['field']] ?? '';
+                                        $fieldLabelFallback = $change['field'];
                                         ?>
 
-                                        <div style="margin-bottom: 4px;">
-                                            <strong style="color: #1e293b;">• <?= $fieldLabel ?>:</strong>
+                                        <div class="timeline-change-row">
+                                            <strong class="timeline-change-label">
+                                                • <span data-i18n="<?= htmlspecialchars($fieldLabelKey) ?>"><?= htmlspecialchars($fieldLabelFallback) ?></span>:
+                                            </strong>
 
                                             <?php if ($change['field'] === 'supplier_id' || $change['field'] === 'bank_id'): ?>
                                                 <?php
@@ -176,19 +253,19 @@ $eventCount = count($timeline);
                                                 $newName = $change['new_value']['name'] ?? null;
                                                 ?>
 
-                                                <?php if ($oldName && $oldName !== 'غير محدد'): ?>
-                                                    <span style="color: #dc2626; text-decoration: line-through; opacity: 0.8;">
+                                                <?php if ($oldName && trim((string)$oldName) !== ''): ?>
+                                                    <span class="timeline-change-old">
                                                         <?= htmlspecialchars($oldName) ?>
                                                     </span>
-                                                    <span style="color: #64748b; margin: 0 4px;">→</span>
+                                                    <span class="timeline-change-arrow">→</span>
                                                 <?php endif; ?>
 
-                                                <span style="color: #059669; font-weight: 500;">
+                                                <span class="timeline-change-new">
                                                     <?= htmlspecialchars($newName ?? '') ?>
                                                 </span>
 
                                                 <?php if (isset($change['confidence'])): ?>
-                                                    <span style="color: #3b82f6; font-size: 11px; margin-left: 4px;">
+                                                    <span class="timeline-change-confidence">
                                                         (<?= round($change['confidence']) ?>%)
                                                     </span>
                                                 <?php endif; ?>
@@ -206,13 +283,13 @@ $eventCount = count($timeline);
                                                 ?>
 
                                                 <?php if ($oldVal): ?>
-                                                    <span style="color: #dc2626; text-decoration: line-through; opacity: 0.8;">
+                                                    <span class="timeline-change-old">
                                                         <?= htmlspecialchars($oldVal) ?>
                                                     </span>
-                                                    <span style="color: #64748b; margin: 0 4px;">→</span>
+                                                    <span class="timeline-change-arrow">→</span>
                                                 <?php endif; ?>
 
-                                                <span style="color: #059669; font-weight: 500;">
+                                                <span class="timeline-change-new">
                                                     <?= htmlspecialchars($newVal ?? '') ?>
                                                 </span>
                                             <?php endif; ?>
@@ -220,9 +297,9 @@ $eventCount = count($timeline);
                                     <?php endforeach; ?>
 
                                     <?php if ($statusChange): ?>
-                                        <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #e2e8f0;">
-                                            <strong style="color: #1e293b;">• الحالة:</strong>
-                                            <span style="color: #059669; font-weight: 500;">
+                                        <div class="timeline-status-row">
+                                            <strong class="timeline-change-label">• <span data-i18n="timeline.status.label">الحالة</span>:</strong>
+                                            <span class="timeline-change-new">
                                                 <?php
                                                 // Map old 'approved' to 'ready' for display
                                                 $displayStatus = ($statusChange === 'approved') ? 'ready' : $statusChange;
@@ -234,7 +311,7 @@ $eventCount = count($timeline);
                                 </div>
                             <?php elseif (!empty($event['change_reason'])): ?>
                                 <!-- Action event (extension/reduction/release) with formatted description -->
-                                <div style="font-size: 12px; color: #475569; line-height: 1.6; margin: 6px 0; padding: 6px 8px; background: #f8fafc; border-radius: 3px;">
+                                <div class="timeline-change-block">
                                     <?= $event['change_reason'] /* HTML formatted */ ?>
                                 </div>
                             <?php endif; ?>
@@ -243,27 +320,47 @@ $eventCount = count($timeline);
 
 
                             <!-- Date and User -->
-                            <div style="font-size: 11px; color: #64748b; margin-top: 6px; padding-top: 6px; border-top: 1px solid #f1f5f9; display: flex; justify-content: space-between;">
+                            <div class="timeline-event-meta">
                                 <span><?= htmlspecialchars($event['created_at'] ?? '') ?></span>
                                 <?php
-                                // The created_by column now contains "بواسطة [Name]" or "بواسطة النظام"
-                                $displayCreatorRaw = $event['created_by'] ?? 'النظام';
+                                $displayCreatorRaw = trim((string)($event['created_by'] ?? ''));
+                                if ($displayCreatorRaw === '') {
+                                    $displayCreatorRaw = 'system';
+                                }
 
                                 // Map icons
                                 $icon = '👤';
-                                if (strpos($displayCreatorRaw, 'النظام') !== false) {
+                                $actorLower = strtolower($displayCreatorRaw);
+                                $isSystemActor = str_contains($actorLower, 'system') || str_contains($actorLower, 'bot');
+                                if ($isSystemActor) {
                                     $icon = '🤖';
                                 }
+                                $actorKeyMap = [
+                                    'system' => 'timeline.actor.system',
+                                    'النظام' => 'timeline.actor.system',
+                                    'بواسطة النظام' => 'timeline.actor.system',
+                                    'user' => 'timeline.actor.user',
+                                    'web_user' => 'timeline.actor.user',
+                                    'بواسطة المستخدم' => 'timeline.actor.user',
+                                ];
+                                $actorKey = $actorKeyMap[$displayCreatorRaw] ?? null;
                                 ?>
-                                <span style="font-weight: 500;"><?= $icon ?> <?= htmlspecialchars($displayCreatorRaw) ?></span>
+                                <span class="timeline-event-user">
+                                    <?= $icon ?>
+                                    <?php if ($actorKey): ?>
+                                        <span data-i18n="<?= htmlspecialchars($actorKey, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($displayCreatorRaw) ?></span>
+                                    <?php else: ?>
+                                        <?= htmlspecialchars($displayCreatorRaw) ?>
+                                    <?php endif; ?>
+                                </span>
                             </div>
 
                             <!-- Click hint -->
-                            <div style="font-size: 10px; color: #94a3b8; margin-top: 4px; text-align: center;">
+                            <div class="timeline-event-hint">
                                 <?php if ($isLatest): ?>
-                                    👁️ انقر لعرض الحالة الحالية
+                                    <span data-i18n="timeline.hints.current_state">👁️ انقر لعرض الحالة الحالية</span>
                                 <?php else: ?>
-                                    🕐 انقر لعرض الحالة قبل هذا الحدث
+                                    <span data-i18n="timeline.hints.before_event">🕐 انقر لعرض الحالة قبل هذا الحدث</span>
                                 <?php endif; ?>
                             </div>
                         </div>

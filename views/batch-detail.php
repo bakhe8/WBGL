@@ -14,9 +14,49 @@ ViewPolicy::guardView('batch-detail.php');
 
 $db = Database::connect();
 $importSource = $_GET['import_source'] ?? '';
+$settings = Settings::getInstance();
+$batchDetailLocaleCode = strtolower((string)$settings->get('DEFAULT_LOCALE', 'ar'));
+if (!in_array($batchDetailLocaleCode, ['ar', 'en'], true)) {
+    $batchDetailLocaleCode = 'ar';
+}
+$batchDetailLocalePrimary = [];
+$batchDetailLocaleFallback = [];
+$batchDetailPrimaryPath = __DIR__ . '/../public/locales/' . $batchDetailLocaleCode . '/batch_detail.json';
+$batchDetailFallbackPath = __DIR__ . '/../public/locales/ar/batch_detail.json';
+if (is_file($batchDetailPrimaryPath)) {
+    $decodedLocale = json_decode((string)file_get_contents($batchDetailPrimaryPath), true);
+    if (is_array($decodedLocale)) {
+        $batchDetailLocalePrimary = $decodedLocale;
+    }
+}
+if (is_file($batchDetailFallbackPath)) {
+    $decodedLocale = json_decode((string)file_get_contents($batchDetailFallbackPath), true);
+    if (is_array($decodedLocale)) {
+        $batchDetailLocaleFallback = $decodedLocale;
+    }
+}
+$batchDetailTodoArPrefix = '__' . 'TODO_AR__';
+$batchDetailTodoEnPrefix = '__' . 'TODO_EN__';
+$batchDetailIsPlaceholder = static function ($value) use ($batchDetailTodoArPrefix, $batchDetailTodoEnPrefix): bool {
+    if (!is_string($value)) {
+        return false;
+    }
+    $trimmed = trim($value);
+    return str_starts_with($trimmed, $batchDetailTodoArPrefix) || str_starts_with($trimmed, $batchDetailTodoEnPrefix);
+};
+$batchDetailT = static function (string $key, ?string $fallback = null) use ($batchDetailLocalePrimary, $batchDetailLocaleFallback, $batchDetailIsPlaceholder): string {
+    $value = $batchDetailLocalePrimary[$key] ?? null;
+    if (!is_string($value) || $batchDetailIsPlaceholder($value)) {
+        $value = $batchDetailLocaleFallback[$key] ?? null;
+    }
+    if (!is_string($value) || $batchDetailIsPlaceholder($value)) {
+        $value = $fallback ?? $key;
+    }
+    return $value;
+};
 
 if (!$importSource) {
-    die('<div class="p-5 text-center text-danger font-bold">خطأ: import_source مطلوب</div>');
+    die('<div class="p-5 text-center text-danger font-bold">' . htmlspecialchars($batchDetailT('batch_detail.ui.txt_b1639a5d'), ENT_QUOTES, 'UTF-8') . '</div>');
 }
 
 // 1. Fetch Metadata
@@ -75,7 +115,6 @@ $stmt->execute([$importSource]);
 $guarantees = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Production Mode: Filter out test guarantees
-$settings = Settings::getInstance();
 if ($settings->isProductionMode()) {
     $guarantees = array_filter($guarantees, static fn($g) => (int)($g['is_test_data'] ?? 0) === 0);
     // Re-index array after filtering
@@ -90,7 +129,7 @@ foreach ($guarantees as $r) {
 }
 
 // 3. Process Data
-$batchName = $metadata['batch_name'] ?? 'دفعة ' . substr($importSource, 0, 30);
+$batchName = $metadata['batch_name'] ?? ($batchDetailT('batch_detail.ui.txt_fb13a024') . ' ' . substr($importSource, 0, 30));
 $status = $metadata['status'] ?? 'active';
 $isClosed = ($status === 'completed');
 $batchNotes = $metadata['batch_notes'] ?? '';
@@ -138,19 +177,19 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
     
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Lucide Icons (local, CSP-safe) -->
+    <script src="../public/js/vendor/lucide.min.js"></script>
 </head>
-<body>
+<body data-i18n-namespaces="common,batch_detail,messages">
 
     <!-- Unified Header -->
     <?php include __DIR__ . '/../partials/unified-header.php'; ?>
     
     <!-- Toast Container -->
-    <div id="toast-container" role="status" aria-live="polite" style="position: fixed; top: var(--space-md); right: var(--space-md); z-index: var(--z-toast); display: flex; flex-direction: column; gap: var(--space-sm);"></div>
+    <div id="toast-container" role="status" aria-live="polite" class="bd-toast-container"></div>
 
     <!-- Modal Container -->
-    <div id="modal-backdrop" class="modal-backdrop" style="display: none;" aria-hidden="true">
+    <div id="modal-backdrop" class="modal-backdrop is-hidden" aria-hidden="true">
         <div id="modal-content" class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
             <!-- Dynamic Content -->
         </div>
@@ -162,28 +201,28 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
         <!-- Batch Header (Redesigned) -->
         <div class="card mb-5 border-0 shadow-sm">
             <div class="card-body p-6">
-                <div class="row align-items-start gap-4" style="display: flex; flex-wrap: wrap; justify-content: space-between;">
+                <div class="row align-items-start gap-4 bd-flex-wrap-between">
                     
                     <!-- Right Side: Info -->
-                    <div style="flex: 1; min-width: 300px;">
+                    <div class="bd-info-column">
                         <div class="d-flex align-items-center gap-3 mb-3">
                             <div class="p-3 bg-primary-light rounded-circle text-primary">
-                                <i data-lucide="layers" style="width: 24px; height: 24px;"></i>
+                                <i data-lucide="layers" class="icon-24"></i>
                             </div>
                             <div>
                                 <h1 class="text-2xl font-bold mb-1 d-flex align-items-center gap-2">
                                     <?= htmlspecialchars($batchName) ?>
-                                    <span class="badge text-xs <?= $isClosed ? 'badge-neutral' : 'badge-success' ?>">
-                                        <?= $isClosed ? 'مغلقة' : 'نشطة' ?>
+                                    <span class="badge text-xs <?= $isClosed ? 'badge-neutral' : 'badge-success' ?>" data-i18n="<?= $isClosed ? 'batch_detail.ui.txt_249b0f6b' : 'batch_detail.ui.txt_6cf44b8c' ?>">
+                                        <?= $isClosed ? $batchDetailT('batch_detail.ui.txt_249b0f6b') : $batchDetailT('batch_detail.ui.txt_6cf44b8c') ?>
                                     </span>
                                 </h1>
                                 <div class="text-secondary text-sm d-flex align-items-center gap-4">
-                                    <span class="d-flex align-items-center gap-1" title="تاريخ الاستيراد">
-                                        <i data-lucide="calendar" style="width: 14px;"></i> 
-                                        <?= date('Y-m-d H:i', strtotime($guarantees[0]['occurrence_date'] ?? 'now')) ?>
+                                    <span class="d-flex align-items-center gap-1" title="تاريخ الاستيراد" data-i18n-title="batch_detail.ui.txt_30fe32c4">
+                                        <i data-lucide="calendar" class="icon-14"></i> 
+                                        <?= date('Y-m-d' . ' ' . 'H:i', strtotime($guarantees[0]['occurrence_date'] ?? 'now')) ?>
                                     </span>
-                                    <span class="d-flex align-items-center gap-1" title="المصدر">
-                                        <i data-lucide="file-spreadsheet" style="width: 14px;"></i> 
+                                    <span class="d-flex align-items-center gap-1" title="المصدر" data-i18n-title="batch_detail.ui.txt_7a466b92">
+                                        <i data-lucide="file-spreadsheet" class="icon-14"></i> 
                                         <?= htmlspecialchars(substr($importSource, 0, 20)) . (strlen($importSource)>20 ? '...' : '') ?>
                                     </span>
                                 </div>
@@ -192,46 +231,46 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
 
                         <?php if ($batchNotes): ?>
                             <div class="mt-4 p-3 bg-warning-light text-warning-dark rounded-lg text-sm border-0 d-flex gap-2">
-                                <i data-lucide="sticky-note" style="width: 18px; min-width: 18px;"></i>
+                                <i data-lucide="sticky-note" class="icon-18 icon-min-18"></i>
                                 <p class="m-0"><?= htmlspecialchars($batchNotes) ?></p>
                             </div>
                         <?php endif; ?>
                     </div>
 
                     <!-- Left Side: Statistics & Actions -->
-                    <div class="d-flex flex-column align-items-end gap-3" style="min-width: 250px;">
+                    <div class="d-flex flex-column align-items-end gap-3 bd-actions-column">
                         
                         <!-- Quick Stats Box -->
                         <div class="d-flex gap-4 p-3 bg-subtle rounded-lg mb-2">
                             <div class="text-center px-2">
-                                <div class="text-xs text-secondary mb-1">عدد الضمانات</div>
+                                <div class="text-xs text-secondary mb-1" data-i18n="batch_detail.metrics.guarantees_count">عدد الضمانات</div>
                                 <div class="font-bold text-lg"><?= count($guarantees) ?></div>
                             </div>
                             <div class="vr bg-gray-200"></div>
                             <div class="text-center px-2">
-                                <div class="text-xs text-secondary mb-1">اجمالي القيمة</div>
+                                <div class="text-xs text-secondary mb-1" data-i18n="batch_detail.ui.txt_2ba38362">اجمالي القيمة</div>
                                 <div class="font-bold text-lg text-primary"><?= number_format($totalAmount, 0) ?></div>
                             </div>
                         </div>
 
                         <!-- Action Buttons -->
                         <div class="d-flex align-items-center gap-2">
-                            <button onclick="openMetadataModal()" class="btn btn-outline-secondary btn-sm" title="تعديل الاسم والملاحظات" aria-label="تعديل اسم وملاحظات الدفعة">
-                                <i data-lucide="edit-3" style="width: 16px;"></i>
+                            <button onclick="openMetadataModal()" class="btn btn-outline-secondary btn-sm" title="تعديل الاسم والملاحظات" aria-label="تعديل اسم وملاحظات الدفعة" data-i18n-title="batch_detail.ui.txt_c4f6223f" data-i18n-aria-label="batch_detail.ui.txt_9a4e8268">
+                                <i data-lucide="edit-3" class="icon-16"></i>
                             </button>
                             
                             <?php if (!$isClosed): ?>
-                                <button onclick="handleBatchAction('close')" class="btn btn-outline-danger btn-sm" title="إغلاق الدفعة للأرشفة" aria-label="إغلاق الدفعة">
-                                    <i data-lucide="lock" style="width: 16px;"></i>
+                                <button onclick="handleBatchAction('close')" class="btn btn-outline-danger btn-sm" title="إغلاق الدفعة للأرشفة" aria-label="إغلاق الدفعة" data-i18n-title="batch_detail.ui.txt_ea3a670f" data-i18n-aria-label="batch_detail.ui.txt_a3475a01">
+                                    <i data-lucide="lock" class="icon-16"></i>
                                 </button>
                                 <?php if ($printReadyCount > 0): ?>
                                 <button onclick="printReadyGuarantees()" class="btn btn-success shadow-md">
-                                    <i data-lucide="printer" style="width: 18px;"></i> طباعة خطابات (<?= $printReadyCount ?>)
+                                    <i data-lucide="printer" class="icon-18"></i> <span data-i18n="batch_detail.actions.print_letters_prefix">طباعة خطابات</span> (<?= $printReadyCount ?>)
                                 </button>
                                 <?php endif; ?>
                             <?php else: ?>
                                 <button onclick="handleBatchAction('reopen')" class="btn btn-warning shadow-md">
-                                    <i data-lucide="unlock" style="width: 16px;"></i> إعادة فتح الدفعة
+                                    <i data-lucide="unlock" class="icon-16"></i> <span data-i18n="batch_detail.ui.txt_21e3561f">إعادة فتح الدفعة</span>
                                 </button>
                             <?php endif; ?>
                         </div>
@@ -246,17 +285,17 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
             <div class="card-body p-3 flex-between align-center">
                 <div class="flex-align-center gap-2">
                     <button id="btn-extend" onclick="executeBulkAction('extend')" class="btn btn-primary btn-sm">
-                        <i data-lucide="calendar-plus" style="width: 16px;"></i> تمديد المحدد
+                        <i data-lucide="calendar-plus" class="icon-16"></i> تمديد المحدد
                     </button>
                     <button id="btn-release" onclick="executeBulkAction('release')" class="btn btn-success btn-sm">
-                        <i data-lucide="check-circle-2" style="width: 16px;"></i> إفراج المحدد
+                        <i data-lucide="check-circle-2" class="icon-16"></i> إفراج المحدد
                     </button>
                 </div>
                 
                 <div class="text-sm">
-                    <button onclick="TableManager.toggleSelectAll(true)" class="btn-link">تحديد الكل</button>
+                    <button onclick="TableManager.toggleSelectAll(true)" class="btn-link" data-i18n="batch_detail.ui.txt_dc42087e">تحديد الكل</button>
                     <span class="text-muted mx-2">|</span>
-                    <button onclick="TableManager.toggleSelectAll(false)" class="btn-link">إلغاء التحديد</button>
+                    <button onclick="TableManager.toggleSelectAll(false)" class="btn-link" data-i18n="batch_detail.ui.txt_41640caf">إلغاء التحديد</button>
                 </div>
             </div>
         </div>
@@ -264,7 +303,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
 
         <!-- Guarantees Table -->
         <div class="card overflow-hidden">
-            <div id="table-loading" class="loading-overlay" style="display: none;">
+            <div id="table-loading" class="loading-overlay is-hidden">
                 <div class="spinner"></div>
             </div>
 
@@ -273,17 +312,17 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                     <thead>
                         <tr>
                             <?php if (!$isClosed): ?>
-                                <th style="width: 40px;">
-                                    <input type="checkbox" onchange="TableManager.toggleSelectAll(this.checked)" class="form-checkbox">
+                                <th class="bd-select-col">
+                                    <input type="checkbox" onchange="handleSelectAllChange(this.checked)" class="form-checkbox">
                                 </th>
                             <?php endif; ?>
-                            <th>رقم الضمان</th>
-                            <th>المورد</th>
-                            <th>البنك</th>
-                            <th class="text-center">الإجراء</th>
-                            <th class="text-left">القيمة</th>
-                            <th class="text-center">الحالة</th>
-                            <th class="text-center">تفاصيل</th>
+                            <th data-i18n="batch_detail.table.headers.guarantee_number">رقم الضمان</th>
+                            <th data-i18n="batch_detail.table.headers.supplier">المورد</th>
+                            <th data-i18n="batch_detail.table.headers.bank">البنك</th>
+                            <th class="text-center" data-i18n="batch_detail.ui.txt_3b0975be">الإجراء</th>
+                            <th class="text-left" data-i18n="batch_detail.ui.txt_1a39dcff">القيمة</th>
+                            <th class="text-center" data-i18n="batch_detail.table.headers.status">الحالة</th>
+                            <th class="text-center" data-i18n="batch_detail.ui.txt_171a27a1">تفاصيل</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -299,9 +338,9 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                                 <td><?= htmlspecialchars($g['bank_name']) ?></td>
                                 <td class="text-center">
                                     <?php if ($g['last_action'] == 'release'): ?>
-                                        <span class="badge badge-success">إفراج</span>
+                                        <span class="badge badge-success" data-i18n="batch_detail.ui.txt_08ba0a7c">إفراج</span>
                                     <?php elseif ($g['last_action'] == 'extension'): ?>
-                                        <span class="badge badge-info">تمديد</span>
+                                        <span class="badge badge-info" data-i18n="batch_detail.ui.txt_5e180f9f">تمديد</span>
                                     <?php else: ?>
                                         <span class="text-muted">-</span>
                                     <?php endif; ?>
@@ -316,19 +355,19 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                                     
                                     if ($statusVal === 'released'): ?>
                                         <div class="text-info flex-center gap-1 text-sm font-bold">
-                                            <i data-lucide="unlock" style="width: 14px;"></i> مُفرج عنه
+                                            <i data-lucide="unlock" class="icon-14"></i> مُفرج عنه
                                         </div>
                                     <?php elseif ($statusVal === 'ready' && $hasBasicData): ?>
                                         <div class="text-success flex-center gap-1 text-sm font-bold">
-                                            <i data-lucide="check" style="width: 14px;"></i> جاهز
+                                            <i data-lucide="check" class="icon-14"></i> جاهز
                                         </div>
                                     <?php else: ?>
-                                        <span class="text-muted text-xs">يحتاج قرار</span>
+                                        <span class="text-muted text-xs" data-i18n="batch_detail.timeline.txt_9c870230">يحتاج قرار</span>
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center">
-                                    <a href="/index.php?id=<?= $g['id'] ?>" class="btn-icon" aria-label="عرض تفاصيل الضمان <?= htmlspecialchars($g['guarantee_number']) ?>">
-                                        <i data-lucide="arrow-left" style="width: 18px;"></i>
+                                    <a href="/index.php?id=<?= $g['id'] ?>" class="btn-icon" aria-label="عرض تفاصيل الضمان <?= htmlspecialchars($g['guarantee_number']) ?>" data-i18n-aria-label="batch_detail.table.actions.view_guarantee_details">
+                                        <i data-lucide="arrow-left" class="icon-18"></i>
                                     </a>
                                 </td>
                             </tr>
@@ -339,8 +378,8 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
             
             <?php if (empty($guarantees)): ?>
                 <div class="p-5 text-center text-muted">
-                    <i data-lucide="inbox" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.5;"></i>
-                    <p>لا توجد بيانات للعرض</p>
+                    <i data-lucide="inbox" class="icon-48 bd-empty-icon"></i>
+                    <p data-i18n="batch_detail.ui.txt_f70076e3">لا توجد بيانات للعرض</p>
                 </div>
             <?php endif; ?>
         </div>
@@ -352,6 +391,18 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
     <script>
         // --- 1. System Components (Toast, Modal, API) ---
         // Kept lightweight and clean
+        const t = (key, fallback, params) => {
+            if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
+                return window.WBGLI18n.t(key, fallback, params);
+            }
+            return fallback || key;
+        };
+
+        const safeCreateIcons = () => {
+            if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                window.lucide.createIcons();
+            }
+        };
 
         const Toast = {
             show(message, type = 'info', duration = 3000) {
@@ -367,21 +418,23 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                 toast.style.minWidth = '300px';
 
                 const icons = {
-                    success: '<i data-lucide="check-circle" style="color:var(--accent-success)"></i>',
-                    error: '<i data-lucide="alert-circle" style="color:var(--accent-danger)"></i>',
-                    warning: '<i data-lucide="alert-triangle" style="color:var(--accent-warning)"></i>',
-                    info: '<i data-lucide="info" style="color:var(--accent-info)"></i>'
+                    success: '<i data-lucide="check-circle" class="toast-icon-success"></i>',
+                    error: '<i data-lucide="alert-circle" class="toast-icon-error"></i>',
+                    warning: '<i data-lucide="alert-triangle" class="toast-icon-warning"></i>',
+                    info: '<i data-lucide="info" class="toast-icon-info"></i>'
                 };
                 
                 toast.innerHTML = `${icons[type] || icons.info} <span class="font-medium">${message}</span>`;
                 
                 container.appendChild(toast);
-                lucide.createIcons();
+                safeCreateIcons();
 
                 setTimeout(() => {
                     toast.style.opacity = '0';
                     toast.style.transform = 'translateY(-20px)';
-                    toast.style.transition = 'all 0.3s ease';
+                    toast.style.transitionProperty = ['opacity', 'transform'].join(',');
+                    toast.style.transitionDuration = '0.3s';
+                    toast.style.transitionTimingFunction = 'ease';
                     setTimeout(() => toast.remove(), 300);
                 }, duration);
             }
@@ -402,7 +455,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                 this.el.classList.add('active');
 
                 // Ensure dialog has a label for screen readers
-                const heading = this.content.querySelector('h1, h2, h3');
+                const heading = this.content.querySelector('[id="modal-title"]');
                 if (heading && !heading.id) {
                     heading.id = 'modal-title';
                 }
@@ -489,42 +542,50 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
             }
         };
 
+        function handleSelectAllChange(checked) {
+            TableManager.toggleSelectAll(checked);
+        }
+
+        function closeModal() {
+            Modal.close();
+        }
+
         function handleBatchAction(action) {
-            const actionText = action === 'close' ? 'إغلاق الدفعة' : 'إعادة فتح الدفعة';
+            const actionText = action === 'close' ? t('batch_detail.ui.txt_a3475a01') : t('batch_detail.ui.txt_21e3561f');
             const actionColor = action === 'close' ? 'text-danger' : 'text-warning';
             const needsReason = action === 'reopen';
             
             Modal.open(`
                 <div class="p-5 text-center">
                     <div class="mb-4 flex-center">
-                        <div class="p-3 rounded-full bg-warning-light">
-                            <i data-lucide="alert-triangle" style="width: 32px; height: 32px; color: var(--accent-warning);"></i>
+                        <div class="bd-modal-warn-icon-wrap">
+                            <i data-lucide="alert-triangle" class="icon-32 bd-modal-warn-icon"></i>
                         </div>
                     </div>
-                    <h3 id="modal-title" class="text-xl font-bold mb-2">تأكيد الإجراء</h3>
-                    <p class="text-secondary mb-6">هل أنت متأكد من رغبتك في <span class="${actionColor} font-bold">${actionText}</span>؟</p>
+                    <h3 id="modal-title" class="text-xl font-bold mb-2">${t('batch_detail.modal.confirm_action_title')}</h3>
+                    <p class="text-secondary mb-6">${t('batch_detail.ui.txt_cd4b27e4')} <span class="${actionColor} font-bold">${actionText}</span>؟</p>
                     ${needsReason ? `
-                    <div style="text-align: right; margin-bottom: 12px;">
-                        <label for="batch-action-reason" class="font-semibold text-sm">سبب إعادة الفتح <span style="color:#dc2626">*</span></label>
-                        <textarea id="batch-action-reason" rows="3" class="form-textarea" placeholder="اكتب سبب إعادة فتح الدفعة..." style="margin-top:8px;"></textarea>
+                    <div class="bd-modal-reason-wrap">
+                        <label for="batch-action-reason" class="font-semibold text-sm">${t('batch_detail.ui.txt_8cbb7c49')} <span class="bd-required">*</span></label>
+                        <textarea id="batch-action-reason" rows="3" class="form-textarea bd-reason-textarea" placeholder="${t('batch_detail.ui.txt_a16680d6')}"></textarea>
                     </div>
-                    <div style="text-align: right; margin-bottom: 16px; border:1px dashed #f59e0b; border-radius:10px; padding:10px;">
-                        <label style="display:flex; align-items:center; gap:8px;">
+                    <div class="bd-breakglass-wrap">
+                        <label class="bd-breakglass-label">
                             <input type="checkbox" id="break-glass-enabled">
-                            <span class="font-semibold">وضع الطوارئ (Break-glass)</span>
+                            <span class="font-semibold">${t('batch_detail.ui.txt_be8e8c15')}</span>
                         </label>
-                        <div id="break-glass-fields" style="display:none; margin-top:10px;">
-                            <input id="break-glass-ticket" type="text" class="form-input" placeholder="رقم التذكرة/الحادث (إلزامي بالطوارئ)" style="margin-bottom:8px;">
-                            <textarea id="break-glass-reason" rows="2" class="form-textarea" placeholder="سبب الطوارئ"></textarea>
+                        <div id="break-glass-fields" class="bd-breakglass-fields">
+                            <input id="break-glass-ticket" type="text" class="form-input bd-breakglass-ticket" placeholder="${t('batch_detail.ui.txt_0ddb3458')}">
+                            <textarea id="break-glass-reason" rows="2" class="form-textarea" placeholder="${t('batch_detail.ui.txt_30414e70')}"></textarea>
                         </div>
                     </div>` : ''}
                     <div class="flex-center gap-3">
-                        <button onclick="Modal.close()" class="btn btn-secondary w-32">إلغاء</button>
-                        <button onclick="confirmBatchAction('${action}')" class="btn btn-primary w-32">نعم، نفذ</button>
+                        <button onclick="closeModal()" class="btn btn-secondary w-32">${t('batch_detail.modal.cancel')}</button>
+                        <button onclick="confirmBatchAction('${action}')" class="btn btn-primary w-32">${t('batch_detail.ui.txt_3b2f27d2')}</button>
                     </div>
                 </div>
             `);
-            lucide.createIcons();
+            safeCreateIcons();
             const bgEnabled = document.getElementById('break-glass-enabled');
             const bgFields = document.getElementById('break-glass-fields');
             if (bgEnabled && bgFields) {
@@ -541,7 +602,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                     const reasonEl = document.getElementById('batch-action-reason');
                     const reason = reasonEl ? reasonEl.value.trim() : '';
                     if (!reason) {
-                        Toast.show('سبب إعادة فتح الدفعة مطلوب', 'warning');
+                        Toast.show(t('batch_detail.ui.txt_6b189c59'), 'warning');
                         return;
                     }
                     payload.reason = reason;
@@ -559,7 +620,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                 Modal.close();
                 document.getElementById('table-loading').style.display = 'flex';
                 await API.post(action, payload);
-                Toast.show('تم تنفيذ العملية بنجاح', 'success');
+                Toast.show(t('batch_detail.ui.txt_f3c9b30a'), 'success');
                 setTimeout(() => location.reload(), 1000);
             } catch (e) {
                 document.getElementById('table-loading').style.display = 'none';
@@ -570,7 +631,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
         async function executeBulkAction(type) {
             const ids = TableManager.getSelected();
             if (ids.length === 0) {
-                Toast.show('الرجاء اختيار ضمان واحد على الأقل', 'warning');
+                Toast.show(t('batch_detail.ui.txt_68f85d11'), 'warning');
                 return;
             }
 
@@ -583,7 +644,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                     // Let server resolve +1 year from old expiry
                     data.new_expiry = null;
                 } else if (type === 'release') {
-                    data.reason = 'إفراج جماعي';
+                    data.reason = t('batch_detail.ui.txt_08ba0a7c');
                 }
 
                 const res = await API.post(type, data);
@@ -603,18 +664,18 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
         function openMetadataModal() {
             Modal.open(`
                 <div class="p-4">
-                    <h3 id="modal-title" class="text-xl font-bold mb-4">تعديل بيانات الدفعة</h3>
+                    <h3 id="modal-title" class="text-xl font-bold mb-4">${t('batch_detail.ui.txt_43f8ea13')}</h3>
                     <div class="form-group mb-3">
-                        <label class="form-label">اسم الدفعة</label>
+                        <label class="form-label">${t('batch_detail.ui.txt_9092e70c')}</label>
                         <input type="text" id="modal-batch-name" value="<?= htmlspecialchars($batchName) ?>" class="form-input">
                     </div>
                     <div class="form-group mb-3">
-                        <label class="form-label">ملاحظات</label>
+                        <label class="form-label">${t('batch_detail.modal.notes_label')}</label>
                         <textarea id="modal-batch-notes" rows="3" class="form-textarea"><?= htmlspecialchars($batchNotes) ?></textarea>
                     </div>
                     <div class="flex-end gap-2 mt-4">
-                        <button onclick="Modal.close()" class="btn btn-secondary">إلغاء</button>
-                        <button onclick="saveMetadata()" class="btn btn-primary">حفظ التغييرات</button>
+                        <button onclick="closeModal()" class="btn btn-secondary">${t('batch_detail.modal.cancel')}</button>
+                        <button onclick="saveMetadata()" class="btn btn-primary">${t('batch_detail.ui.txt_33081e44')}</button>
                     </div>
                 </div>
             `);
@@ -627,7 +688,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
             try {
                 await API.post('update_metadata', { batch_name: name, batch_notes: notes });
                 Modal.close();
-                Toast.show('تم حفظ البيانات بنجاح', 'success');
+                Toast.show(t('batch_detail.ui.txt_4c52748e'), 'success');
                 setTimeout(() => location.reload(), 800);
             } catch (e) {
                 Toast.show(e.message, 'error');
@@ -639,7 +700,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
             const ready = guarantees.filter(g => g.supplier_id && g.bank_id && g.last_action);
             
             if (ready.length === 0) {
-                Toast.show('لا توجد ضمانات جاهزة للطباعة', 'warning');
+                Toast.show(t('batch_detail.ui.txt_d8a8cf26'), 'warning');
                 return;
             }
 
@@ -653,7 +714,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
         }
 
         // Initialize Icons
-        lucide.createIcons();
+        safeCreateIcons();
 
     </script>
 </body>

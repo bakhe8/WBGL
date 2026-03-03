@@ -11,10 +11,12 @@ use App\Repositories\GuaranteeDecisionRepository;
 use App\Repositories\GuaranteeRepository;
 use App\Services\GuaranteeMutationPolicyService;
 use App\Support\Database;
+use App\Support\Guard;
 use App\Support\Input;
 
-header('Content-Type: text/html; charset=utf-8');
-wbgl_api_require_permission('manage_data');
+wbgl_api_require_permission('guarantee_extend');
+$policyContext = null;
+$surface = null;
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -28,9 +30,34 @@ try {
     if (!$guaranteeId) {
         throw new \RuntimeException('Missing guarantee_id');
     }
+
+    wbgl_api_require_guarantee_visibility((int)$guaranteeId);
     
     // Initialize services
     $db = Database::connect();
+    $context = wbgl_api_policy_surface_for_guarantee($db, (int)$guaranteeId);
+    $policyContext = $context['policy'];
+    $surface = $context['surface'];
+    $stepStmt = $db->prepare("SELECT workflow_step FROM guarantee_decisions WHERE guarantee_id = ? LIMIT 1");
+    $stepStmt->execute([$guaranteeId]);
+    $currentStep = (string)($stepStmt->fetchColumn() ?: 'unknown');
+
+    if (!($surface['can_execute_actions'] ?? false) && !Guard::has('manage_data')) {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Permission Denied',
+            'message' => 'لا يمكن تنفيذ التمديد على هذا السجل في حالته الحالية.',
+            'required_permission' => 'guarantee_extend',
+            'current_step' => $currentStep,
+            'reason_code' => 'SURFACE_NOT_GRANTED_CAN_EXECUTE_ACTIONS',
+            'policy' => $policyContext,
+            'surface' => $surface,
+            'reasons' => $policyContext['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     $decisionRepo = new GuaranteeDecisionRepository($db);
     $guaranteeRepo = new GuaranteeRepository($db);
 
@@ -42,10 +69,19 @@ try {
     );
     $isBreakGlass = !empty($policy['break_glass']);
     if (!$policy['allowed']) {
-        http_response_code(400);
-        echo '<div id="record-form-section" class="card" data-current-event-type="current">';
-        echo '<div class="card-body" style="color: red;">' . htmlspecialchars($policy['reason']) . '</div>';
-        echo '</div>';
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'error' => 'released_read_only',
+            'message' => (string)($policy['reason'] ?? 'Operation is not allowed'),
+            'required_permission' => 'guarantee_extend',
+            'current_step' => $currentStep,
+            'reason_code' => 'MUTATION_POLICY_DENIED',
+            'policy' => $policyContext,
+            'surface' => $surface,
+            'reasons' => $policyContext['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
     
@@ -59,30 +95,20 @@ try {
     $decision = $statusCheck->fetch(PDO::FETCH_ASSOC);
     
     if (!$decision) {
-        http_response_code(400);
-        echo '<div id="record-form-section" class="card" data-current-event-type="current">';
-        echo '<div class="card-body" style="color: red;">لا يوجد قرار لهذا الضمان.</div>';
-        echo '</div>';
-        exit;
+        throw new \RuntimeException('لا يوجد قرار لهذا الضمان.');
     }
     
     // Check if locked (released)
     if ($decision['is_locked'] && !$isBreakGlass) {
-        http_response_code(400);
-        echo '<div id="record-form-section" class="card" data-current-event-type="current">';
-        echo '<div class="card-body" style="color: red;">لا يمكن تمديد ضمان مُفرَج عنه. الضمان مقفل بسبب: ' . 
-             htmlspecialchars($decision['locked_reason'] ?? 'غير محدد') . '</div>';
-        echo '</div>';
-        exit;
+        throw new \RuntimeException(
+            'لا يمكن تمديد ضمان مُفرَج عنه. الضمان مقفل بسبب: ' .
+            (string)($decision['locked_reason'] ?? 'غير محدد')
+        );
     }
     
     // Check if ready
     if ($decision['status'] !== 'ready' && !$isBreakGlass) {
-        http_response_code(400);
-        echo '<div id="record-form-section" class="card" data-current-event-type="current">';
-        echo '<div class="card-body" style="color: red;">لا يمكن تمديد ضمان غير مكتمل. يجب اختيار المورد والبنك أولاً.</div>';
-        echo '</div>';
-        exit;
+        throw new \RuntimeException('لا يمكن تمديد ضمان غير مكتمل. يجب اختيار المورد والبنك أولاً.');
     }
     // ================================================================
     
@@ -158,15 +184,33 @@ try {
     $banks = $banksStmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Include partial template
+    ob_start();
     echo '<div id="record-form-section" class="decision-card" data-current-event-type="current">';
     include __DIR__ . '/../partials/record-form.php';
     echo '</div>';
+    $html = (string)ob_get_clean();
+
+    wbgl_api_success([
+        'html' => $html,
+        'guarantee_id' => (int)$guaranteeId,
+        'status' => 'extended',
+        'active_action' => 'extension',
+        'expiry_date' => $newExpiry,
+        'policy' => $policyContext,
+        'surface' => $surface,
+        'reasons' => $policyContext['reasons'] ?? [],
+    ]);
     
     
 } catch (\Throwable $e) {
-    // Return 400 for logic errors (like "Cannot extend after release")
     http_response_code(400);
-    echo '<div id="record-form-section" class="card" data-current-event-type="current">';
-    echo '<div class="card-body" style="color: red;">خطأ: ' . htmlspecialchars($e->getMessage()) . '</div>';
-    echo '</div>';
+    echo json_encode([
+        'success' => false,
+        'error' => $e->getMessage(),
+        'reason_code' => 'EXTEND_OPERATION_FAILED',
+        'policy' => $policyContext,
+        'surface' => $surface,
+        'reasons' => is_array($policyContext) ? ($policyContext['reasons'] ?? []) : [],
+        'request_id' => wbgl_api_request_id(),
+    ], JSON_UNESCAPED_UNICODE);
 }

@@ -43,7 +43,7 @@
 
 - Scheduler runner: `maint/schedule.php`.
 - الوظيفة المجدولة الحالية في الكتالوج: `notify-expiry` عبر `SchedulerJobCatalog`.
-- حلقة تنفيذ تشخيصية: `maint/run-execution-loop.php`.
+- حلقة تنفيذ تشخيصية تاريخية (متقاعدة): `maint/run-execution-loop.php`.
 - أدوات هجرة/تحقق/إدارة تشغيل: `maint/*.php`.
 
 ### 1.3 دورة الطلب كاملة (Input -> Processing -> Persistence -> Timeline -> Output)
@@ -565,4 +565,3 @@ WBGL يعمل كمنظومة Monolith هجينة: بيانات خام للضما
 ## 12) خلاصة البروتوكول
 
 No additional feature-level behavior is extractable from code structure.
-

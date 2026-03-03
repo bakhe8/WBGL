@@ -30,7 +30,7 @@
 .brand-icon {
     width: 36px;
     height: 36px;
-    background: linear-gradient(135deg, var(--accent-primary), #8b5cf6);
+    background: linear-gradient(135deg, var(--accent-primary), var(--theme-brand-gradient-end));
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;

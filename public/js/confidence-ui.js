@@ -5,6 +5,13 @@
  */
 
 const ConfidenceUI = {
+    t(key, fallback, params) {
+        if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
+            return window.WBGLI18n.t(key, fallback, params);
+        }
+        return fallback || key;
+    },
+
     /**
      * Render confidence badge
      * 
@@ -63,11 +70,11 @@ const ConfidenceUI = {
      */
     getLabel(level) {
         const labels = {
-            high: 'عالية',
-            medium: 'متوسطة',
-            low: 'منخفضة'
+            high: this.t('confidence.level.high', 'confidence.level.high'),
+            medium: this.t('confidence.level.medium', 'confidence.level.medium'),
+            low: this.t('confidence.level.low', 'confidence.level.low')
         };
-        return labels[level] || 'غير معروفة';
+        return labels[level] || this.t('confidence.level.unknown', 'confidence.level.unknown');
     },
 
     /**
@@ -85,14 +92,14 @@ const ConfidenceUI = {
         }
 
         const messages = {
-            medium: `⚠️ الثقة في البيانات المستخرجة متوسطة (${confidence}%). يُرجى المراجعة.`,
-            low: `❌ الثقة منخفضة جداً (${confidence}%). يُنصح بالإدخال اليدوي.`
+            medium: this.t('confidence.warning.medium', 'confidence.warning.medium', { confidence }),
+            low: this.t('confidence.warning.low', 'confidence.warning.low', { confidence })
         };
 
         return `
             <div class="confidence-warning">
                 <div class="confidence-warning-icon">${this.getIcon(level)}</div>
-                <div>${messages[level] || 'يرجى التحقق من البيانات'}</div>
+                <div>${messages[level] || this.t('confidence.warning.check_data', 'confidence.warning.check_data')}</div>
             </div>
         `;
     },
@@ -136,28 +143,27 @@ const ConfidenceUI = {
             if (warning) warning.remove(); // Remove old warning
 
             const warningDiv = document.createElement('div');
-            warningDiv.innerHTML = this.renderWarning(confidence, inputElement.name || 'الحقل');
+            warningDiv.innerHTML = this.renderWarning(confidence, inputElement.name || this.t('confidence.ui.field', 'confidence.ui.field'));
             inputElement.parentElement.appendChild(warningDiv.firstElementChild);
         }
 
-        // Highlight field border based on confidence
-        inputElement.style.borderColor = this.getBorderColor(level);
-        inputElement.style.borderWidth = '2px';
+        // Highlight field border based on confidence using CSS classes
+        this.applyFieldBorderState(inputElement, level);
     },
 
     /**
-     * Get border color for confidence level
+     * Apply border class for confidence level
      * 
+     * @param {HTMLElement} inputElement
      * @param {string} level
-     * @returns {string} CSS color
      */
-    getBorderColor(level) {
-        const colors = {
-            high: '#10b981',
-            medium: '#f59e0b',
-            low: '#ef4444'
-        };
-        return colors[level] || '#d1d5db';
+    applyFieldBorderState(inputElement, level) {
+        if (!(inputElement instanceof HTMLElement)) {
+            return;
+        }
+        const classes = ['confidence-field-high', 'confidence-field-medium', 'confidence-field-low'];
+        inputElement.classList.remove(...classes);
+        inputElement.classList.add(`confidence-field-${level}`);
     },
 
     /**

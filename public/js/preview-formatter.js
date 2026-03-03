@@ -97,7 +97,8 @@ if (!window.PreviewFormatter) {
             const englishPattern = /^(?=.*[A-Za-z])[A-Za-z0-9\s\.\,\-\_\@\#\$\%\&\*\(\)\[\]\{\}\:\;\"\'\<\>\/\\\+\=\!\?\|\~\`]+$/;
 
             // Get all text-containing elements
-            const elements = root.querySelectorAll('span, div, p');
+            const selector = ['span', 'div', 'p'].join(',');
+            const elements = root.querySelectorAll(selector);
             elements.forEach(function (el) {
                 // Skip if already has lang attribute or is a container with mixed content
                 if (el.hasAttribute('lang')) return;
@@ -181,7 +182,7 @@ if (!window.PreviewFormatter) {
             }
 
             if (!root) {
-                BglLogger.warn('PreviewFormatter: No root element found');
+                BglLogger.warn('PREVIEW_FORMATTER_NO_ROOT');
                 return;
             }
 

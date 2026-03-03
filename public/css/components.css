@@ -370,7 +370,7 @@
 .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--theme-overlay-backdrop);
     -webkit-backdrop-filter: blur(4px);
     /* Safari support */
     backdrop-filter: blur(4px);
@@ -441,6 +441,11 @@
     max-width: 400px;
 }
 
+.toast-container--ltr {
+    left: var(--space-lg);
+    right: auto;
+}
+
 .toast {
     display: flex;
     align-items: center;
@@ -456,9 +461,21 @@
     transition: transform var(--transition-base), opacity var(--transition-base);
 }
 
+.toast--inline {
+    min-width: 240px;
+    max-width: 420px;
+    transform: translateY(-8px);
+    border-right: 0;
+    border-inline-start: 4px solid;
+}
+
 .toast.show {
     transform: translateX(0);
     opacity: 1;
+}
+
+.toast--inline.show {
+    transform: translateY(0);
 }
 
 .toast-success {
@@ -478,6 +495,55 @@
     border-color: var(--accent-info);
 }
 
+.wbgl-shortcuts-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 11000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: var(--theme-overlay-backdrop);
+}
+
+.wbgl-shortcuts-dialog {
+    width: 100%;
+    max-width: 520px;
+    border-radius: 14px;
+    padding: 20px;
+    background: var(--bg-card);
+    box-shadow: var(--shadow-xl);
+}
+
+.wbgl-shortcuts-dialog__header {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.wbgl-shortcuts-dialog__title {
+    margin: 0;
+    font-size: 18px;
+    color: var(--text-primary);
+}
+
+.wbgl-shortcuts-dialog__close {
+    border: none;
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.wbgl-shortcuts-grid {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 8px 12px;
+    font-size: 14px;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    LOADING & SPINNERS
    ═══════════════════════════════════════════════════════════════ */
@@ -485,7 +551,7 @@
 .loading-overlay {
     position: absolute;
     inset: 0;
-    background: rgba(255, 255, 255, 0.8);
+    background: var(--theme-glass-surface);
     -webkit-backdrop-filter: blur(2px);
     /* Safari support */
     backdrop-filter: blur(2px);

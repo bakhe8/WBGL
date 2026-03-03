@@ -5,12 +5,10 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
-require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 
 use App\Support\Database;
 use App\Repositories\GuaranteeRepository;
-use App\Support\Settings;
-use App\Support\Logger;
+use App\Services\UiSurfacePolicyService;
 
 header('Content-Type: text/html; charset=utf-8');
 wbgl_api_require_login();
@@ -18,6 +16,10 @@ wbgl_api_require_login();
 try {
     $index = isset($_GET['index']) ? intval($_GET['index']) : 1;
     $statusFilter = isset($_GET['filter']) ? trim((string)$_GET['filter']) : (isset($_GET['status_filter']) ? trim((string)$_GET['status_filter']) : 'all');
+    $stageFilter = isset($_GET['stage']) ? trim((string)$_GET['stage']) : null;
+    if ($stageFilter === '') {
+        $stageFilter = null;
+    }
     $searchTerm = isset($_GET['search']) ? trim((string)$_GET['search']) : null;
     if ($searchTerm === '') {
         $searchTerm = null;
@@ -28,68 +30,56 @@ try {
     }
     
     $db = Database::connect();
-    $settings = new Settings();
-    $autoThreshold = $settings->get('MATCH_AUTO_THRESHOLD', 90);
     $guaranteeRepo = new GuaranteeRepository($db);
-
-    $upsertDecision = function (
-        int $guaranteeId,
-        ?int $supplierId,
-        ?int $bankId,
-        string $status,
-        string $decisionSource
-    ) use ($db): void {
-        $now = date('Y-m-d H:i:s');
-        $chk = $db->prepare('SELECT id FROM guarantee_decisions WHERE guarantee_id = ?');
-        $chk->execute([$guaranteeId]);
-        $exists = $chk->fetchColumn();
-
-        if ($exists) {
-            $stmt = $db->prepare('
-                UPDATE guarantee_decisions
-                SET supplier_id = ?,
-                    bank_id = ?,
-                    status = ?,
-                    decision_source = ?,
-                    decided_at = ?,
-                    last_modified_at = CURRENT_TIMESTAMP
-                WHERE guarantee_id = ?
-            ');
-            $stmt->execute([
-                $supplierId,
-                $bankId,
-                $status,
-                $decisionSource,
-                $now,
-                $guaranteeId
-            ]);
-            return;
-        }
-
-        $stmt = $db->prepare('
-            INSERT INTO guarantee_decisions (guarantee_id, supplier_id, bank_id, status, decided_at, decision_source, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ');
-        $stmt->execute([
-            $guaranteeId,
-            $supplierId,
-            $bankId,
-            $status,
-            $now,
-            $decisionSource,
-            $now
-        ]);
-    };
     
     $guaranteeId = \App\Services\NavigationService::getIdByIndex(
         $db,
         $index,
         $statusFilter,
-        $searchTerm
+        $searchTerm,
+        $stageFilter
     );
 
     if (!$guaranteeId) {
-        throw new \RuntimeException('Index out of range');
+        echo '<div id="record-form-section" class="decision-card decision-card-empty-state"'
+            . ' data-policy-visible="0"'
+            . ' data-policy-actionable="0"'
+            . ' data-policy-executable="0"'
+            . ' data-surface-can-view-record="0"'
+            . ' data-surface-can-view-preview="0"'
+            . ' data-surface-can-execute-actions="0">';
+        echo '<div class="card-body"><div class="empty-state-message" data-i18n="index.empty.no_record_in_scope">لا توجد سجلات ضمن نطاق العرض الحالي</div></div>';
+        echo '</div>';
+        return;
+    }
+
+    $policy = wbgl_api_policy_for_guarantee($db, (int)$guaranteeId);
+    if (!$policy['visible']) {
+        wbgl_api_fail(403, 'Permission Denied');
+    }
+
+    $stmtDec = $db->prepare('SELECT status, supplier_id, bank_id, active_action FROM guarantee_decisions WHERE guarantee_id = ? LIMIT 1');
+    $stmtDec->execute([$guaranteeId]);
+    $lastDecision = $stmtDec->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    $surfaceStatus = (string)($lastDecision['status'] ?? 'pending');
+    $surface = UiSurfacePolicyService::forGuarantee(
+        $policy,
+        \App\Support\Guard::permissions(),
+        $surfaceStatus
+    );
+
+    if (!($surface['can_view_record'] ?? false)) {
+        echo '<div id="record-form-section" class="decision-card decision-card-empty-state"'
+            . ' data-policy-visible="' . ($policy['visible'] ? '1' : '0') . '"'
+            . ' data-policy-actionable="' . ($policy['actionable'] ? '1' : '0') . '"'
+            . ' data-policy-executable="' . ($policy['executable'] ? '1' : '0') . '"'
+            . ' data-surface-can-view-record="0"'
+            . ' data-surface-can-view-preview="0"'
+            . ' data-surface-can-execute-actions="0">';
+        echo '<div class="card-body"><div class="empty-state-message" data-i18n="index.empty.no_record_in_scope">لا توجد سجلات ضمن نطاق العرض الحالي</div></div>';
+        echo '</div>';
+        return;
     }
 
     $guarantee = $guaranteeRepo->find($guaranteeId);
@@ -116,11 +106,6 @@ try {
         'active_action' => null,
         'status' => 'pending'
     ];
-    
-    // Check for decision row (single-row policy)
-    $stmtDec = $db->prepare('SELECT status, supplier_id, bank_id, active_action FROM guarantee_decisions WHERE guarantee_id = ? LIMIT 1');
-    $stmtDec->execute([$guaranteeId]);
-    $lastDecision = $stmtDec->fetch(PDO::FETCH_ASSOC);
     
     if ($lastDecision) {
         $record['status'] = $lastDecision['status'];
@@ -204,57 +189,6 @@ try {
                     'name' => (string)($top['official_name'] ?? ''),
                     'suggestions' => $suggestions // Pass all suggestions for chips
                 ];
-                
-                // Auto-fill if confidence is high and no decision yet
-                if ($record['status'] === 'pending' && ((int)($top['confidence'] ?? 0) >= $autoThreshold)) {
-                    try {
-                        // 1. Capture snapshot BEFORE change
-                        $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
-                        
-                        // 2. Update record data
-                        $record['supplier_name'] = (string)($top['official_name'] ?? '');
-                        $record['supplier_id'] = (int)($top['supplier_id'] ?? 0);
-                        
-                        // 3. Prepare change data
-                        $newData = [
-                            'supplier_id' => (int)($top['supplier_id'] ?? 0),
-                            'supplier_name' => (string)($top['official_name'] ?? ''),
-                            'supplier_trigger' => 'ai_match',
-                            'supplier_confidence' => (int)($top['confidence'] ?? 0)
-                        ];
-                        
-                        // 4. Detect changes from canonical patch
-                        $changes = \App\Services\TimelineRecorder::createPatch((array)$oldSnapshot, (array)$newData);
-                        
-                        // 5. Save to guarantee_decisions
-                        if (!empty($changes)) {
-                            // Check if Bank implies status change
-                            $decStmt = $db->prepare('SELECT bank_id FROM guarantee_decisions WHERE guarantee_id = ?');
-                            $decStmt->execute([$guaranteeId]);
-                            $currentDec = $decStmt->fetch(PDO::FETCH_ASSOC);
-                            $bankId = $currentDec['bank_id'] ?? null;
-                            
-                            $newStatus = (((int)($top['supplier_id'] ?? 0) > 0) && $bankId) ? 'ready' : 'pending';
-
-                            $upsertDecision($guaranteeId, (int)($top['supplier_id'] ?? 0), $bankId, $newStatus, 'auto');
-
-                            Logger::info('auto_match_decision', [
-                                'guarantee_id' => $guaranteeId,
-                                'supplier_id' => (int)($top['supplier_id'] ?? 0),
-                                'bank_id' => $bankId,
-                                'confidence' => (int)($top['confidence'] ?? 0),
-                                'threshold' => $autoThreshold,
-                                'source' => 'get-record-supplier'
-                            ]);
-                            
-                            // 6. Save timeline event (Strict UE-01)
-                            \App\Services\TimelineRecorder::recordDecisionEvent($guaranteeId, $oldSnapshot, $newData, true, (int)($top['confidence'] ?? 0));
-                            
-                            // 7. Save Status Transition (SE-01) if changed
-                            \App\Services\TimelineRecorder::recordStatusTransitionEvent($guaranteeId, $oldSnapshot, $newStatus, 'ai_completeness_check');
-                        }
-                    } catch (\Throwable $e) { /* Ignore match error */ }
-                }
             }
         }
     } catch (\Throwable $e) { /* Ignore learning errors */ }
@@ -280,66 +214,30 @@ try {
                     'id' => $bank['id'],
                     'name' => $bank['bank_name']
                 ];
-                
-                // Auto-select bank if no decision yet
-                if ($record['status'] === 'pending') {
-                    try {
-                        // 1. Capture snapshot BEFORE change
-                        $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
-                        
-                        // 2. Update record data
-                        $record['bank_id'] = $bank['id'];
-                        
-                        // 3. Prepare change data
-                        $newData = [
-                            'bank_id' => $bank['id'],
-                            'bank_name' => $bank['bank_name'],
-                            'bank_trigger' => 'direct_match'
-                        ];
-                        
-                        // 4. Detect changes from canonical patch
-                        $changes = \App\Services\TimelineRecorder::createPatch((array)$oldSnapshot, (array)$newData);
-                        
-                        // 5. Update guarantee_decisions
-                        if (!empty($changes)) {
-                            // Fetch current decision to preserve supplier_id
-                            $decStmt = $db->prepare('SELECT supplier_id FROM guarantee_decisions WHERE guarantee_id = ?');
-                            $decStmt->execute([$guaranteeId]);
-                            $currentDec = $decStmt->fetch(PDO::FETCH_ASSOC);
-                            $supplierId = $currentDec['supplier_id'] ?? null;
-                            
-                            $newStatus = ($supplierId && $bank['id']) ? 'ready' : 'pending';
-                            
-                            $upsertDecision($guaranteeId, $supplierId, $bank['id'], $newStatus, 'auto');
-
-                            Logger::info('auto_match_decision', [
-                                'guarantee_id' => $guaranteeId,
-                                'supplier_id' => $supplierId,
-                                'bank_id' => $bank['id'],
-                                'confidence' => 100,
-                                'threshold' => $autoThreshold,
-                                'source' => 'get-record-bank'
-                            ]);
-                            
-                            // 6. Save timeline event (Note: no longer recording bank events in timeline)
-                            // Bank matching is now deterministic, so timeline events removed
-                            
-                            // 7. Save Status Transition (SE-01) if changed
-                            \App\Services\TimelineRecorder::recordStatusTransitionEvent($guaranteeId, $oldSnapshot, $newStatus, 'ai_completeness_check');
-                        }
-                    } catch (\Throwable $e) { /* Ignore match error */ }
-                }
             }
         }
     } catch (\Throwable $e) { /* Ignore matching errors */ }
     
+    $surface = UiSurfacePolicyService::forGuarantee(
+        $policy,
+        \App\Support\Guard::permissions(),
+        (string)($record['status'] ?? 'pending')
+    );
+    $recordCanExecuteActions = (bool)($surface['can_execute_actions'] ?? false);
+
     // Include only record form (timeline is separate in sidebar)
     ob_start();
     include __DIR__ . '/../partials/record-form.php';
     $html = ob_get_clean();
     
     // Wrap in container div
-    echo '<div id="record-form-section" class="decision-card" data-current-event-type="current">';
+    echo '<div id="record-form-section" class="decision-card" data-current-event-type="current"'
+        . ' data-policy-visible="' . ($policy['visible'] ? '1' : '0') . '"'
+        . ' data-policy-actionable="' . ($policy['actionable'] ? '1' : '0') . '"'
+        . ' data-policy-executable="' . ($policy['executable'] ? '1' : '0') . '"'
+        . ' data-surface-can-view-record="' . (($surface['can_view_record'] ?? false) ? '1' : '0') . '"'
+        . ' data-surface-can-view-preview="' . (($surface['can_view_preview'] ?? false) ? '1' : '0') . '"'
+        . ' data-surface-can-execute-actions="' . (($surface['can_execute_actions'] ?? false) ? '1' : '0') . '">';
     echo $html;
     echo '</div>';
     

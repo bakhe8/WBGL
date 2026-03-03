@@ -3,7 +3,7 @@
 $id = $_GET['id'] ?? '';
 $url = "../index.php";
 if ($id) {
-    $url .= "?id=" . urlencode($id);
+    $url .= '?' . http_build_query(['id' => $id]);
 }
 header("Location: " . $url);
 exit;

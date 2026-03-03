@@ -1,0 +1,219 @@
+{
+  "version": "2026-02-28",
+  "mode": "mandatory_sequential",
+  "owner": "WBGL System Owner",
+  "authoritative_docs": [
+    "Docs/INDEX-DOCS-AR.md",
+    "Docs/WBGL-DOCS-DRIVEN-EXECUTION-POLICY-AR.md",
+    "Docs/WBGL-UNIFIED-RESOLVED-REPORT-AR-2026-02-28.md",
+    "Docs/WBGL-FINAL-CLAIMS-REGISTER-AR-2026-02-28.md",
+    "Docs/WBGL-FULL-TRACEABILITY-MATRIX-AR.md"
+  ],
+  "rules_ar": [
+    "التنفيذ متتابع وإجباري: خطوة واحدة فقط in_progress في أي وقت.",
+    "لا يتم إغلاق أي خطوة بدون evidence وrefs قابلة للتحقق.",
+    "لا انتقال للخطوة التالية قبل إغلاق الحالية.",
+    "لا ميزات جديدة قبل إغلاق خطوات الاستقرار الحرجة."
+  ],
+  "phases": [
+    {
+      "id": "PHASE-1-STABILITY",
+      "title_ar": "تثبيت الأساس التشغيلي",
+      "goal_ar": "إغلاق مخاطر الثقة والاستقرار قبل أي توسع.",
+      "steps": [
+        {
+          "id": "P1-01",
+          "title_ar": "تفعيل Gate تجميد الميزات الجديدة خارج الاستقرار",
+          "coverage_ids": ["R03", "G03", "FR-25"],
+          "done_criteria_ar": [
+            "توثيق قرار التجميد في Docs.",
+            "منع دمج أي feature لا ترتبط ببنود الاستقرار."
+          ]
+        },
+        {
+          "id": "P1-02",
+          "title_ar": "فصل القراءة عن الكتابة في مسارات get-record",
+          "coverage_ids": ["FR-03", "C16", "R15", "G03"],
+          "done_criteria_ar": [
+            "منع أي write صامت عند فتح السجل.",
+            "اختبار يضمن read-only الحقيقي."
+          ]
+        },
+        {
+          "id": "P1-03",
+          "title_ar": "إصلاح ترتيب بوابات reopen و break-glass",
+          "coverage_ids": ["FR-06", "FR-24", "C05", "C25"],
+          "done_criteria_ar": [
+            "صلاحيات reopen تعمل حسب role policy.",
+            "break-glass يعمل وفق reason/ticket/audit."
+          ]
+        },
+        {
+          "id": "P1-04",
+          "title_ar": "إغلاق drift الحقول الحرجة في endpoints الحساسة",
+          "coverage_ids": ["FR-25", "C17", "C18", "C21", "C22", "R06"],
+          "done_criteria_ar": [
+            "تطابق الكود مع schema الفعلي.",
+            "إزالة أي اعتماد على حقول legacy غير معتمدة."
+          ]
+        },
+        {
+          "id": "P1-05",
+          "title_ar": "إضافة فهارس وقيود domain المفقودة للثبات",
+          "coverage_ids": ["FR-25", "R06", "G23"],
+          "done_criteria_ar": [
+            "migrations موثقة وقابلة للتشغيل.",
+            "تحقق أداء/اتساق بعد الإضافة."
+          ]
+        },
+        {
+          "id": "P1-06",
+          "title_ar": "اختبارات صلاحيات object-level للمسارات الحرجة",
+          "coverage_ids": ["FR-22", "FR-24", "R15", "G27"],
+          "done_criteria_ar": [
+            "اختبارات وحدة/تكامل تغطي السيناريوهات المباشرة.",
+            "منع أي write قبل تحقق visibility policy."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PHASE-2-CLARITY",
+      "title_ar": "رفع الوضوح والثقة التشغيلية",
+      "goal_ar": "تقليل الاحتكاك اليومي ورفع فهم المستخدم.",
+      "steps": [
+        {
+          "id": "P2-01",
+          "title_ar": "توحيد API response envelope",
+          "coverage_ids": ["FR-12", "R07", "G07", "C11"],
+          "done_criteria_ar": [
+            "اعتماد صيغة موحدة success/data/error/request_id.",
+            "توحيد endpoints الحرجة أولاً."
+          ]
+        },
+        {
+          "id": "P2-02",
+          "title_ar": "توحيد رسائل رفض الصلاحيات بسبب واضح وخطوة تالية",
+          "coverage_ids": ["FR-13", "R15", "G26", "C12"],
+          "done_criteria_ar": [
+            "كل رفض يعرض لماذا + صلاحية مطلوبة + من يتواصل معه المستخدم.",
+            "تقليل تذاكر الدعم المرتبطة بالغموض."
+          ]
+        },
+        {
+          "id": "P2-03",
+          "title_ar": "تفعيل Role-Based UI Policy لإخفاء الأزرار غير المسموحة",
+          "coverage_ids": ["R08", "R11", "G11", "C24"],
+          "done_criteria_ar": [
+            "الواجهة لا تعرض إجراءات ستفشل حتميًا.",
+            "إظهار حالة السجل والصلاحيات المتاحة بوضوح."
+          ]
+        },
+        {
+          "id": "P2-04",
+          "title_ar": "توحيد تسجيل التكرارات عبر كل قنوات الإدخال",
+          "coverage_ids": ["FR-02", "C02", "C03"],
+          "done_criteria_ar": [
+            "ParseCoordinatorService يكتب occurrences مثل ImportService.",
+            "تتبع موحد للتكرار عبر القنوات."
+          ]
+        },
+        {
+          "id": "P2-05",
+          "title_ar": "فصل auto-matching عن القراءة أو جعله صريحا للمستخدم",
+          "coverage_ids": ["FR-03", "FR-15", "C13"],
+          "done_criteria_ar": [
+            "لا يحدث auto-upsert في وضع العرض فقط.",
+            "أي تطابق تلقائي يظهر كإجراء واضح للمستخدم."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PHASE-3-CONSOLIDATION",
+      "title_ar": "تقليل الديون التقنية البنيوية",
+      "goal_ar": "تبسيط المسارات وتقليل التكرار.",
+      "steps": [
+        {
+          "id": "P3-01",
+          "title_ar": "توحيد create-guarantee وmanual-entry في service واحدة",
+          "coverage_ids": ["FR-18", "FR-19", "C15", "R04"],
+          "done_criteria_ar": [
+            "مسار خلفي واحد للإدخال اليدوي.",
+            "إعادة توجيه الواجهة للمسار الموحد."
+          ]
+        },
+        {
+          "id": "P3-02",
+          "title_ar": "حسم parse-paste وparse-paste-v2 بمسار موحد",
+          "coverage_ids": ["FR-21", "C20", "G24"],
+          "done_criteria_ar": [
+            "حذف/دمج النسخة غير المستخدمة.",
+            "حفظ الميزات المطلوبة بدون ازدواج."
+          ]
+        },
+        {
+          "id": "P3-03",
+          "title_ar": "إعادة هيكلة manage_data إلى operate_daily وgovern_undo",
+          "coverage_ids": ["FR-22", "FR-24", "R05", "G20", "G27"],
+          "done_criteria_ar": [
+            "تقليل الصلاحيات الحساسة على فريق الإدخال.",
+            "ربط break_glass_override بسياسات مستقلة عن manage_data."
+          ]
+        },
+        {
+          "id": "P3-04",
+          "title_ar": "تحسين الصفحات الثقيلة عبر pagination وlazy loading",
+          "coverage_ids": ["R16", "G15", "G21"],
+          "done_criteria_ar": [
+            "خفض زمن تحميل الدفعات والtimeline.",
+            "تقليل الحمل على المستخدم وقاعدة البيانات."
+          ]
+        },
+        {
+          "id": "P3-05",
+          "title_ar": "تحديث README وrunbooks حسب الأدوار والبيئة الفعلية",
+          "coverage_ids": ["R09", "G09", "C19"],
+          "done_criteria_ar": [
+            "تحديث دليل التشغيل لكل دور.",
+            "تأكيد PostgreSQL كبيئة تشغيل وحيدة."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PHASE-4-RESILIENCE",
+      "title_ar": "بناء المرونة المؤسسية",
+      "goal_ar": "تحويل الاستقرار إلى نظام متابعة مستدام.",
+      "steps": [
+        {
+          "id": "P4-01",
+          "title_ar": "تفعيل Operational Dashboard للمؤشرات الحرجة",
+          "coverage_ids": ["FR-23", "G25"],
+          "done_criteria_ar": [
+            "عرض KPIs التشغيلية للمشرفين والإدارة.",
+            "تنبيه مبكر للمخاطر الحرجة."
+          ]
+        },
+        {
+          "id": "P4-02",
+          "title_ar": "اعتماد مراجعة دورية للمخاطر البشرية",
+          "coverage_ids": ["R10", "G10", "G18"],
+          "done_criteria_ar": [
+            "قياس دوري للحمل الذهني بعد كل دورة تحسين.",
+            "ربط النتائج بخطة UI/UX."
+          ]
+        },
+        {
+          "id": "P4-03",
+          "title_ar": "تطبيق Change Governance Gate إلزامي لأي endpoint/schema",
+          "coverage_ids": ["R03", "G30", "FR-25"],
+          "done_criteria_ar": [
+            "أي تغيير حساس يمر عبر change record قابل للتدقيق.",
+            "لا دمج نهائي بدون تحديث Docs والتتبع."
+          ]
+        }
+      ]
+    }
+  ]
+}

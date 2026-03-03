@@ -7,21 +7,52 @@
 
 require_once __DIR__ . '/../app/Support/autoload.php';
 
+use App\Support\AuthService;
+use App\Support\DirectionResolver;
+use App\Support\LocaleResolver;
+use App\Support\Settings;
 use App\Support\ViewPolicy;
 
 ViewPolicy::guardView('users.php');
+$settings = Settings::getInstance();
+$currentUser = AuthService::getCurrentUser();
+$localeInfo = LocaleResolver::resolve(
+    $currentUser,
+    $settings,
+    $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? null
+);
+$pageLocale = (string)($localeInfo['locale'] ?? 'ar');
+$directionInfo = DirectionResolver::resolve(
+    $pageLocale,
+    $currentUser?->preferredDirection ?? 'auto',
+    (string)$settings->get('DEFAULT_DIRECTION', 'auto')
+);
+$pageDirection = (string)($directionInfo['direction'] ?? ($pageLocale === 'ar' ? 'rtl' : 'ltr'));
 ?>
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html class="users-page" lang="<?= htmlspecialchars($pageLocale, ENT_QUOTES, 'UTF-8') ?>" dir="<?= htmlspecialchars($pageDirection, ENT_QUOTES, 'UTF-8') ?>">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>إدارة المستخدمين - WBGL</title>
-    <?php include __DIR__ . '/../partials/ui-bootstrap.php'; ?>
+    <title data-i18n="users.ui.txt_a59aab68">إدارة المستخدمين - WBGL</title>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../public/css/design-system.css">
+    <link rel="stylesheet" href="../public/css/themes.css">
     <link rel="stylesheet" href="../public/css/index-main.css">
     <style>
+        html.users-page,
+        body.users-page {
+            height: auto;
+            min-height: 100%;
+        }
+
+        body.users-page {
+            display: block;
+            overflow-y: auto !important;
+            overflow-x: hidden;
+        }
+
         body {
             font-family: 'Tajawal', sans-serif;
             background: var(--bg-body);
@@ -30,7 +61,7 @@ ViewPolicy::guardView('users.php');
 
         .users-container {
             max-width: 1200px;
-            margin: 40px auto;
+            margin: 24px auto 40px;
             padding: 0 20px;
         }
 
@@ -68,10 +99,10 @@ ViewPolicy::guardView('users.php');
         }
 
         th {
-            background: #f8fafc;
+            background: var(--bg-secondary);
             padding: 16px;
             font-weight: 700;
-            color: var(--text-light);
+            color: var(--text-secondary);
             font-size: 14px;
             border-bottom: 1px solid var(--border-primary);
         }
@@ -84,7 +115,7 @@ ViewPolicy::guardView('users.php');
         }
 
         tr:hover {
-            background: #fdfdfd;
+            background: var(--bg-hover);
         }
 
         .role-badge {
@@ -96,23 +127,23 @@ ViewPolicy::guardView('users.php');
         }
 
         .role-developer {
-            background: #fee2e2;
-            color: #991b1b;
+            background: var(--accent-danger-light);
+            color: var(--accent-danger);
         }
 
         .role-signatory {
-            background: #dcfce7;
-            color: #166534;
+            background: var(--accent-success-light);
+            color: var(--accent-success);
         }
 
         .role-analyst {
-            background: #e0e7ff;
-            color: #3730a3;
+            background: var(--accent-primary-light);
+            color: var(--accent-primary);
         }
 
         .role-default {
-            background: #f1f5f9;
-            color: #475569;
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
         }
 
         .btn-action {
@@ -130,36 +161,37 @@ ViewPolicy::guardView('users.php');
         }
 
         .btn-add {
-            background: #2563eb;
+            background: var(--accent-primary);
             color: white;
             padding: 12px 24px;
             font-size: 16px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            box-shadow: var(--shadow-md);
             border: 2px solid transparent;
         }
 
         .btn-add:hover {
-            background: #1d4ed8;
+            background: var(--accent-primary-hover);
             transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            box-shadow: var(--shadow-lg);
         }
 
         .btn-edit {
-            background: #f1f5f9;
-            color: #475569;
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
         }
 
         .btn-edit:hover {
-            background: #e2e8f0;
+            background: var(--bg-hover);
         }
 
         .btn-delete {
-            background: #fff1f2;
-            color: #e11d48;
+            background: var(--accent-danger-light);
+            color: var(--accent-danger);
         }
 
         .btn-delete:hover {
-            background: #ffe4e6;
+            background: var(--accent-danger-light);
+            filter: brightness(0.95);
         }
 
         .modal {
@@ -176,14 +208,24 @@ ViewPolicy::guardView('users.php');
             backdrop-filter: blur(4px);
         }
 
+        .modal.is-open {
+            display: flex;
+        }
+
         .modal-content {
-            background: white;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border-primary);
             width: 100%;
             max-width: 800px;
             /* Wider for permissions */
             padding: 32px;
             border-radius: 24px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            box-shadow: var(--shadow-lg);
+            max-height: calc(100vh - 40px);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
         .modal-header {
@@ -194,6 +236,26 @@ ViewPolicy::guardView('users.php');
             margin: 0;
             font-size: 22px;
             font-weight: 800;
+        }
+
+        .modal-form {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            flex: 1;
+        }
+
+        .modal-grid {
+            display: grid;
+            gap: 24px;
+            min-height: 0;
+            flex: 1;
+        }
+
+        .form-pane {
+            min-height: 0;
+            overflow: auto;
+            padding-inline-end: 6px;
         }
 
         .form-group {
@@ -217,11 +279,22 @@ ViewPolicy::guardView('users.php');
             font-size: 15px;
             outline: none;
             box-sizing: border-box;
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        .form-control option {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        .form-control::placeholder {
+            color: var(--text-light);
         }
 
         .form-control:focus {
             border-color: var(--color-primary);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+            box-shadow: var(--shadow-focus);
         }
 
         .modal-actions {
@@ -246,22 +319,8 @@ ViewPolicy::guardView('users.php');
         }
 
         .btn-cancel {
-            background: #f1f5f9;
-            color: #475569;
-        }
-
-        .back-link {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            text-decoration: none;
-            color: var(--color-primary);
-            font-weight: 600;
-            margin-bottom: 20px;
-        }
-
-        .back-link:hover {
-            text-decoration: underline;
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
         }
 
         .loading-overlay {
@@ -271,11 +330,15 @@ ViewPolicy::guardView('users.php');
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(255, 255, 255, 0.7);
+            background: color-mix(in srgb, var(--bg-body) 75%, transparent);
             z-index: 2000;
             justify-content: center;
             align-items: center;
             font-weight: 800;
+        }
+
+        .loading-overlay.is-visible {
+            display: flex;
         }
 
         /* 🛡️ Permission Toggle Styles */
@@ -284,7 +347,8 @@ ViewPolicy::guardView('users.php');
             justify-content: space-between;
             align-items: center;
             padding: 12px;
-            border-bottom: 1px solid #f1f5f9;
+            border-bottom: 1px solid var(--border-light);
+            gap: 16px;
         }
 
         .perm-info b {
@@ -293,13 +357,73 @@ ViewPolicy::guardView('users.php');
         }
 
         .perm-info small {
-            color: #64748b;
+            color: var(--text-muted);
             font-size: 12px;
+        }
+
+        .perm-meta {
+            margin-top: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .perm-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            border: 1px solid transparent;
+        }
+
+        .perm-badge.scope-view {
+            background: var(--accent-primary-light);
+            color: var(--accent-primary);
+            border-color: var(--accent-primary);
+        }
+
+        .perm-badge.scope-action {
+            background: var(--accent-success-light);
+            color: var(--accent-success);
+            border-color: var(--accent-success);
+        }
+
+        .perm-badge.scope-ui {
+            background: var(--accent-warning-light);
+            color: var(--accent-warning);
+            border-color: var(--accent-warning);
+        }
+
+        .perm-badge.domain {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-color: var(--border-primary);
+        }
+
+        .perm-surface {
+            margin-top: 4px;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .perm-group-title {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: var(--accent-primary-light);
+            color: var(--accent-primary);
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 800;
+            border-bottom: 1px solid var(--border-primary);
         }
 
         .toggle-group {
             display: flex;
-            background: #f1f5f9;
+            background: var(--bg-secondary);
             padding: 4px;
             border-radius: 8px;
             gap: 4px;
@@ -313,73 +437,364 @@ ViewPolicy::guardView('users.php');
             cursor: pointer;
             border: none;
             background: transparent;
-            color: #64748b;
+            color: var(--text-muted);
             transition: all 0.2s;
         }
 
         .toggle-btn.active[data-type="auto"] {
-            background: white;
-            color: #475569;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            box-shadow: var(--shadow-sm);
         }
 
         .toggle-btn.active[data-type="allow"] {
-            background: #dcfce7;
-            color: #166534;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            background: var(--accent-success-light);
+            color: var(--accent-success);
+            box-shadow: var(--shadow-sm);
         }
 
         .toggle-btn.active[data-type="deny"] {
-            background: #fee2e2;
-            color: #991b1b;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            background: var(--accent-danger-light);
+            color: var(--accent-danger);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .section-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border-primary);
+            box-shadow: var(--shadow-md);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-primary);
+            background: var(--bg-secondary);
+        }
+
+        .section-title {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 800;
+            color: var(--text-primary);
+        }
+
+        .section-subtitle {
+            margin: 4px 0 0;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .section-content {
+            padding: 0;
+        }
+
+        .roles-table th,
+        .roles-table td {
+            padding: 12px 14px;
+            font-size: 13px;
+        }
+
+        .role-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 999px;
+            background: var(--accent-primary-light);
+            color: var(--accent-primary);
+            border: 1px solid var(--accent-primary);
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .permission-preview {
+            color: var(--text-muted);
+            font-size: 11px;
+            max-width: 320px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .users-header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .th-actions {
+            width: 180px;
+        }
+
+        .user-email-muted,
+        .user-last-login {
+            color: var(--text-muted);
+        }
+
+        .users-actions-inline {
+            display: flex;
+            gap: 8px;
+        }
+
+        .role-modal-content {
+            width: min(1280px, 96vw);
+            max-width: min(1280px, 96vw);
+        }
+
+        .role-permissions-grid {
+            min-height: 420px;
+            overflow-y: auto;
+            border: 1px solid var(--border-primary);
+            border-radius: 12px;
+            background: var(--bg-secondary);
+        }
+
+        .role-perm-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .role-perm-row:last-child {
+            border-bottom: none;
+        }
+
+        .role-perm-row input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent-primary);
+            flex-shrink: 0;
+        }
+
+        .role-perm-details b {
+            display: block;
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
+        .role-perm-details small {
+            display: block;
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+
+        .role-tools {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .empty-note {
+            padding: 14px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .user-modal-content {
+            width: min(1380px, 96vw);
+            max-width: min(1380px, 96vw);
+        }
+
+        .user-form-grid {
+            grid-template-columns: minmax(340px, 0.95fr) minmax(560px, 1.25fr);
+        }
+
+        .role-form-grid {
+            grid-template-columns: minmax(300px, 0.8fr) minmax(640px, 1.2fr);
+        }
+
+        .permissions-panel {
+            border: 1px solid var(--border-primary);
+            border-radius: 14px;
+            background: var(--bg-secondary);
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            padding: 10px;
+        }
+
+        .permissions-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .permissions-panel-title {
+            font-size: 16px;
+            font-weight: 800;
+            margin: 0;
+            color: var(--text-primary);
+        }
+
+        .permissions-panel-stats {
+            font-size: 12px;
+            color: var(--text-muted);
+            background: var(--accent-primary-light);
+            border: 1px solid var(--accent-primary);
+            border-radius: 999px;
+            padding: 3px 10px;
+            white-space: nowrap;
+        }
+
+        .permissions-toolbar {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .permissions-toolbar .form-control {
+            padding: 10px 12px;
+            font-size: 13px;
+        }
+
+        .user-permissions-list {
+            min-height: 460px;
+            overflow-y: auto;
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            background: var(--bg-card);
+        }
+
+        .form-pane.user-info-pane {
+            border-inline-start: 1px solid var(--border-primary);
+            padding-inline-start: 18px;
+        }
+
+        .form-pane.user-permissions-pane {
+            padding-inline-end: 0;
+        }
+
+        @media (max-width: 1200px) {
+            .user-modal-content,
+            .role-modal-content {
+                width: min(1100px, 98vw);
+                max-width: min(1100px, 98vw);
+            }
+
+            .user-form-grid,
+            .role-form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .form-pane.user-info-pane {
+                border-inline-start: none;
+                padding-inline-start: 0;
+            }
+
+            .permissions-toolbar {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 
-<body data-i18n-namespaces="common,users">
+<body class="users-page" data-i18n-namespaces="common,users">
 
-    <div id="loadingOverlay" class="loading-overlay">... جاري التنفيذ</div>
+    <div id="loadingOverlay" class="loading-overlay" data-i18n="users.loading.executing">... جاري التنفيذ</div>
+    <?php include __DIR__ . '/../partials/unified-header.php'; ?>
+
+    <!-- Role Management Modal -->
+    <div id="roleModal" class="modal">
+        <div class="modal-content role-modal-content text-right">
+            <div class="modal-header">
+                <h2 id="roleModalTitle" data-i18n="users.ui.txt_8239bd1f">إضافة دور جديد</h2>
+            </div>
+            <form id="roleForm" class="modal-form">
+                <input type="hidden" id="roleIdField">
+                <div class="modal-grid role-form-grid">
+                    <div class="form-pane">
+                        <div class="form-group">
+                            <label data-i18n="users.ui.txt_ffd52e52">اسم الدور</label>
+                            <input type="text" id="roleNameField" class="form-control" placeholder="مثل: مسؤول التقارير" data-i18n-placeholder="users.ui.txt_3805066b" required>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="users.ui.txt_82f4c359">Slug (اختياري)</label>
+                            <input type="text" id="roleSlugField" class="form-control" placeholder="report_manager">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="users.ui.txt_ebe89f85">وصف الدور</label>
+                            <textarea id="roleDescriptionField" class="form-control" rows="4" placeholder="وصف مختصر لمسؤوليات هذا الدور" data-i18n-placeholder="users.ui.txt_332524f6"></textarea>
+                        </div>
+                    </div>
+                    <div class="form-pane">
+                        <div class="permissions-panel">
+                            <div class="permissions-panel-header">
+                                <h3 class="permissions-panel-title" data-i18n="users.ui.txt_8fda9faf">صلاحيات الدور</h3>
+                                <span id="rolePermissionsStats" class="permissions-panel-stats">0/0</span>
+                            </div>
+                            <div class="permissions-toolbar">
+                                <input type="text" id="rolePermissionsSearch" class="form-control" placeholder="ابحث بالاسم أو slug أو الوصف..." data-i18n-placeholder="users.ui.txt_eb0cb699">
+                                <select id="rolePermissionsDomainFilter" class="form-control">
+                                    <option value="all" data-i18n="users.ui.txt_04f4a1b1">كل المجالات</option>
+                                </select>
+                            </div>
+                            <div class="role-tools">
+                                <button type="button" class="btn-action btn-edit" onclick="toggleVisibleRolePermissions(true)" data-i18n="users.ui.txt_3c0ff186">تحديد الظاهر</button>
+                                <button type="button" class="btn-action btn-delete" onclick="toggleVisibleRolePermissions(false)" data-i18n="users.ui.txt_5dedbaf4">إلغاء الظاهر</button>
+                                <button type="button" class="btn-action btn-edit" onclick="toggleAllRolePermissions(true)" data-i18n="users.actions.select_all">تحديد الكل</button>
+                                <button type="button" class="btn-action btn-delete" onclick="toggleAllRolePermissions(false)" data-i18n="users.ui.txt_4755fb7e">إلغاء الكل</button>
+                            </div>
+                            <div id="rolePermissionsList" class="role-permissions-grid"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="submit" class="btn-save" data-i18n="users.ui.txt_e6fc7206">حفظ الدور وصلاحياته</button>
+                    <button type="button" class="btn-cancel" onclick="closeRoleModal()" data-i18n="users.actions.cancel">إلغاء</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Unified User & Permissions Modal -->
     <div id="userModal" class="modal">
-        <div class="modal-content text-right">
+        <div class="modal-content user-modal-content text-right">
             <div class="modal-header">
-                <h2 id="modalTitle">إضافة مستخدم جديد</h2>
+                <h2 id="modalTitle" data-i18n="users.ui.txt_260caacc">إضافة مستخدم جديد</h2>
             </div>
-            <form id="userForm">
+            <form id="userForm" class="modal-form">
                 <input type="hidden" id="userIdField">
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                <div class="modal-grid user-form-grid">
                     <!-- Basic Info -->
-                    <div>
+                    <div class="form-pane user-info-pane">
                         <div class="form-group">
-                            <label>الاسم الكامل</label>
-                            <input type="text" id="fullNameField" class="form-control" placeholder="مثل: أحمد محمد" required>
+                            <label data-i18n="users.table.name">الاسم الكامل</label>
+                            <input type="text" id="fullNameField" class="form-control" placeholder="مثل: أحمد محمد" data-i18n-placeholder="users.ui.txt_b52b3fd8" required>
                         </div>
                         <div class="form-group">
-                            <label>اسم المستخدم</label>
+                            <label data-i18n="users.fields.username">اسم المستخدم</label>
                             <input type="text" id="usernameField" class="form-control" placeholder="username" required>
                         </div>
                         <div class="form-group">
-                            <label>البريد الإلكتروني (اختياري)</label>
-                            <input type="email" id="emailField" class="form-control" placeholder="user@example.com">
+                            <label data-i18n="users.ui.txt_73698845">البريد الإلكتروني (اختياري)</label>
+                            <input type="email" id="emailField" class="form-control" placeholder="user@example.com" data-i18n-placeholder="users.ui.user_example_com">
                         </div>
                         <div class="form-group">
-                            <label>الدور الوظيفي</label>
+                            <label data-i18n="users.ui.txt_22b7cdbc">الدور الوظيفي</label>
                             <select id="roleField" class="form-control" required>
                                 <!-- Loaded via JS -->
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>لغة الواجهة</label>
+                            <label data-i18n="users.ui.txt_7cdac228">لغة الواجهة</label>
                             <select id="preferredLanguageField" class="form-control">
-                                <option value="ar">العربية (RTL)</option>
-                                <option value="en">English (LTR)</option>
+                                <option value="ar" data-i18n="users.ui.txt_780b969b">العربية (RTL)</option>
+                                <option value="en" data-i18n="users.ui.english_ltr">English (LTR)</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>المظهر</label>
+                            <label data-i18n="users.table.theme">المظهر</label>
                             <select id="preferredThemeField" class="form-control">
                                 <option value="system">System</option>
                                 <option value="light">Light</option>
@@ -388,7 +803,7 @@ ViewPolicy::guardView('users.php');
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>اتجاه الواجهة</label>
+                            <label data-i18n="users.ui.txt_49d8df81">اتجاه الواجهة</label>
                             <select id="preferredDirectionField" class="form-control">
                                 <option value="auto">Auto</option>
                                 <option value="rtl">RTL</option>
@@ -396,55 +811,109 @@ ViewPolicy::guardView('users.php');
                             </select>
                         </div>
                         <div class="form-group">
-                            <label id="passwordLabel">كلمة المرور</label>
-                            <input type="password" id="passwordField" class="form-control" placeholder="كلمة المرور">
+                            <label id="passwordLabel" data-i18n="users.fields.password">كلمة المرور</label>
+                            <input type="password" id="passwordField" class="form-control" placeholder="كلمة المرور" data-i18n-placeholder="users.fields.password">
                         </div>
                     </div>
 
                     <!-- Permissions Overrides -->
-                    <div style="border-right: 1px solid #f1f5f9; padding-right: 30px;">
-                        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #1e293b;">تخصيص الصلاحيات (تحكم متقدم)</h3>
-                        <div id="permissionsList" style="max-height: 400px; overflow-y: auto; border: 1px solid #f1f5f9; border-radius: 12px; background: #fafafa;">
-                            <!-- Loaded via JS -->
+                    <div class="form-pane user-permissions-pane">
+                        <div class="permissions-panel">
+                            <div class="permissions-panel-header">
+                                <h3 class="permissions-panel-title" data-i18n="users.ui.txt_32cee12d">تخصيص الصلاحيات (تحكم متقدم)</h3>
+                                <span id="userPermissionsStats" class="permissions-panel-stats">0/0</span>
+                            </div>
+                            <div class="permissions-toolbar">
+                                <input type="text" id="userPermissionsSearch" class="form-control" placeholder="ابحث بالاسم أو slug أو الوصف..." data-i18n-placeholder="users.ui.txt_eb0cb699">
+                                <select id="userPermissionsDomainFilter" class="form-control">
+                                    <option value="all" data-i18n="users.ui.txt_04f4a1b1">كل المجالات</option>
+                                </select>
+                            </div>
+                            <div class="role-tools">
+                                <button type="button" class="btn-action btn-edit" onclick="setVisibleUserOverrides('allow')" data-i18n="users.ui.txt_f143ade4">سماح للظاهر</button>
+                                <button type="button" class="btn-action btn-delete" onclick="setVisibleUserOverrides('deny')" data-i18n="users.ui.txt_ef01e310">منع للظاهر</button>
+                                <button type="button" class="btn-action btn-edit" onclick="setVisibleUserOverrides('auto')" data-i18n="users.ui.txt_16e14e58">تلقائي للظاهر</button>
+                            </div>
+                            <div id="permissionsList" class="user-permissions-list">
+                                <!-- Loaded via JS -->
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="modal-actions">
-                    <button type="submit" class="btn-save">حفظ البيانات والصلاحيات</button>
-                    <button type="button" class="btn-cancel" onclick="closeModal()">إلغاء</button>
+                    <button type="submit" class="btn-save" data-i18n="users.ui.txt_b0c5b5a2">حفظ البيانات والصلاحيات</button>
+                    <button type="button" class="btn-cancel" onclick="closeModal()" data-i18n="users.actions.cancel">إلغاء</button>
                 </div>
             </form>
         </div>
     </div>
 
     <div class="users-container">
-        <a href="../index.php" class="back-link">
-            <span>→</span> العودة للرئيسية
-        </a>
-
         <div class="header-section">
             <div class="header-title">
-                <h1>إدارة المستخدمين</h1>
-                <p>إدارة الحسابات، كلمات المرور، والصلاحيات للموظفين</p>
+                <h1 data-i18n="users.page.title">إدارة المستخدمين</h1>
+                <p data-i18n="users.ui.txt_d0b485d9">إدارة الحسابات، كلمات المرور، والصلاحيات للموظفين</p>
             </div>
-            <button class="btn-action btn-add" onclick="openAddModal()">
-                <span>+</span> إضافة مستخدم جديد
-            </button>
+            <div class="users-header-actions">
+                <button class="btn-action btn-add"
+                    data-authorize-resource="roles"
+                    data-authorize-action="manage"
+                    data-authorize-mode="hide"
+                    onclick="openAddRoleModal()">
+                    <span>+</span> <span data-i18n="users.actions.add_role_short">إضافة دور</span>
+                </button>
+                <button class="btn-action btn-add"
+                    data-authorize-resource="users"
+                    data-authorize-action="manage"
+                    data-authorize-mode="hide"
+                    onclick="openAddModal()">
+                    <span>+</span> <span data-i18n="users.ui.txt_260caacc">إضافة مستخدم جديد</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="section-card"
+            data-authorize-resource="roles"
+            data-authorize-action="manage"
+            data-authorize-mode="hide">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title" data-i18n="users.ui.txt_c007681a">إدارة الأدوار</h2>
+                    <p class="section-subtitle" data-i18n="users.ui.txt_253a8555">تحديد صلاحيات الرول بالكامل (عرض/تنفيذ/سلوك واجهة)</p>
+                </div>
+            </div>
+            <div class="section-content">
+                <table class="roles-table">
+                    <thead>
+                        <tr>
+                            <th data-i18n="users.table.role">الدور</th>
+                            <th>slug</th>
+                            <th data-i18n="users.ui.txt_a9965b94">الوصف</th>
+                            <th data-i18n="users.ui.txt_e4b15757">المستخدمون</th>
+                            <th data-i18n="users.ui.txt_401c3782">الصلاحيات</th>
+                            <th class="th-actions" data-i18n="users.ui.txt_8edfb81a">إجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rolesTableBody">
+                        <!-- Loaded via JS -->
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div class="users-card">
             <table>
                 <thead>
                     <tr>
-                        <th>الاسم الكامل</th>
-                        <th>اسم المستخدم</th>
-                        <th>الدور</th>
-                        <th>اللغة</th>
-                        <th>المظهر</th>
-                        <th>الاتجاه</th>
-                        <th>آخر دخول</th>
-                        <th style="width: 180px;">إجراءات</th>
+                        <th data-i18n="users.table.name">الاسم الكامل</th>
+                        <th data-i18n="users.fields.username">اسم المستخدم</th>
+                        <th data-i18n="users.table.role">الدور</th>
+                        <th data-i18n="users.table.language">اللغة</th>
+                        <th data-i18n="users.table.theme">المظهر</th>
+                        <th data-i18n="users.table.direction">الاتجاه</th>
+                        <th data-i18n="users.ui.txt_8ae0f595">آخر دخول</th>
+                        <th class="th-actions" data-i18n="users.ui.txt_8edfb81a">إجراءات</th>
                     </tr>
                 </thead>
                 <tbody id="usersTableBody">
@@ -455,251 +924,8 @@ ViewPolicy::guardView('users.php');
     </div>
 
     <script src="../public/js/security.js?v=<?= time() ?>"></script>
-    <script src="../public/js/i18n.js?v=<?= time() ?>"></script>
-    <script src="../public/js/direction.js?v=<?= time() ?>"></script>
-    <script src="../public/js/theme.js?v=<?= time() ?>"></script>
-    <script src="../public/js/policy.js?v=<?= time() ?>"></script>
-    <script src="../public/js/nav-manifest.js?v=<?= time() ?>"></script>
-    <script src="../public/js/ui-runtime.js?v=<?= time() ?>"></script>
-    <script src="../public/js/global-shortcuts.js?v=<?= time() ?>"></script>
-    <script>
-        let rolesData = [];
-        let allUsers = [];
-
-        async function loadUsers() {
-            try {
-                const response = await fetch('../api/users/list.php');
-                const data = await response.json();
-
-                if (!data.success) throw new Error(data.error);
-
-                rolesData = data.roles;
-                allUsers = data.users;
-
-                // Populate roles select
-                const roleSelect = document.getElementById('roleField');
-                roleSelect.innerHTML = rolesData.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
-
-                renderUsers(data.users);
-            } catch (err) {
-                console.error('Fetch error:', err);
-                alert('فشل تحميل قائمة المستخدمين');
-            }
-        }
-
-        function renderUsers(users) {
-            const tbody = document.getElementById('usersTableBody');
-            tbody.innerHTML = users.map(user => `
-                <tr data-user-id="${user.id}">
-                    <td><strong>${user.full_name}</strong><br><small style="color:#888">${user.email || ''}</small></td>
-                    <td><code>${user.username}</code></td>
-                    <td>
-                        <span class="role-badge role-${user.role_slug || 'default'}">
-                            ${user.role_name || 'بدون دور'}
-                        </span>
-                    </td>
-                    <td>${(user.preferred_language || 'ar').toUpperCase()}</td>
-                    <td>${(user.preferred_theme || 'system').toUpperCase()}</td>
-                    <td>${(user.preferred_direction || 'auto').toUpperCase()}</td>
-                    <td style="color:#666">${user.last_login || 'لم يدخل بعد'}</td>
-                    <td>
-                        <div style="display: flex; gap: 8px;">
-                            <button class="btn-action btn-edit" title="تعديل البيانات والصلاحيات" onclick="openEditModal(${user.id})">✏️ إدارة</button>
-                            <button class="btn-action btn-delete" title="حذف المستخدم" onclick="deleteUser(${user.id})">🗑️</button>
-                        </div>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        function openAddModal() {
-            document.getElementById('modalTitle').innerText = 'إضافة مستخدم جديد';
-            document.getElementById('userIdField').value = '';
-            document.getElementById('userForm').reset();
-            document.getElementById('preferredLanguageField').value = 'ar';
-            document.getElementById('preferredThemeField').value = 'system';
-            document.getElementById('preferredDirectionField').value = 'auto';
-            document.getElementById('passwordField').required = true;
-            document.getElementById('passwordLabel').innerText = 'كلمة المرور';
-            renderPermissionsList([]); // Empty overrides
-            document.getElementById('userModal').style.display = 'flex';
-        }
-
-        function openEditModal(userId) {
-            const user = allUsers.find(u => u.id == userId);
-            if (!user) return;
-
-            document.getElementById('modalTitle').innerText = 'تعديل بيانات المستخدم وصلاحياته';
-            document.getElementById('userIdField').value = user.id;
-            document.getElementById('fullNameField').value = user.full_name;
-            document.getElementById('usernameField').value = user.username;
-            document.getElementById('emailField').value = user.email || '';
-            document.getElementById('roleField').value = user.role_id;
-            document.getElementById('preferredLanguageField').value = user.preferred_language || 'ar';
-            document.getElementById('preferredThemeField').value = user.preferred_theme || 'system';
-            document.getElementById('preferredDirectionField').value = user.preferred_direction || 'auto';
-            document.getElementById('passwordField').required = false;
-            document.getElementById('passwordField').value = '';
-            document.getElementById('passwordLabel').innerText = 'كلمة المرور (اتركها فارغة لعدم التغيير)';
-
-            const userOverrides = allOverrides[userId] || [];
-            renderPermissionsList(userOverrides);
-
-            document.getElementById('userModal').style.display = 'flex';
-        }
-
-        function closeModal() {
-            document.getElementById('userModal').style.display = 'none';
-        }
-
-        document.getElementById('userForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const userId = document.getElementById('userIdField').value;
-            const isEdit = userId !== '';
-
-            // Collect overrides
-            const overrides = [];
-            document.querySelectorAll('.perm-row').forEach(row => {
-                const permId = row.dataset.permId;
-                const type = row.querySelector('.toggle-btn.active').dataset.type;
-                if (type !== 'auto') {
-                    overrides.push({
-                        permission_id: permId,
-                        type: type
-                    });
-                }
-            });
-
-            const payload = {
-                user_id: userId,
-                full_name: document.getElementById('fullNameField').value,
-                username: document.getElementById('usernameField').value,
-                email: document.getElementById('emailField').value,
-                role_id: document.getElementById('roleField').value,
-                preferred_language: document.getElementById('preferredLanguageField').value,
-                preferred_theme: document.getElementById('preferredThemeField').value,
-                preferred_direction: document.getElementById('preferredDirectionField').value,
-                password: document.getElementById('passwordField').value,
-                permissions_overrides: overrides
-            };
-
-            const url = isEdit ? '../api/users/update.php' : '../api/users/create.php';
-
-            showLoading(true);
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    closeModal();
-                    loadUsers();
-                } else {
-                    alert('خطأ: ' + data.error);
-                }
-            } catch (err) {
-                alert('حدث خطأ في الشبكة');
-            } finally {
-                showLoading(false);
-            }
-        });
-
-        async function deleteUser(userId) {
-            if (!confirm('هل أنت متأكد من حذف هذا المستخدم نهائياً؟')) return;
-
-            showLoading(true);
-            try {
-                const response = await fetch('../api/users/delete.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        user_id: userId
-                    })
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    loadUsers();
-                } else {
-                    alert('خطأ: ' + data.error);
-                }
-            } catch (err) {
-                alert('حدث خطأ في الشبكة');
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        function showLoading(show) {
-            document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
-        }
-
-        // 🛡️ GRANULAR PERMISSIONS LOGIC
-        let allPermissions = [];
-        let allOverrides = {};
-
-        async function loadContext() {
-            try {
-                const response = await fetch('../api/users/list.php');
-                const data = await response.json();
-
-                if (!data.success) throw new Error(data.error);
-
-                rolesData = data.roles;
-                allUsers = data.users;
-                allPermissions = data.permissions;
-                allOverrides = data.overrides;
-            } catch (err) {
-                console.error('Fetch context error:', err);
-                alert('فشل تحميل بيانات الصلاحيات والأدوار');
-            }
-        }
-
-        function renderPermissionsList(userOverrides) {
-            const listEl = document.getElementById('permissionsList');
-
-            listEl.innerHTML = allPermissions.map(p => {
-                const override = userOverrides.find(o => o.permission_id == p.id);
-                const type = override ? override.type : 'auto';
-
-                return `
-                    <div class="perm-row" data-perm-id="${p.id}">
-                        <div class="perm-info">
-                            <b>${p.name}</b>
-                            <small>${p.slug}</small>
-                        </div>
-                        <div class="toggle-group">
-                            <button type="button" class="toggle-btn ${type=='auto'?'active':''}" data-type="auto" onclick="setOverride(${p.id}, 'auto')">تلقائي</button>
-                            <button type="button" class="toggle-btn ${type=='allow'?'active':''}" data-type="allow" onclick="setOverride(${p.id}, 'allow')">سماح</button>
-                            <button type="button" class="toggle-btn ${type=='deny'?'active':''}" data-type="deny" onclick="setOverride(${p.id}, 'deny')">منع</button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function setOverride(permId, type) {
-            const row = document.querySelector(`.perm-row[data-perm-id="${permId}"]`);
-            row.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
-            row.querySelector(`.toggle-btn[data-type="${type}"]`).classList.add('active');
-        }
-
-        async function init() {
-            showLoading(true);
-            await loadContext();
-            loadUsers();
-            showLoading(false);
-        }
-
-        document.addEventListener('DOMContentLoaded', init);
-    </script>
+    <script src="../public/js/users-management.js?v=<?= time() ?>"></script>
 </body>
 
 </html>
+

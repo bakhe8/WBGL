@@ -10,12 +10,12 @@
         <div class="historical-banner-info">
             <span class="historical-banner-icon">🕰️</span>
             <div>
-                <div class="historical-banner-title" id="hb-title">نسخة تاريخية</div>
-                <div class="historical-banner-subtitle" id="hb-subtitle">تعرض الحالة قبل حدوث التغيير</div>
+                <div class="historical-banner-title" id="hb-title" data-i18n="index.historical.snapshot_title">نسخة تاريخية</div>
+                <div class="historical-banner-subtitle" id="hb-subtitle" data-i18n="index.historical.snapshot_subtitle">تعرض الحالة قبل حدوث التغيير</div>
             </div>
         </div>
         <button data-action="timeline-load-current" class="historical-banner-btn">
-            ↩️ العودة للوضع الحالي
+            <span data-i18n="index.historical.return_to_current">↩️ العودة للوضع الحالي</span>
         </button>
     </div>
 </div>

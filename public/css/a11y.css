@@ -17,9 +17,9 @@
     .btn,
     .btn-link
 ):focus-visible {
-    outline: 3px solid #1d4ed8;
+    outline: 3px solid var(--theme-link-focus);
     outline-offset: 2px;
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 4px var(--theme-link-focus-ring);
     border-radius: 6px;
 }
 
@@ -78,3 +78,4 @@
         scroll-behavior: auto !important;
     }
 }
+

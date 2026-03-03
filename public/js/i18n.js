@@ -86,7 +86,7 @@
             headers: { Accept: 'application/json' },
         });
         if (!response.ok) {
-            throw new Error('Locale file not found: ' + key);
+            throw new Error('LOCALE_FILE_NOT_FOUND:' + key);
         }
 
         const payload = await response.json();
@@ -123,14 +123,26 @@
         });
     }
 
+    function isTodoPlaceholder(value) {
+        if (typeof value !== 'string') {
+            return false;
+        }
+        return /^__TODO_(AR|EN)__\b/.test(value.trim());
+    }
+
     function lookup(locale, key) {
         const namespaces = Array.from(store.namespaces);
         for (let i = 0; i < namespaces.length; i += 1) {
             const namespace = namespaces[i];
             const bucket = store.messages[locale] && store.messages[locale][namespace];
-            if (bucket && Object.prototype.hasOwnProperty.call(bucket, key)) {
-                return bucket[key];
+            if (!bucket || !Object.prototype.hasOwnProperty.call(bucket, key)) {
+                continue;
             }
+            const candidate = bucket[key];
+            if (isTodoPlaceholder(candidate)) {
+                continue;
+            }
+            return candidate;
         }
         return null;
     }
@@ -209,6 +221,15 @@
             el.setAttribute('content', translate(key, fallback));
         });
 
+        document.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-aria-label');
+            if (!key) {
+                return;
+            }
+            const fallback = el.getAttribute('aria-label') || '';
+            el.setAttribute('aria-label', translate(key, fallback));
+        });
+
         updateLanguageBadge();
     }
 
@@ -254,6 +275,11 @@
     }
 
     function toggleLanguage() {
+        if (window.WBGLPolicy && typeof window.WBGLPolicy.can === 'function') {
+            if (!window.WBGLPolicy.can('ui', 'change-language')) {
+                return Promise.resolve(store.locale);
+            }
+        }
         const next = store.locale === 'ar' ? 'en' : 'ar';
         return setLanguage(next, { source: 'toggle' });
     }

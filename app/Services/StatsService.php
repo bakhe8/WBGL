@@ -16,6 +16,44 @@ use PDO;
 class StatsService
 {
     /**
+     * Actionable workflow counts per stage (only truly actionable records).
+     *
+     * Mirrors actionable filter semantics used in index.php:
+     * - not locked (not released)
+     * - decision status is ready
+     * - no active action already chosen
+     * - only workflow stages that can be advanced
+     *
+     * @return array<string,int>
+     */
+    private static function getActionableWorkflowStats(PDO $db): array
+    {
+        $filter = NavigationService::buildFilterConditions('actionable', null, null);
+
+        $query = $db->prepare('
+            SELECT
+                d.workflow_step,
+                COUNT(*) as count
+            FROM guarantees g
+            LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
+            WHERE 1=1
+            ' . $filter['sql'] . '
+            GROUP BY d.workflow_step
+        ');
+
+        $query->execute($filter['params']);
+        $results = $query->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        return [
+            'draft' => (int)($results['draft'] ?? 0),
+            'audited' => (int)($results['audited'] ?? 0),
+            'analyzed' => (int)($results['analyzed'] ?? 0),
+            'supervised' => (int)($results['supervised'] ?? 0),
+            'approved' => (int)($results['approved'] ?? 0),
+        ];
+    }
+
+    /**
      * Get import statistics
      *
      * Returns counts for all guarantee statuses:
@@ -29,39 +67,19 @@ class StatsService
      */
     public static function getImportStats(PDO $db): array
     {
-        $where = ' WHERE 1=1 ';
-        $params = [];
+        // Canonical counts: rely on the same predicate source used by list/navigation.
+        $total = NavigationService::countByFilter($db, 'all');
+        $ready = NavigationService::countByFilter($db, 'ready');
+        $actionable = NavigationService::countByFilter($db, 'actionable');
+        $pending = NavigationService::countByFilter($db, 'pending');
+        $released = NavigationService::countByFilter($db, 'released');
 
-        $settings = \App\Support\Settings::getInstance();
-        if ($settings->isProductionMode()) {
-            $where .= ' AND g.is_test_data = 0';
-        }
-        $visibility = GuaranteeVisibilityService::buildSqlFilter('g', 'd');
-        $where .= $visibility['sql'];
-        $params = array_merge($params, $visibility['params']);
-
-        $query = $db->prepare('
-            SELECT
-                COUNT(*) as total,
-                SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = FALSE) AND d.status = \'ready\' THEN 1 ELSE 0 END) as ready,
-                SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = FALSE) AND d.status = \'ready\' AND (d.active_action IS NULL OR d.active_action = \'\') THEN 1 ELSE 0 END) as actionable,
-                SUM(CASE WHEN (d.is_locked IS NULL OR d.is_locked = FALSE) AND (d.id IS NULL OR d.status != \'ready\') THEN 1 ELSE 0 END) as pending,
-                SUM(CASE WHEN d.is_locked = TRUE THEN 1 ELSE 0 END) as released
-            FROM guarantees g
-            LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
-            ' . $where . '
-        ');
-
-        $query->execute($params);
-        $stats = $query->fetch(PDO::FETCH_ASSOC);
-
-        // Ensure integers (NULL from SUM becomes 0)
         return [
-            'total' => (int)$stats['total'],
-            'ready' => (int)$stats['ready'],
-            'actionable' => (int)($stats['actionable'] ?? 0),
-            'pending' => (int)$stats['pending'],
-            'released' => (int)$stats['released']
+            'total' => $total,
+            'ready' => $ready,
+            'actionable' => $actionable,
+            'pending' => $pending,
+            'released' => $released
         ];
     }
 
@@ -112,7 +130,7 @@ class StatsService
      */
     public static function getPersonalTaskCount(PDO $db): int
     {
-        $stats = self::getWorkflowStats($db);
+        $stats = self::getActionableWorkflowStats($db);
         $count = 0;
 
         $stagePermissions = [
@@ -138,15 +156,15 @@ class StatsService
      */
     public static function getPersonalTaskBreakdown(PDO $db): array
     {
-        $stats = self::getWorkflowStats($db);
+        $stats = self::getActionableWorkflowStats($db);
         $breakdown = [];
 
         $stageConfigs = [
-            'draft' => ['label' => 'بانتظار تدقيقك (Audit)', 'permission' => 'audit_data'],
-            'audited' => ['label' => 'بانتظار تحليلك (Analyze)', 'permission' => 'analyze_guarantee'],
-            'analyzed' => ['label' => 'بانتظار مراجعتك (Supervise)', 'permission' => 'supervise_analysis'],
-            'supervised' => ['label' => 'بانتظار اعتمادك (Approve)', 'permission' => 'approve_decision'],
-            'approved' => ['label' => 'بانتظار توقيعك (Sign)', 'permission' => 'sign_letters'],
+            'draft' => ['label' => 'مهام التدقيق', 'permission' => 'audit_data'],
+            'audited' => ['label' => 'مهام التحليل', 'permission' => 'analyze_guarantee'],
+            'analyzed' => ['label' => 'مهام الإشراف', 'permission' => 'supervise_analysis'],
+            'supervised' => ['label' => 'مهام الاعتماد', 'permission' => 'approve_decision'],
+            'approved' => ['label' => 'مهام التوقيع', 'permission' => 'sign_letters'],
         ];
 
         foreach ($stageConfigs as $stage => $config) {

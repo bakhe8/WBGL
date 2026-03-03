@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          required=("PLAN-REF:" "GAP-REF:" "LAYER:" "RISK:" "ROLLBACK:" "TEST-EVIDENCE:" "IMPACTED FEATURES:" "DOC-UPDATES:" "REUSE-REF:")
+          required=("PLAN-REF:" "GAP-REF:" "LAYER:" "RISK:" "ROLLBACK:" "TEST-EVIDENCE:" "IMPACTED FEATURES:" "DOC-UPDATES:" "REUSE-REF:" "CHANGE-TYPE:" "STABILITY-REFS:")
           for key in "${required[@]}"; do
             if ! grep -qi "$key" <<<"$PR_BODY"; then
               echo "Missing required field: $key"
@@ -113,6 +113,13 @@ jobs:
             echo "$statuses"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Enforce phase-1 feature freeze gate
+        env:
+          WBGL_CHANGED_FILES: ${{ steps.changes.outputs.files }}
+          WBGL_CHANGED_STATUSES: ${{ steps.changes.outputs.statuses }}
+          WBGL_PR_BODY: ${{ steps.pr.outputs.body }}
+        run: php app/Scripts/stability-freeze-gate.php
 
       - name: Require execution loop status refresh for sensitive changes
         env:
@@ -234,6 +241,12 @@ jobs:
           php-version: '8.3'
           extensions: mbstring, pgsql, pdo_pgsql, fileinfo
           coverage: none
+
+      - name: Theme style audit (generate report artifact)
+        run: php app/Scripts/theme-style-audit.php scan
+
+      - name: Theme style gate (block new style violations)
+        run: php app/Scripts/theme-style-audit.php gate
 
       - name: Install PHP dependencies
         run: composer install --no-interaction --no-progress --prefer-dist

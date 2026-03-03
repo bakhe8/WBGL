@@ -3,11 +3,47 @@
  * Handles: Manual Entry, Smart Paste, Import Excel
  */
 
+const WBGL_HIDDEN_CLASS = 'wbgl-hidden';
+
+function setModalOpen(modal, open) {
+    if (!modal) {
+        return;
+    }
+
+    modal.classList.toggle('is-open', Boolean(open));
+    modal.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
+function setHidden(element, hidden) {
+    if (!element) {
+        return;
+    }
+    element.classList.toggle(WBGL_HIDDEN_CLASS, Boolean(hidden));
+}
+
+function isModalOpen(modal) {
+    return Boolean(modal) && modal.classList.contains('is-open');
+}
+
+function t(key, params) {
+    if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
+        return window.WBGLI18n.t(key, key, params || undefined);
+    }
+
+    let output = String(key || '');
+    if (params && typeof params === 'object') {
+        Object.keys(params).forEach((token) => {
+            output = output.replace(new RegExp(`{{\\s*${token}\\s*}}`, 'g'), String(params[token]));
+        });
+    }
+    return output;
+}
+
 // دالة لفتح modal الإدخال اليدوي
 function showManualInput() {
     const modal = document.getElementById('manualEntryModal');
     if (modal) {
-        modal.style.display = 'flex';
+        setModalOpen(modal, true);
         document.getElementById('manualSupplier')?.focus();
     }
 }
@@ -16,32 +52,19 @@ function showManualInput() {
 function showPasteModal() {
     const modal = document.getElementById('smartPasteModal');
     if (modal) {
-        modal.style.display = 'flex';
+        setModalOpen(modal, true);
         document.getElementById('smartPasteInput')?.focus();
-    }
-}
-
-// دالة لفتح صفحة الاستيراد
-function showImportModal() {
-    // Trigger hidden file input
-    const fileInput = document.getElementById('hiddenFileInput');
-    if (fileInput) {
-        fileInput.click();
-    } else {
-        // Error: File input not found
-        console.error('File input element #hiddenFileInput not found');
-        if (typeof showToast === 'function') {
-            showToast('عفواً، خاصية الاستيراد غير متاحة حالياً', 'error');
-        }
     }
 }
 
 // دالة لإغلاق جميع الـ modals
 function closeAllModals() {
-    const modals = ['manualEntryModal', 'smartPasteModal'];
+    const modals = ['manualEntryModal', 'smartPasteModal', 'excelImportModal'];
     modals.forEach(id => {
         const modal = document.getElementById(id);
-        if (modal) modal.style.display = 'none';
+        if (modal) {
+            setModalOpen(modal, false);
+        }
     });
 }
 
@@ -54,6 +77,7 @@ async function submitManualEntry() {
     const originalAmount = document.getElementById('manualAmount')?.value || '';
     const cleanAmount = originalAmount.replace(/,/g, '');
 
+    const relatedTo = Array.from(document.getElementsByName('relatedTo')).find((radio) => radio.checked)?.value || 'contract';
     const payload = {
         supplier,
         bank,
@@ -64,7 +88,7 @@ async function submitManualEntry() {
         type: document.getElementById('manualType')?.value,
         issue_date: document.getElementById('manualIssue')?.value,
         comment: document.getElementById('manualComment')?.value,
-        related_to: document.querySelector('input[name="relatedTo"]:checked')?.value || 'contract', // 🔥 NEW
+        related_to: relatedTo,
         // ✅ NEW: Test Data Isolation (Phase 1)
         is_test_data: document.getElementById('manualIsTestData')?.checked ? 1 : 0,
         test_batch_id: document.getElementById('manualTestBatchId')?.value,
@@ -80,14 +104,14 @@ async function submitManualEntry() {
 
         const data = await response.json();
         if (data.success) {
-            showToast('تم إضافة الضمان بنجاح', 'success');
+            showToast(t('modals.modal.txt_6e2806ef'), 'success');
             setTimeout(() => window.location.reload(), 1000);
         } else {
-            showToast('خطأ: ' + (data.error || 'فشل الحفظ'), 'error');
+            showToast(`${t('modals.modal.txt_d3dc939a')} ${data.error || t('modals.modal.txt_51112618')}`, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        showToast('حدث خطأ في الاتصال', 'error');
+        showToast(t('modals.modal.txt_355ec77a'), 'error');
     }
 }
 
@@ -96,19 +120,19 @@ async function parsePasteData() {
     const text = document.getElementById('smartPasteInput')?.value;
 
     if (!text || !text.trim()) {
-        showToast('يرجى لصق النص أولاً', 'error');
+        showToast(t('modals.modal.txt_7a89e99a'), 'error');
         return;
     }
 
     // Show loading state
     const btnProcess = document.getElementById('btnProcessPaste');
     const originalText = btnProcess.innerHTML;
-    btnProcess.innerHTML = '⏳ جاري التحليل...';
+    btnProcess.innerHTML = t('modals.modal.txt_43edcd75');
     btnProcess.disabled = true;
 
     // Hide previous results
-    document.getElementById('extractionPreview').style.display = 'none';
-    document.getElementById('smartPasteError').style.display = 'none';
+    setHidden(document.getElementById('extractionPreview'), true);
+    setHidden(document.getElementById('smartPasteError'), true);
 
     try {
         // Call the parse API (now with built-in confidence support)
@@ -139,8 +163,8 @@ async function parsePasteData() {
                 const fieldsDiv = document.getElementById('extractionFields');
 
                 let multiHTML = `
-                    <div style="grid-column: 1 / -1; padding: 10px 14px; background: #dbeafe; border: 1px solid #60a5fa; border-radius: 6px; margin-bottom: 10px;">
-                        <div style="color: #1e40af; font-size: 14px; font-weight: 700;">
+                    <div class="wbgl-extraction-row wbgl-extraction-row--summary">
+                        <div class="wbgl-extraction-summary">
                             🎯 تم استيراد ${data.count} ضمان بنجاح
                         </div>
                     </div>
@@ -149,22 +173,22 @@ async function parsePasteData() {
                 data.results.forEach((result, index) => {
                     if (result.failed) {
                         multiHTML += `
-                            <div style="grid-column: 1 / -1; padding: 8px 12px; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px;">
-                                <div style="color: #991b1b; font-size: 12px;">❌ ${result.guarantee_number}: ${result.error}</div>
+                            <div class="wbgl-extraction-row wbgl-extraction-row--error">
+                                <div class="wbgl-extraction-error">❌ ${result.guarantee_number}: ${result.error}</div>
                             </div>
                         `;
                     } else {
                         multiHTML += `
-                            <div style="grid-column: 1 / -1; padding: 8px 12px; background: white; border: 1px solid #d1fae5; border-radius: 6px;">
-                                <div style="color: #10b981; font-size: 12px; font-weight: 600;">✅ ${result.guarantee_number}</div>
-                                <div style="color: #6b7280; font-size: 11px; margin-top: 2px;">${result.supplier || '—'} | ${result.amount ? result.amount.toLocaleString() + ' ر.س' : '—'}</div>
+                            <div class="wbgl-extraction-row wbgl-extraction-row--success">
+                                <div class="wbgl-extraction-success">✅ ${result.guarantee_number}</div>
+                                <div class="wbgl-extraction-meta">${result.supplier || '—'} | ${result.amount ? result.amount.toLocaleString() + ' ' + t('modals.currency.sar') : '—'}</div>
                             </div>
                         `;
                     }
                 });
 
                 fieldsDiv.innerHTML = multiHTML;
-                previewDiv.style.display = 'block';
+                setHidden(previewDiv, false);
 
                 showToast(data.message, 'success');
                 setTimeout(() => window.location.reload(), 2000);
@@ -176,14 +200,14 @@ async function parsePasteData() {
             const fieldsDiv = document.getElementById('extractionFields');
 
             const fieldLabels = {
-                'guarantee_number': 'رقم الضمان',
-                'supplier': 'المورد',
-                'bank': 'البنك',
-                'amount': 'المبلغ',
-                'expiry_date': 'تاريخ الانتهاء',
-                'contract_number': 'رقم العقد',
-                'issue_date': 'تاريخ الإصدار',
-                'type': 'النوع'
+                guarantee_number: t('modals.manual_entry.labels.guarantee_number'),
+                supplier: t('modals.manual_entry.labels.supplier'),
+                bank: t('modals.manual_entry.labels.bank'),
+                amount: t('modals.manual_entry.labels.amount'),
+                expiry_date: t('modals.manual_entry.labels.expiry_date'),
+                contract_number: t('modals.manual_entry.labels.contract_number'),
+                issue_date: t('modals.manual_entry.labels.issue_date'),
+                type: t('modals.manual_entry.labels.guarantee_type')
             };
 
             let fieldsHTML = '';
@@ -192,11 +216,11 @@ async function parsePasteData() {
             // Show overall confidence if available
             if (hasConfidence && data.overall_confidence) {
                 const overallDiv = document.getElementById('overallConfidence');
-                const level = data.overall_confidence >= 90 ? '✅ عالية' :
-                    data.overall_confidence >= 70 ? '⚠️ متوسطة' : '❌ منخفضة';
-                const color = data.overall_confidence >= 90 ? '#15803d' :
-                    data.overall_confidence >= 70 ? '#d97706' : '#dc2626';
-                overallDiv.innerHTML = `<span style="color: ${color}">الثقة الإجمالية: ${level} (${data.overall_confidence}%)</span>`;
+                const level = data.overall_confidence >= 90 ? t('modals.modal.txt_ba3df4e0') :
+                    data.overall_confidence >= 70 ? t('modals.modal.txt_7e9ac181') : t('modals.modal.txt_26efbdb2');
+                const tone = data.overall_confidence >= 90 ? 'high' :
+                    data.overall_confidence >= 70 ? 'medium' : 'low';
+                overallDiv.innerHTML = `<span class="wbgl-overall-confidence wbgl-overall-confidence--${tone}">${t('modals.paste.overall_confidence', { level: level, score: data.overall_confidence })}</span>`;
             }
 
             for (const [key, label] of Object.entries(fieldLabels)) {
@@ -209,44 +233,44 @@ async function parsePasteData() {
 
                     // Determine confidence badge
                     let confBadge = '';
-                    let bgColor = 'white';
-                    let borderColor = '#d1fae5';
+                    let confToneClass = 'default';
 
                     if (conf) {
                         if (confScore >= 90) {
-                            confBadge = `<span style="color: #15803d; font-size: 11px;">✓ ${confScore}%</span>`;
-                            bgColor = '#f0fdf4';
-                            borderColor = '#86efac';
+                            confBadge = `<span class="wbgl-confidence-badge wbgl-confidence-badge--high">✓ ${confScore}%</span>`;
+                            confToneClass = 'high';
                         } else if (confScore >= 70) {
-                            confBadge = `<span style="color: #d97706; font-size: 11px;">⚠ ${confScore}%</span>`;
-                            bgColor = '#fef3c7';
-                            borderColor = '#fbbf24';
+                            confBadge = `<span class="wbgl-confidence-badge wbgl-confidence-badge--medium">⚠ ${confScore}%</span>`;
+                            confToneClass = 'medium';
                         } else {
-                            confBadge = `<span style="color: #dc2626; font-size: 11px;">⚠ ${confScore}% - ${confReason}</span>`;
-                            bgColor = '#fee2e2';
-                            borderColor = '#fca5a5';
+                            confBadge = `<span class="wbgl-confidence-badge wbgl-confidence-badge--low">⚠ ${confScore}% - ${confReason}</span>`;
+                            confToneClass = 'low';
                         }
                     }
 
                     fieldsHTML += `
-                        <div style="padding: 8px 12px; background: ${bgColor}; border-radius: 6px; border: 1px solid ${borderColor};">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                <div style="color: #6b7280; font-size: 11px; font-weight: 600;">${label}</div>
+                        <div class="wbgl-field-card wbgl-field-card--${confToneClass}">
+                            <div class="wbgl-field-card__head">
+                                <div class="wbgl-field-card__label">${label}</div>
                                 ${confBadge}
                             </div>
-                            <div style="color: #1f2937; font-weight: 600; font-size: 14px;">${value}</div>
-                            ${conf && conf.reason ? `<div style="color: #6b7280; font-size: 10px; margin-top: 2px;">${conf.reason}</div>` : ''}
+                            <div class="wbgl-field-card__value">${value}</div>
+                            ${conf && conf.reason ? `<div class="wbgl-field-card__reason">${conf.reason}</div>` : ''}
                         </div>
                     `;
                 }
             }
 
             fieldsDiv.innerHTML = fieldsHTML;
-            previewDiv.style.display = 'block';
+            setHidden(previewDiv, false);
 
             // Success!
-            showToast(data.message || 'تم استخراج البيانات بنجاح!', 'success');
-            setTimeout(() => window.location.href = '?id=' + data.id, 1500);
+            showToast(data.message || t('modals.modal.txt_3ebe03a6'), 'success');
+            setTimeout(() => {
+                const targetUrl = new URL(window.location.href);
+                targetUrl.searchParams.set('id', String(data.id));
+                window.location.href = targetUrl.pathname + targetUrl.search;
+            }, 1500);
 
         } else {
             // Show detailed error
@@ -254,29 +278,28 @@ async function parsePasteData() {
             const errorMsg = document.getElementById('errorMessage');
             const missingList = document.getElementById('missingFieldsList');
 
-            errorMsg.textContent = data.error || 'فشل في تحليل النص';
+            errorMsg.textContent = data.error || t('modals.modal.txt_f2ca37e9');
 
             // Show what was extracted and what is missing
             if (data.field_status) {
-                let statusHTML = '<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #fca5a5;"><strong>حالة الحقول:</strong><div style="margin-top: 8px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">';
+                let statusHTML = '<div class="wbgl-field-status"><strong>حالة الحقول:</strong><div class="wbgl-field-status-grid">';
 
                 const fieldLabels = {
-                    'guarantee_number': 'رقم الضمان',
-                    'supplier': 'المورد',
-                    'bank': 'البنك',
-                    'amount': 'المبلغ',
-                    'expiry_date': 'تاريخ الانتهاء',
-                    'contract_number': 'رقم العقد'
+                    guarantee_number: t('modals.manual_entry.labels.guarantee_number'),
+                    supplier: t('modals.manual_entry.labels.supplier'),
+                    bank: t('modals.manual_entry.labels.bank'),
+                    amount: t('modals.manual_entry.labels.amount'),
+                    expiry_date: t('modals.manual_entry.labels.expiry_date'),
+                    contract_number: t('modals.manual_entry.labels.contract_number')
                 };
 
                 for (const [key, label] of Object.entries(fieldLabels)) {
                     const status = data.field_status[key] || '❌';
                     const value = data.extracted?.[key] || '—';
-                    const bgColor = status === '✅' ? '#f0fdf4' : '#fef2f2';
-                    const borderColor = status === '✅' ? '#86efac' : '#fca5a5';
+                    const stateClass = status === '✅' ? 'ok' : 'missing';
 
                     statusHTML += `
-                        <div style="padding: 6px 8px; background: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 4px; font-size: 12px;">
+                        <div class="wbgl-field-status-item wbgl-field-status-item--${stateClass}">
                             ${status} ${label}: ${value}
                         </div>
                     `;
@@ -286,14 +309,14 @@ async function parsePasteData() {
                 missingList.innerHTML = statusHTML;
             }
 
-            errorDiv.style.display = 'block';
-            showToast('فشل الاستخراج - يرجى مراجعة التفاصيل', 'error');
+            setHidden(errorDiv, false);
+            showToast(t('modals.modal.txt_127b2b67'), 'error');
         }
     } catch (error) {
         btnProcess.innerHTML = originalText;
         btnProcess.disabled = false;
         console.error('Error:', error);
-        showToast('حدث خطأ في الاتصال', 'error');
+        showToast(t('modals.modal.txt_355ec77a'), 'error');
     }
 }
 
@@ -301,7 +324,7 @@ async function parsePasteData() {
 function showImportModal() {
     const modal = document.getElementById('excelImportModal');
     if (modal) {
-        modal.style.display = 'flex';
+        setModalOpen(modal, true);
     }
 }
 
@@ -311,16 +334,18 @@ async function uploadExcelFile() {
     const file = fileInput.files[0];
 
     if (!file) {
-        showToast('يرجى اختيار ملف Excel أولاً', 'error');
+        showToast(t('modals.modal.txt_452d4e39'), 'error');
         return;
     }
 
     // Show loading indicator
     const loadingMsg = document.createElement('div');
     loadingMsg.id = 'uploadProgress';
-    loadingMsg.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 24px 48px; border-radius: 12px; box-shadow: 0 25px 50px rgba(0,0,0,0.3); z-index: 10000; text-align: center;';
-    loadingMsg.innerHTML = '<div style="font-size: 18px; font-weight: 700; color: #1f2937;">جاري تحميل الملف...</div><div style="margin-top: 12px; font-size: 14px; color: #6b7280;">' + file.name + '</div>';
-    loadingMsg.innerHTML = '<div style="font-size: 18px; font-weight: 700; color: #1f2937;">جاري تحميل الملف...</div><div style="margin-top: 12px; font-size: 14px; color: #6b7280;">' + file.name + '</div>';
+    loadingMsg.className = 'wbgl-upload-progress';
+    loadingMsg.innerHTML = `
+        <div class="wbgl-upload-progress__title">${t('modals.upload.in_progress')}</div>
+        <div class="wbgl-upload-progress__file">${file.name}</div>
+    `;
     document.body.appendChild(loadingMsg);
 
     // Create FormData
@@ -351,23 +376,23 @@ async function uploadExcelFile() {
 
         if (data.success) {
             const importedCount = data.data?.imported || data.imported || 0;
-            showToast(`تم الاستيراد بنجاح!\n${importedCount} سجل تم إضافته.`, 'success');
+            showToast(t('modals.upload.import_success_count', { count: importedCount }), 'success');
             setTimeout(() => window.location.reload(), 1500);
         } else {
-            showToast('خطأ: ' + (data.error || 'فشل الاستيراد'), 'error');
+            showToast(`${t('modals.modal.txt_d3dc939a')} ${data.error || t('modals.modal.txt_9958af61')}`, 'error');
         }
     } catch (error) {
         loadingMsg.remove();
         console.error('Error:', error);
-        showToast('حدث خطأ في الاتصال', 'error');
+        showToast(t('modals.modal.txt_355ec77a'), 'error');
     }
 
 
     // Reset form
     fileInput.value = '';
-    document.getElementById('selectedFileName').textContent = 'لم يتم اختيار ملف';
+    document.getElementById('selectedFileName').textContent = t('modals.modal.txt_749da6ed');
     document.getElementById('excelIsTestData').checked = false;
-    document.getElementById('excelTestFields').style.display = 'none';
+    setHidden(document.getElementById('excelTestFields'), true);
 }
 
 // إعداد الـ event listeners عند تحميل الصفحة
@@ -406,6 +431,16 @@ document.addEventListener('DOMContentLoaded', function () {
         btnProcessPaste.addEventListener('click', parsePasteData);
     }
 
+    const pasteIsTestData = document.getElementById('pasteIsTestData');
+    if (pasteIsTestData) {
+        pasteIsTestData.addEventListener('change', function () {
+            const fields = document.getElementById('pasteTestFields');
+            if (fields) {
+                fields.style.display = this.checked ? 'block' : 'none';
+            }
+        });
+    }
+
     // ✅ NEW: Excel Import Modal handlers
     const btnCloseExcel = document.getElementById('btnCloseExcelModal');
     const btnCancelExcel = document.getElementById('btnCancelExcel');
@@ -422,7 +457,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (excelFileInput) {
         excelFileInput.addEventListener('change', function () {
-            const fileName = this.files[0]?.name || 'لم يتم اختيار ملف';
+            const fileName = this.files[0]?.name || t('modals.modal.txt_749da6ed');
             document.getElementById('selectedFileName').textContent = fileName;
             document.getElementById('btnUploadExcel').disabled = !this.files[0];
         });
@@ -430,6 +465,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (btnUploadExcel) {
         btnUploadExcel.addEventListener('click', uploadExcelFile);
+    }
+
+    const excelIsTestData = document.getElementById('excelIsTestData');
+    if (excelIsTestData) {
+        excelIsTestData.addEventListener('change', function () {
+            const fields = document.getElementById('excelTestFields');
+            if (fields) {
+                fields.style.display = this.checked ? 'block' : 'none';
+            }
+        });
     }
 
     // Close modals on ESC key
@@ -456,8 +501,11 @@ document.addEventListener('DOMContentLoaded', function () {
             // Show loading indicator
             const loadingMsg = document.createElement('div');
             loadingMsg.id = 'uploadProgress';
-            loadingMsg.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 24px 48px; border-radius: 12px; box-shadow: 0 25px 50px rgba(0,0,0,0.3); z-index: 10000; text-align: center;';
-            loadingMsg.innerHTML = '<div style="font-size: 18px; font-weight: 700; color: #1f2937;">جاري تحميل الملف...</div><div style="margin-top: 12px; font-size: 14px; color: #6b7280;">' + file.name + '</div>';
+            loadingMsg.className = 'wbgl-upload-progress';
+            loadingMsg.innerHTML = `
+                <div class="wbgl-upload-progress__title">${t('modals.upload.in_progress')}</div>
+                <div class="wbgl-upload-progress__file">${file.name}</div>
+            `;
             document.body.appendChild(loadingMsg);
 
             // Create FormData
@@ -477,15 +525,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 if (data.success) {
                     const importedCount = data.data?.imported || data.imported || 0;
-                    showToast(`تم الاستيراد بنجاح!\n${importedCount} سجل تم إضافته.`, 'success');
+                    showToast(t('modals.upload.import_success_count', { count: importedCount }), 'success');
                     setTimeout(() => window.location.reload(), 1500);
                 } else {
-                    showToast('خطأ: ' + (data.error || 'فشل الاستيراد'), 'error');
+                    showToast(`${t('modals.modal.txt_d3dc939a')} ${data.error || t('modals.modal.txt_9958af61')}`, 'error');
                 }
             } catch (error) {
                 loadingMsg.remove();
                 console.error('Error:', error);
-                showToast('حدث خطأ في الاتصال', 'error');
+                showToast(t('modals.modal.txt_355ec77a'), 'error');
             }
 
             // Reset input for next time

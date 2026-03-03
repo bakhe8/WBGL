@@ -14,7 +14,7 @@ use App\Services\BreakGlassService;
 use App\Services\UndoRequestService;
 
 wbgl_api_json_headers();
-wbgl_api_require_permission('manage_data');
+wbgl_api_require_login();
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -23,13 +23,15 @@ try {
     }
     $guaranteeId = Input::int($input, 'guarantee_id');
     $user = wbgl_api_current_user_display();
+    $breakGlassRequested = BreakGlassService::isRequested($input);
 
     if (!$guaranteeId) {
         throw new Exception('guarantee_id is required');
     }
+    wbgl_api_require_guarantee_visibility((int)$guaranteeId);
 
     $breakGlass = null;
-    if (BreakGlassService::isRequested($input)) {
+    if ($breakGlassRequested) {
         $breakGlass = BreakGlassService::authorizeAndRecord(
             $input,
             'reopen_guarantee_direct',
@@ -39,7 +41,7 @@ try {
         );
     }
 
-    if (!Guard::has('reopen_guarantee') && $breakGlass === null) {
+    if (!Guard::has('reopen_guarantee') && !$breakGlassRequested) {
         throw new Exception('ليس لديك صلاحية إعادة فتح الضمان مباشرة');
     }
 

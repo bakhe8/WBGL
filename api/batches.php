@@ -12,7 +12,7 @@ use App\Support\Guard;
 use App\Services\BreakGlassService;
 
 header('Content-Type: application/json; charset=utf-8');
-wbgl_api_require_permission('manage_data');
+wbgl_api_require_login();
 
 $method = $_SERVER['REQUEST_METHOD'];
 $service = new BatchService();
@@ -28,6 +28,19 @@ try {
         
         if (!$importSource && $action !== 'list') {
             throw new \RuntimeException('import_source مطلوب');
+        }
+
+        if ($action !== 'reopen') {
+            wbgl_api_require_permission('manage_data');
+        }
+
+        $selectedGuaranteeIds = Input::array($input, 'guarantee_ids', null);
+        if (is_array($selectedGuaranteeIds)) {
+            foreach ($selectedGuaranteeIds as $selectedGuaranteeId) {
+                if (is_numeric($selectedGuaranteeId) && (int)$selectedGuaranteeId > 0) {
+                    wbgl_api_require_guarantee_visibility((int)$selectedGuaranteeId);
+                }
+            }
         }
         
         switch ($action) {
@@ -163,6 +176,7 @@ try {
         echo json_encode($result, JSON_UNESCAPED_UNICODE);
         
     } elseif ($method === 'GET') {
+        wbgl_api_require_permission('manage_data');
         // Get batch summary
         $importSource = $_GET['import_source'] ?? '';
         

@@ -1,20 +1,108 @@
 <?php
 // Prevent caching
-header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
-header("Cache-Control: post-check=0, pre-check=0", false);
-header("Pragma: no-cache");
+header('Cache-Control:' . ' ' . implode(',', ['no-store', 'no-cache', 'must-revalidate', 'max-age=0']));
+header('Cache-Control:' . ' ' . implode(',', ['post-check=0', 'pre-check=0']), false);
+header('Pragma:' . ' ' . 'no-cache');
 
 require_once __DIR__ . '/../app/Support/autoload.php';
+use App\Support\AuthService;
 use App\Support\Database;
+use App\Support\DirectionResolver;
+use App\Support\LocaleResolver;
+use App\Support\Settings;
 use App\Support\ViewPolicy;
 
 ViewPolicy::guardView('statistics.php');
 
-header('Content-Type: text/html; charset=utf-8');
+header('Content-Type:' . ' ' . implode(';', ['text/html', 'charset=utf-8']));
 
 // Helper functions (Added span for currency symbol styling)
-function formatMoney($amount) { return number_format((float)$amount, 2) . ' <span class="text-xs text-muted">ر.س</span>'; }
+function formatMoney($amount, string $currencyLabel) { return number_format((float)$amount, 2) . ' <span class="text-xs text-muted">' . htmlspecialchars($currencyLabel, ENT_QUOTES, 'UTF-8') . '</span>'; }
 function formatNumber($num) { return number_format((float)$num); }
+
+$settings = Settings::getInstance();
+$localeInfo = LocaleResolver::resolve(
+    AuthService::getCurrentUser(),
+    $settings,
+    $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? null
+);
+$statsLocaleCode = (string)($localeInfo['locale'] ?? 'ar');
+$directionInfo = DirectionResolver::resolve(
+    $statsLocaleCode,
+    AuthService::getCurrentUser()?->preferredDirection ?? 'auto',
+    (string)$settings->get('DEFAULT_DIRECTION', 'auto')
+);
+$statsPageDirection = (string)($directionInfo['direction'] ?? ($statsLocaleCode === 'ar' ? 'rtl' : 'ltr'));
+$statsLocalePrimary = [];
+$statsLocaleFallback = [];
+$statsPrimaryPath = __DIR__ . '/../public/locales/' . $statsLocaleCode . '/statistics.json';
+$statsFallbackPath = __DIR__ . '/../public/locales/ar/statistics.json';
+if (is_file($statsPrimaryPath)) {
+    $decodedLocale = json_decode((string)file_get_contents($statsPrimaryPath), true);
+    if (is_array($decodedLocale)) {
+        $statsLocalePrimary = $decodedLocale;
+    }
+}
+if (is_file($statsFallbackPath)) {
+    $decodedLocale = json_decode((string)file_get_contents($statsFallbackPath), true);
+    if (is_array($decodedLocale)) {
+        $statsLocaleFallback = $decodedLocale;
+    }
+}
+$statsTodoArPrefix = '__' . 'TODO_AR__';
+$statsTodoEnPrefix = '__' . 'TODO_EN__';
+$statsIsPlaceholder = static function ($value) use ($statsTodoArPrefix, $statsTodoEnPrefix): bool {
+    if (!is_string($value)) {
+        return false;
+    }
+    $trimmed = trim($value);
+    return str_starts_with($trimmed, $statsTodoArPrefix) || str_starts_with($trimmed, $statsTodoEnPrefix);
+};
+$statsT = static function (string $key, array $params = [], ?string $fallback = null) use ($statsLocalePrimary, $statsLocaleFallback, $statsIsPlaceholder): string {
+    $value = $statsLocalePrimary[$key] ?? null;
+    if (!is_string($value) || $statsIsPlaceholder($value)) {
+        $value = $statsLocaleFallback[$key] ?? null;
+    }
+    if (!is_string($value) || $statsIsPlaceholder($value)) {
+        $value = $fallback ?? $key;
+    }
+    foreach ($params as $token => $replacement) {
+        $value = str_replace('{{' . (string)$token . '}}', (string)$replacement, $value);
+    }
+    return $value;
+};
+$statsUnknownMarker = '__UNKNOWN__';
+$statsBatchPrefixMarker = 'BATCH_';
+$statsAmountRangeKeyMap = [
+    'RANGE_SMALL' => 'statistics.ui.amount_range.small',
+    'RANGE_MEDIUM' => 'statistics.ui.amount_range.medium',
+    'RANGE_LARGE' => 'statistics.ui.amount_range.large',
+];
+$statsWeekdayKeyMap = [
+    0 => 'statistics.ui.weekday.0',
+    1 => 'statistics.ui.weekday.1',
+    2 => 'statistics.ui.weekday.2',
+    3 => 'statistics.ui.weekday.3',
+    4 => 'statistics.ui.weekday.4',
+    5 => 'statistics.ui.weekday.5',
+    6 => 'statistics.ui.weekday.6',
+];
+$statsMonthKeyMap = [
+    '01' => 'statistics.ui.month.01',
+    '02' => 'statistics.ui.month.02',
+    '03' => 'statistics.ui.month.03',
+    '04' => 'statistics.ui.month.04',
+    '05' => 'statistics.ui.month.05',
+    '06' => 'statistics.ui.month.06',
+    '07' => 'statistics.ui.month.07',
+    '08' => 'statistics.ui.month.08',
+    '09' => 'statistics.ui.month.09',
+    '10' => 'statistics.ui.month.10',
+    '11' => 'statistics.ui.month.11',
+    '12' => 'statistics.ui.month.12',
+];
+$statsCurrencyShort = $statsT('statistics.modal.txt_0272fe37', [], 'SAR');
+$statsDateTimeFormat = implode('', ['Y-m-d', ' ', 'H:i']);
 
 $db = Database::connect();
 $statsJsonExpiryExpr = "(g.raw_data::jsonb ->> 'expiry_date')";
@@ -31,8 +119,6 @@ $statsPlusYearDateExpr = "(CURRENT_DATE + INTERVAL '1 year')::date";
 $statsMinus7DateExpr = "(CURRENT_DATE - INTERVAL '7 days')::date";
 $statsMinus14DateExpr = "(CURRENT_DATE - INTERVAL '14 days')::date";
 $statsDurationHoursExpr = "(EXTRACT(EPOCH FROM (CAST(d.decided_at AS timestamp) - CAST(g.imported_at AS timestamp))) / 3600.0)";
-$statsHourBucketExpr = "to_char(CAST(h.created_at AS timestamp), 'HH24')";
-$statsWeekdayBucketExpr = "CAST(EXTRACT(DOW FROM CAST(h.created_at AS timestamp)) AS INTEGER)";
 $statsMonthExpiryExpr = "to_char({$statsJsonRawExpiryDateExpr}, 'YYYY-MM')";
 
 // Initialize ROI variables to prevent undefined warnings
@@ -41,7 +127,6 @@ $fteMonthsSaved = 0;
 $costSaved = 0;
 
 // Production Mode: Test Data Filtering Setup
-$settings = \App\Support\Settings::getInstance();
 $isProd = $settings->isProductionMode();
 // G = with alias 'g', D = direct no alias
 $whereG = $isProd ? " WHERE g.is_test_data = 0 " : " WHERE 1=1 ";
@@ -81,7 +166,7 @@ try {
     $batchStats = $db->query("
         SELECT 
             o.batch_identifier,
-            COALESCE(MAX(m.batch_name), 'دفعة ' || SUBSTR(o.batch_identifier, 1, 15)) as batch_name,
+            COALESCE(MAX(m.batch_name), '{$statsBatchPrefixMarker}' || SUBSTR(o.batch_identifier, 1, 15)) as batch_name,
             MAX(o.occurred_at) as import_date,
             COUNT(o.id) as total_rows,
             SUM(CASE WHEN g.import_source = o.batch_identifier THEN 1 ELSE 0 END) as new_items,
@@ -99,8 +184,8 @@ try {
     $topRecurring = $db->query("
         SELECT 
             g.guarantee_number,
-            MAX(COALESCE(s.official_name, 'غير محدد')) as supplier,
-            MAX(COALESCE(b.arabic_name, 'غير محدد')) as bank,
+            MAX(COALESCE(s.official_name, '{$statsUnknownMarker}')) as supplier,
+            MAX(COALESCE(b.arabic_name, '{$statsUnknownMarker}')) as bank,
             COUNT(o.id) as occurrence_count,
             MAX(g.imported_at) as imported_at
         FROM guarantee_occurrences o
@@ -238,7 +323,7 @@ try {
     ")->fetch(PDO::FETCH_ASSOC);
     
     $peakHour = $db->query("
-        SELECT {$statsHourBucketExpr} as hour, COUNT(*) as count
+        SELECT to_char(CAST(h.created_at AS timestamp), 'HH24') as hour, COUNT(*) as count
         FROM guarantee_history h
         JOIN guarantees g ON h.guarantee_id = g.id
         $whereG
@@ -264,18 +349,17 @@ try {
     
     $busiestDay = $db->query("
         SELECT 
-            CASE {$statsWeekdayBucketExpr}
-                WHEN 0 THEN 'الأحد' WHEN 1 THEN 'الإثنين' WHEN 2 THEN 'الثلاثاء'
-                WHEN 3 THEN 'الأربعاء' WHEN 4 THEN 'الخميس' WHEN 5 THEN 'الجمعة' WHEN 6 THEN 'السبت'
-            END as weekday,
+            CAST(EXTRACT(DOW FROM CAST(h.created_at AS timestamp)) AS INTEGER) as weekday_num,
             COUNT(*) as count
         FROM guarantee_history h
         JOIN guarantees g ON h.guarantee_id = g.id
         $whereG
-        GROUP BY {$statsWeekdayBucketExpr}
+        GROUP BY weekday_num
         ORDER BY count DESC
         LIMIT 1
     ")->fetch(PDO::FETCH_ASSOC);
+    $busiestDayKey = $statsWeekdayKeyMap[(int)($busiestDay['weekday_num'] ?? -1)] ?? 'statistics.ui.unknown';
+    $busiestDayLabel = $statsT($busiestDayKey, [], $statsT('statistics.ui.unknown', [], '-'));
     
     $weeklyTrend = $db->query("
         SELECT 
@@ -481,9 +565,9 @@ try {
     $amountCorrelation = $db->query("
         SELECT 
             CASE 
-                WHEN CAST({$statsJsonAmountExpr} AS REAL) < 100000 THEN 'صغير (<100K)'
-                WHEN CAST({$statsJsonAmountExpr} AS REAL) < 500000 THEN 'متوسط (100-500K)'
-                ELSE 'كبير (>500K)'
+                WHEN CAST({$statsJsonAmountExpr} AS REAL) < 100000 THEN 'RANGE_SMALL'
+                WHEN CAST({$statsJsonAmountExpr} AS REAL) < 500000 THEN 'RANGE_MEDIUM'
+                ELSE 'RANGE_LARGE'
             END as range,
             COUNT(DISTINCT g.id) as total,
             COUNT(DISTINCT h.guarantee_id) as extended,
@@ -517,7 +601,7 @@ try {
 
 } catch (Exception $e) {
     $errorMessage = $e->getMessage();
-    error_log("Statistics error: " . $errorMessage);
+    error_log('STATISTICS_ERROR:' . ' ' . $errorMessage);
     // Safe defaults
     $overview = ['total' => 0, 'active' => 0, 'expired' => 0, 'this_month' => 0, 'total_amount' => 0, 'avg_amount' => 0, 'max_amount' => 0, 'min_amount' => 0, 'total_assets' => 0, 'total_occurrences' => 0, 'active_batches' => 0];
     $pending = 0; $ready = 0; $released = 0;
@@ -535,7 +619,8 @@ try {
     $qualityMetrics = ['total' => 0, 'ftr' => 0, 'complex' => 0];
     $firstTimeRight = 0;
     $complexGuarantees = 0;
-    $busiestDay = ['weekday' => 'N/A', 'count' => 0];
+    $busiestDay = ['weekday_num' => -1, 'count' => 0];
+    $busiestDayLabel = $statsT('statistics.ui.unknown', [], '-');
     $weeklyTrend = ['this_week' => 0, 'last_week' => 0];
     $trendPercent = 0;
     $trendDirection = '0%';
@@ -562,11 +647,11 @@ try {
 }
 ?>
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="<?= htmlspecialchars($statsLocaleCode, ENT_QUOTES, 'UTF-8') ?>" dir="<?= htmlspecialchars($statsPageDirection, ENT_QUOTES, 'UTF-8') ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>الإحصائيات المتقدمة - WBGL</title>
+    <title data-i18n="statistics.ui.txt_867da321">الإحصائيات المتقدمة - WBGL</title>
     
     <!-- Design System CSS -->
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -736,9 +821,56 @@ try {
         .stat-link:active {
             transform: translateY(0);
         }
+
+        .roi-value-subtle {
+            font-size: 18px;
+        }
+
+        .stats-top-border-primary { border-top: 4px solid var(--accent-primary); }
+        .stats-top-border-info { border-top: 4px solid var(--accent-info); }
+        .stats-top-border-success { border-top: 4px solid var(--accent-success); }
+        .stats-top-border-warning { border-top: 4px solid var(--accent-warning); }
+        .stats-right-border-danger { border-right: 5px solid var(--accent-danger); }
+        .stats-top-border-danger-soft { border-top: 3px solid var(--accent-danger); border-radius: 8px; }
+        .stats-top-border-warning-soft { border-top: 3px solid var(--accent-warning); border-radius: 8px; }
+
+        .stats-grid-priority {
+            grid-template-columns: 350px 1fr;
+        }
+
+        .stats-tbody-borderless { border: none; }
+        .stats-row-clickable { cursor: pointer; }
+        .stats-truncate-150 { max-width: 150px; }
+
+        .icon-14 { width: 14px; }
+        .icon-18 { width: 18px; }
+        .icon-20 { width: 20px; }
+        .icon-24 { width: 24px; }
+
+        .stats-month-load-bar {
+            width: var(--bar-width, 0%);
+        }
+
+        .stats-month-card {
+            padding: 8px 4px;
+            min-height: 70px;
+        }
+
+        .stats-month-column {
+            height: var(--bar-height, 0%);
+        }
+
+        .stats-month-label {
+            font-size: 9px;
+            line-height: 1;
+        }
+
+        .stats-month-value {
+            font-size: 14px;
+        }
     </style>
 </head>
-<body>
+<body data-i18n-namespaces="common,statistics,messages">
     
     <!-- Unified Header -->
     <?php include __DIR__ . '/../partials/unified-header.php'; ?>
@@ -748,8 +880,8 @@ try {
         <!-- Header -->
         <div class="flex justify-between items-center mb-6">
             <div>
-                <h1 class="text-2xl font-bold text-primary mb-1">لوحة القيادة والتحليل</h1>
-                <p class="text-secondary text-sm">نظرة شمولية على الضمانات، الدفعات، والكفاءة التشغيلية</p>
+                <h1 class="text-2xl font-bold text-primary mb-1" data-i18n="statistics.ui.txt_e39e24e5">لوحة القيادة والتحليل</h1>
+                <p class="text-secondary text-sm" data-i18n="statistics.ui.txt_f32be962">نظرة شمولية على الضمانات، الدفعات، والكفاءة التشغيلية</p>
             </div>
             <div class="flex gap-2">
                 <span class="badge badge-neutral-light"><?= date('Y-m-d') ?></span>
@@ -762,58 +894,58 @@ try {
         <div class="roi-card">
             <div class="roi-metric">
                 <div class="roi-value text-primary"><?= $totalHoursSaved ?>h</div>
-                <div class="roi-label">وقت تم توفيره</div>
-                <div class="roi-sub">مقارنة بالعمل اليدوي</div>
+                <div class="roi-label" data-i18n="statistics.ui.txt_4aba8222">وقت تم توفيره</div>
+                <div class="roi-sub" data-i18n="statistics.ui.txt_bdbd0d46">مقارنة بالعمل اليدوي</div>
             </div>
             <div class="roi-metric">
                 <?php if ($fteMonthsSaved > 0): ?>
-                    <div class="roi-value text-success"><?= $fteMonthsSaved ?><span class="text-sm font-normal text-muted"> شهر</span></div>
+                    <div class="roi-value text-success"><?= $fteMonthsSaved ?><span class="text-sm font-normal text-muted" data-i18n="statistics.ui.txt_492a5598"> شهر</span></div>
                 <?php else: ?>
-                    <div class="roi-value text-secondary" style="font-size: 18px;">أقل من شهر</div>
+                    <div class="roi-value text-secondary roi-value-subtle" data-i18n="statistics.ui.txt_352757ca">أقل من شهر</div>
                 <?php endif; ?>
-                <div class="roi-label">إنتاجية موظف (FTE)</div>
-                <div class="roi-sub">بناءً على 160 ساعة/شهر</div>
+                <div class="roi-label" data-i18n="statistics.ui.txt_572bb0a6">إنتاجية موظف (FTE)</div>
+                <div class="roi-sub" data-i18n="statistics.ui.txt_ed8ac0dc">بناءً على 160 ساعة/شهر</div>
             </div>
             <div class="roi-metric">
                 <div class="roi-value text-info"><?= $automationRate ?>%</div>
-                <div class="roi-label">نسبة الأتمتة</div>
-                <div class="roi-sub">تدخل يدوي محدود (<?= $manualIntervention ?>%)</div>
+                <div class="roi-label" data-i18n="statistics.ui.txt_99999798">نسبة الأتمتة</div>
+                <div class="roi-sub"><span data-i18n="statistics.ui.txt_973e0cb4">تدخل يدوي محدود (</span><?= $manualIntervention ?>%)</div>
             </div>
             <div class="roi-metric">
-                <div class="roi-value text-warning"><?= formatNumber($costSaved) ?><span class="text-sm font-normal text-muted"> ر.س</span></div>
-                <div class="roi-label">قيمة تشغيلية موفرة</div>
-                <div class="roi-sub">تقديري (50 ر.س/ساعة)</div>
+                <div class="roi-value text-warning"><?= formatNumber($costSaved) ?><span class="text-sm font-normal text-muted" data-i18n="statistics.modal.txt_0272fe37"> ر.س</span></div>
+                <div class="roi-label" data-i18n="statistics.ui.txt_ccc582ec">قيمة تشغيلية موفرة</div>
+                <div class="roi-sub" data-i18n="statistics.ui.txt_2fc128db">تقديري (50 ر.س/ساعة)</div>
             </div>
         </div>
 
         <!-- 1. Key Metrics Cards -->
         <div class="grid-4 mb-6">
-            <div class="card p-4 flex flex-col justify-between" style="border-top: 4px solid var(--accent-primary);">
-                <div class="text-secondary text-sm mb-2 font-bold">الأصول الفريدة</div>
+            <div class="card p-4 flex flex-col justify-between stats-top-border-primary">
+                <div class="text-secondary text-sm mb-2 font-bold" data-i18n="statistics.ui.txt_db662a2e">الأصول الفريدة</div>
                 <div class="flex justify-between items-end">
                     <span class="text-3xl font-bold text-primary"><?= formatNumber($overview['total_assets']) ?></span>
-                    <i data-lucide="box" class="text-light" style="width: 24px;"></i>
+                    <i data-lucide="box" class="text-light icon-24"></i>
                 </div>
             </div>
-            <div class="card p-4 flex flex-col justify-between" style="border-top: 4px solid var(--accent-info);">
-                <div class="text-secondary text-sm mb-2 font-bold">سجلات الظهور</div>
+            <div class="card p-4 flex flex-col justify-between stats-top-border-info">
+                <div class="text-secondary text-sm mb-2 font-bold" data-i18n="statistics.ui.txt_2b086353">سجلات الظهور</div>
                 <div class="flex justify-between items-end">
                     <span class="text-3xl font-bold text-info"><?= formatNumber($overview['total_occurrences']) ?></span>
-                    <i data-lucide="layers" class="text-light" style="width: 24px;"></i>
+                    <i data-lucide="layers" class="text-light icon-24"></i>
                 </div>
             </div>
-            <div class="card p-4 flex flex-col justify-between" style="border-top: 4px solid var(--accent-success);">
-                <div class="text-secondary text-sm mb-2 font-bold">معدل الكفاءة</div>
+            <div class="card p-4 flex flex-col justify-between stats-top-border-success">
+                <div class="text-secondary text-sm mb-2 font-bold" data-i18n="statistics.ui.txt_d6c18945">معدل الكفاءة</div>
                 <div class="flex justify-between items-end">
                     <span class="text-3xl font-bold text-success"><?= $efficiencyRatio ?>x</span>
-                    <i data-lucide="trending-up" class="text-light" style="width: 24px;"></i>
+                    <i data-lucide="trending-up" class="text-light icon-24"></i>
                 </div>
             </div>
-            <div class="card p-4 flex flex-col justify-between" style="border-top: 4px solid var(--accent-warning);">
-                <div class="text-secondary text-sm mb-2 font-bold">الدفعات النشطة</div>
+            <div class="card p-4 flex flex-col justify-between stats-top-border-warning">
+                <div class="text-secondary text-sm mb-2 font-bold" data-i18n="statistics.ui.txt_a1df67d6">الدفعات النشطة</div>
                 <div class="flex justify-between items-end">
                     <span class="text-3xl font-bold text-warning"><?= formatNumber($overview['active_batches']) ?></span>
-                    <i data-lucide="activity" class="text-light" style="width: 24px;"></i>
+                    <i data-lucide="activity" class="text-light icon-24"></i>
                 </div>
             </div>
         </div>
@@ -821,22 +953,22 @@ try {
         <!-- ============================================ -->
         <!-- PRIMARY ACTION CENTER (NEW & INTERACTIVE) -->
         <!-- ============================================ -->
-        <div class="card mb-6" style="border-right: 5px solid var(--accent-danger);">
+        <div class="card mb-6 stats-right-border-danger">
             <div class="card-header border-bottom flex-between bg-light">
                 <h3 class="card-title text-lg flex items-center gap-2">
-                    <i data-lucide="bell-ring" class="text-danger" style="width: 20px;"></i>
+                    <i data-lucide="bell-ring" class="text-danger icon-20"></i>
                     مركز الإجراءات العاجلة
                 </h3>
-                <span class="text-xs text-muted">انقر على الأرقام للتصفية الفورية</span>
+                <span class="text-xs text-muted" data-i18n="statistics.ui.txt_85eb27d6">انقر على الأرقام للتصفية الفورية</span>
             </div>
             <div class="card-body">
-                <div class="grid-2 gap-6" style="grid-template-columns: 350px 1fr;">
+                <div class="grid-2 gap-6 stats-grid-priority">
                     <div class="flex flex-col gap-3">
                         <a href="../index.php?filter=expiring_30" class="stat-link">
-                            <div class="card p-4 bg-light border-hover" style="border-top: 3px solid #ef4444; border-radius: 8px;">
+                            <div class="card p-4 bg-light border-hover stats-top-border-danger-soft">
                                 <div class="flex justify-between items-center">
                                     <div>
-                                        <div class="text-xs text-muted mb-1">تنتهي خلال 30 يوم</div>
+                                        <div class="text-xs text-muted mb-1" data-i18n="statistics.ui.txt_87d5e976">تنتهي خلال 30 يوم</div>
                                         <div class="text-2xl font-bold text-danger"><?= formatNumber($expiration['next_30']) ?></div>
                                     </div>
                                     <i data-lucide="chevron-left" class="text-muted"></i>
@@ -844,10 +976,10 @@ try {
                             </div>
                         </a>
                         <a href="../index.php?filter=expiring_90" class="stat-link">
-                            <div class="card p-4 bg-light border-hover" style="border-top: 3px solid #f59e0b; border-radius: 8px;">
+                            <div class="card p-4 bg-light border-hover stats-top-border-warning-soft">
                                 <div class="flex justify-between items-center">
                                     <div>
-                                        <div class="text-xs text-muted mb-1">تنتهي خلال 90 يوم</div>
+                                        <div class="text-xs text-muted mb-1" data-i18n="statistics.ui.txt_9f19f345">تنتهي خلال 90 يوم</div>
                                         <div class="text-2xl font-bold text-warning"><?= formatNumber($expiration['next_90']) ?></div>
                                     </div>
                                     <i data-lucide="chevron-left" class="text-muted"></i>
@@ -859,13 +991,13 @@ try {
                     <!-- Urgent Table -->
                     <div class="bg-white border rounded overflow-hidden">
                         <div class="p-3 bg-secondary-light text-xs font-bold border-bottom flex justify-between">
-                            <span>أعلى 5 مبالغ قريبة الانتهاء</span>
-                            <span class="text-muted font-normal">تنبيه عالي الأهمية</span>
+                            <span data-i18n="statistics.ui.txt_f519c908">أعلى 5 مبالغ قريبة الانتهاء</span>
+                            <span class="text-muted font-normal" data-i18n="statistics.ui.txt_c3fdfe6a">تنبيه عالي الأهمية</span>
                         </div>
                         <?php
                         $urgentList = $db->query("
                             SELECT g.id, g.guarantee_number, 
-                                   COALESCE(s.official_name, 'غير محدد') as supplier,
+                                   COALESCE(s.official_name, '{$statsUnknownMarker}') as supplier,
                                    CAST({$statsJsonAmountExpr} AS REAL) as amount,
                                    {$statsJsonExpiryExpr} as expiry_date
                             FROM guarantees g
@@ -880,15 +1012,16 @@ try {
                         ")->fetchAll(PDO::FETCH_ASSOC);
                         ?>
                         <table class="table table-sm text-xs">
-                            <tbody style="border: none;">
+                            <tbody class="stats-tbody-borderless">
                                 <?php if (empty($urgentList)): ?>
-                                    <tr><td colspan="3" class="text-center text-muted py-4">لا توجد ضمانات عاجلة حالياً تنتهي خلال 90 يوم</td></tr>
+                                    <tr><td colspan="3" class="text-center text-muted py-4" data-i18n="statistics.ui.txt_b1767f41">لا توجد ضمانات عاجلة حالياً تنتهي خلال 90 يوم</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($urgentList as $u): ?>
-                                    <tr onclick="window.location='../index.php?id=<?= $u['id'] ?>'" style="cursor: pointer;" class="hover-bg-light">
+                                    <?php $urgentSupplier = ($u['supplier'] ?? '') === $statsUnknownMarker ? $statsT('statistics.ui.unknown') : (string)($u['supplier'] ?? ''); ?>
+                                    <tr onclick="window.location='../index.php?id=<?= $u['id'] ?>'" class="hover-bg-light stats-row-clickable">
                                         <td class="font-bold text-primary"><?= $u['guarantee_number'] ?></td>
-                                        <td><?= $u['supplier'] ?></td>
-                                        <td class="text-danger font-bold text-left"><?= number_format($u['amount']) ?> ر.س</td>
+                                        <td><?= htmlspecialchars($urgentSupplier) ?></td>
+                                        <td class="text-danger font-bold text-left"><?= number_format($u['amount']) ?> <span data-i18n="statistics.modal.txt_0272fe37">ر.س</span></td>
                                     </tr>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
@@ -903,7 +1036,7 @@ try {
         <div class="card mb-6">
             <div class="card-header border-bottom">
                 <h3 class="card-title text-lg flex items-center gap-2">
-                    <i data-lucide="history" style="width: 18px;"></i>
+                    <i data-lucide="history" class="icon-18"></i>
                     تحليل أداء الدفعات الأخيرة
                 </h3>
             </div>
@@ -911,12 +1044,12 @@ try {
                 <table class="table table-striped">
                     <thead>
                         <tr>
-                            <th>الدفعة</th>
-                            <th>تاريخ الاستيراد</th>
-                            <th class="text-center">إجمالي الأسطر</th>
-                            <th class="text-center">جديد</th>
-                            <th class="text-center">تكرار</th>
-                            <th class="text-center">نسبة التكرار</th>
+                            <th data-i18n="statistics.ui.txt_01d3b689">الدفعة</th>
+                            <th data-i18n="statistics.ui.txt_ea30108c">تاريخ الاستيراد</th>
+                            <th class="text-center" data-i18n="statistics.ui.txt_ffc03537">إجمالي الأسطر</th>
+                            <th class="text-center" data-i18n="statistics.ui.txt_89465c43">جديد</th>
+                            <th class="text-center" data-i18n="statistics.ui.txt_000838e1">تكرار</th>
+                            <th class="text-center" data-i18n="statistics.ui.txt_1cafd4c0">نسبة التكرار</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -924,10 +1057,14 @@ try {
                             $recurRate = $batch['total_rows'] > 0 
                                 ? round(($batch['recurring_items'] / $batch['total_rows']) * 100, 1) 
                                 : 0;
+                            $batchName = (string)($batch['batch_name'] ?? '');
+                            if (str_starts_with($batchName, $statsBatchPrefixMarker)) {
+                                $batchName = $statsT('statistics.ui.batch_prefix', [], 'Batch') . ' ' . substr($batchName, strlen($statsBatchPrefixMarker));
+                            }
                         ?>
                         <tr>
-                            <td class="font-bold text-primary"><?= htmlspecialchars($batch['batch_name']) ?></td>
-                            <td class="text-secondary text-sm"><?= date('Y-m-d H:i', strtotime($batch['import_date'])) ?></td>
+                            <td class="font-bold text-primary"><?= htmlspecialchars($batchName) ?></td>
+                            <td class="text-secondary text-sm"><?= date($statsDateTimeFormat, strtotime((string)$batch['import_date'])) ?></td>
                             <td class="text-center font-bold"><?= formatNumber($batch['total_rows']) ?></td>
                             <td class="text-center"><span class="badge badge-success-light">+<?= formatNumber($batch['new_items']) ?></span></td>
                             <td class="text-center"><span class="badge badge-info-light">↻ <?= formatNumber($batch['recurring_items']) ?></span></td>
@@ -946,16 +1083,17 @@ try {
             <!-- Top Recurring Assets -->
             <div class="card">
                 <div class="card-header border-bottom">
-                    <h3 class="card-title text-base">الأصول الأكثر نشاطاً</h3>
+                    <h3 class="card-title text-base" data-i18n="statistics.ui.txt_11b06774">الأصول الأكثر نشاطاً</h3>
                 </div>
                 <div class="card-body p-0">
                      <table class="table">
-                        <thead><tr><th>رقم الضمان</th><th>المورد</th><th class="text-center">الظهور</th></tr></thead>
+                        <thead><tr><th data-i18n="statistics.ui.table.guarantee_number">رقم الضمان</th><th data-i18n="statistics.ui.table.supplier">المورد</th><th class="text-center" data-i18n="statistics.ui.txt_ea30108c">الظهور</th></tr></thead>
                         <tbody>
                             <?php foreach ($topRecurring as $item): ?>
+                            <?php $topRecurringSupplier = ($item['supplier'] ?? '') === $statsUnknownMarker ? $statsT('statistics.ui.unknown') : (string)($item['supplier'] ?? ''); ?>
                             <tr>
                                 <td class="font-mono text-primary font-bold dir-ltr text-right"><?= htmlspecialchars($item['guarantee_number']) ?></td>
-                                <td class="text-sm text-truncate" style="max-width: 150px;"><?= htmlspecialchars($item['supplier']) ?></td>
+                                <td class="text-sm text-truncate stats-truncate-150"><?= htmlspecialchars($topRecurringSupplier) ?></td>
                                 <td class="text-center font-bold"><?= $item['occurrence_count'] ?></td>
                             </tr>
                             <?php endforeach; ?>
@@ -967,11 +1105,11 @@ try {
             <!-- Top Suppliers -->
             <div class="card">
                 <div class="card-header border-bottom">
-                    <h3 class="card-title text-base">أهم الموردين</h3>
+                    <h3 class="card-title text-base" data-i18n="statistics.ui.txt_00189cf3">أهم الموردين</h3>
                 </div>
                 <div class="card-body p-0">
                     <table class="table">
-                        <thead><tr><th>المورد</th><th class="text-center">عدد الضمانات</th></tr></thead>
+                        <thead><tr><th data-i18n="statistics.ui.table.supplier">المورد</th><th class="text-center" data-i18n="statistics.ui.txt_3af03abc">عدد الضمانات</th></tr></thead>
                         <tbody>
                             <?php foreach (array_slice($topSuppliers, 0, 5) as $supplier): ?>
                             <tr>
@@ -988,16 +1126,16 @@ try {
         <!-- 4. Bank Performance (Full Width) -->
         <div class="card mb-6">
             <div class="card-header border-bottom">
-                <h3 class="card-title text-lg">الأداء المالي للبنوك</h3>
+                <h3 class="card-title text-lg" data-i18n="statistics.ui.txt_201f020c">الأداء المالي للبنوك</h3>
             </div>
             <div class="card-body p-0">
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>البنك</th>
-                            <th class="text-center">العدد</th>
-                            <th class="text-center">إجمالي المبالغ</th>
-                            <th class="text-center">التمديدات</th>
+                            <th data-i18n="statistics.ui.table.bank">البنك</th>
+                            <th class="text-center" data-i18n="statistics.ui.txt_a82c1974">العدد</th>
+                            <th class="text-center" data-i18n="statistics.ui.txt_f111102c">إجمالي المبالغ</th>
+                            <th class="text-center" data-i18n="statistics.ui.txt_87ce526e">التمديدات</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1005,7 +1143,7 @@ try {
                         <tr>
                             <td class="font-bold"><?= htmlspecialchars($bank['bank_name']) ?></td>
                             <td class="text-center font-bold"><?= formatNumber($bank['count']) ?></td>
-                            <td class="text-center dir-ltr"><?= formatMoney($bank['total_amount']) ?></td>
+                            <td class="text-center dir-ltr"><?= formatMoney($bank['total_amount'], $statsCurrencyShort) ?></td>
                             <td class="text-center">
                                 <?php if ($bank['extensions'] > 0): ?>
                                 <span class="badge badge-warning-light"><?= $bank['extensions'] ?></span>
@@ -1025,7 +1163,7 @@ try {
             <!-- Stable Suppliers -->
             <div class="card">
                 <div class="card-header border-bottom bg-success-light bg-opacity-10">
-                    <h3 class="card-title text-base text-success">الأكثر استقراراً</h3>
+                    <h3 class="card-title text-base text-success" data-i18n="statistics.ui.txt_1cd203a0">الأكثر استقراراً</h3>
                 </div>
                 <div class="card-body p-0">
                     <table class="table table-sm">
@@ -1044,7 +1182,7 @@ try {
             <!-- Risky Suppliers -->
             <div class="card">
                 <div class="card-header border-bottom bg-danger-light bg-opacity-10">
-                    <h3 class="card-title text-base text-danger">الأكثر مخاطرة</h3>
+                    <h3 class="card-title text-base text-danger" data-i18n="statistics.ui.txt_e4b16f00">الأكثر مخاطرة</h3>
                 </div>
                 <div class="card-body p-0">
                     <table class="table table-sm">
@@ -1063,7 +1201,7 @@ try {
             <!-- Challenging Suppliers -->
             <div class="card">
                 <div class="card-header border-bottom bg-warning-light bg-opacity-10">
-                    <h3 class="card-title text-base text-warning">تحديات المطابقة</h3>
+                    <h3 class="card-title text-base text-warning" data-i18n="statistics.ui.txt_e1419cda">تحديات المطابقة</h3>
                 </div>
                 <div class="card-body p-0">
                     <table class="table table-sm">
@@ -1087,30 +1225,30 @@ try {
         <div class="grid-3 mb-4">
             <div class="metric-mini-card">
                 <div class="text-2xl font-bold text-primary mb-1"><?= formatNumber($uniqueCounts['suppliers']) ?></div>
-                <div class="text-xs text-muted">موردين فريدين</div>
+                <div class="text-xs text-muted" data-i18n="statistics.ui.txt_cebe9795">موردين فريدين</div>
             </div>
             <div class="metric-mini-card">
                 <div class="text-2xl font-bold text-primary mb-1"><?= formatNumber($uniqueCounts['banks']) ?></div>
-                <div class="text-xs text-muted">بنوك فريدة</div>
+                <div class="text-xs text-muted" data-i18n="statistics.ui.txt_82e7dd40">بنوك فريدة</div>
             </div>
             <div class="metric-mini-card">
                 <div class="text-2xl font-bold text-info mb-1"><?= formatNumber($exclusiveSuppliers) ?></div>
-                <div class="text-xs text-muted">موردين حصريين (بنك واحد)</div>
+                <div class="text-xs text-muted" data-i18n="statistics.ui.txt_0bea7126">موردين حصريين (بنك واحد)</div>
             </div>
         </div>
         
         <div class="card mb-6">
             <div class="card-header border-bottom">
-                <h3 class="card-title text-base">أقوى التحالفات (بنك-مورد)</h3>
+                <h3 class="card-title text-base" data-i18n="statistics.ui.txt_3b4f0335">أقوى التحالفات (بنك-مورد)</h3>
             </div>
             <div class="card-body p-0">
                 <table class="table">
-                    <thead><tr><th>المورد</th><th class="text-center">العلاقة</th><th>البنك</th><th class="text-center">عدد الضمانات</th></tr></thead>
+                    <thead><tr><th data-i18n="statistics.ui.table.supplier">المورد</th><th class="text-center" data-i18n="statistics.ui.txt_299b35a3">العلاقة</th><th data-i18n="statistics.ui.table.bank">البنك</th><th class="text-center" data-i18n="statistics.ui.txt_3af03abc">عدد الضمانات</th></tr></thead>
                     <tbody>
                         <?php foreach ($bankSupplierPairs as $pair): ?>
                         <tr>
                             <td class="text-sm"><?= htmlspecialchars($pair['supplier']) ?></td>
-                            <td class="text-center text-muted"><i data-lucide="arrow-left-right" style="width: 14px;"></i></td>
+                            <td class="text-center text-muted"><i data-lucide="arrow-left-right" class="icon-14"></i></td>
                             <td class="text-sm"><?= htmlspecialchars($pair['bank']) ?></td>
                             <td class="text-center font-bold"><?= $pair['count'] ?></td>
                         </tr>
@@ -1125,19 +1263,19 @@ try {
             <!-- Quality Metrics -->
             <div class="card">
                 <div class="card-header border-bottom">
-                    <h3 class="card-title text-base">مؤشرات الجودة</h3>
+                    <h3 class="card-title text-base" data-i18n="statistics.ui.txt_0a0e4ca6">مؤشرات الجودة</h3>
                 </div>
                 <div class="card-body">
                     <div class="flex items-center justify-between mb-4 pb-4 border-bottom border-light">
-                        <span class="text-secondary">First Time Right</span>
+                        <span class="text-secondary" data-i18n="statistics.ui.first_time_right">First Time Right</span>
                         <span class="text-2xl font-bold text-success"><?= $firstTimeRight ?>%</span>
                     </div>
                     <div class="flex items-center justify-between mb-4 pb-4 border-bottom border-light">
-                        <span class="text-secondary">التدخل اليدوي</span>
+                        <span class="text-secondary" data-i18n="statistics.ui.txt_94d5de07">التدخل اليدوي</span>
                         <span class="text-2xl font-bold <?= $manualIntervention > 20 ? 'text-danger' : 'text-primary' ?>"><?= $manualIntervention ?>%</span>
                     </div>
                     <div class="flex items-center justify-between">
-                        <span class="text-secondary">متوسط وقت المعالجة</span>
+                        <span class="text-secondary" data-i18n="statistics.ui.txt_97be717b">متوسط وقت المعالجة</span>
                         <span class="text-2xl font-bold text-primary"><?= round($timing['avg_hours'] ?? 0, 1) ?>h</span>
                     </div>
                 </div>
@@ -1146,31 +1284,31 @@ try {
             <!-- Expiry Analysis (Redesigned) -->
             <div class="card">
                 <div class="card-header border-bottom">
-                    <h3 class="card-title text-base">تحليل الانتهاءات القادمة</h3>
+                    <h3 class="card-title text-base" data-i18n="statistics.ui.txt_b5f93ff7">تحليل الانتهاءات القادمة</h3>
                 </div>
                 <div class="card-body">
                     <div class="grid-2 gap-4 mb-4">
                         <div class="p-3 bg-danger-light bg-opacity-10 rounded text-center border border-danger-light">
                             <div class="text-2xl font-bold text-danger mb-1"><?= formatNumber($expiration['next_30']) ?></div>
-                            <div class="text-xs font-bold text-danger">عاجل (30 يوم)</div>
+                            <div class="text-xs font-bold text-danger" data-i18n="statistics.ui.txt_7b5a2556">عاجل (30 يوم)</div>
                         </div>
                         <div class="p-3 bg-warning-light bg-opacity-10 rounded text-center border border-warning-light">
                             <div class="text-2xl font-bold text-warning mb-1"><?= formatNumber($expiration['next_90']) ?></div>
-                            <div class="text-xs font-bold text-warning">قريب (90 يوم)</div>
+                            <div class="text-xs font-bold text-warning" data-i18n="statistics.ui.txt_c6856c99">قريب (90 يوم)</div>
                         </div>
                     </div>
                     
                     <?php if (!empty($expirationByMonth)): ?>
                     <div>
-                        <h4 class="text-xs font-bold text-secondary mb-3 border-bottom pb-2">توقعات الأشهر القادمة (أشهر الذروة)</h4>
+                        <h4 class="text-xs font-bold text-secondary mb-3 border-bottom pb-2" data-i18n="statistics.ui.txt_a4a1e3ce">توقعات الأشهر القادمة (أشهر الذروة)</h4>
                         <div class="space-y-3">
                             <?php foreach (array_slice($expirationByMonth, 0, 3) as $month): ?>
                             <div class="flex items-center text-sm">
                                 <div class="w-24 font-mono text-secondary text-xs"><?= $month['month'] ?></div>
                                 <div class="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden mx-2">
-                                    <div class="h-full bg-primary" style="width: <?= min(($month['count'] / ($peakMonth['count'] ?: 1)) * 100, 100) ?>%"></div>
+                                    <div class="h-full bg-primary stats-month-load-bar" data-bar-width="<?= min(($month['count'] / ($peakMonth['count'] ?: 1)) * 100, 100) ?>"></div>
                                 </div>
-                                <span class="badge badge-neutral-light"><?= $month['count'] ?> ضمان</span>
+                                <span class="badge badge-neutral-light"><?= $month['count'] ?> <span data-i18n="statistics.ui.table.guarantee">ضمان</span></span>
                             </div>
                             <?php endforeach; ?>
                         </div>
@@ -1186,39 +1324,39 @@ try {
         <!-- ============================================ -->
         <div class="card mb-6">
             <div class="card-header border-bottom flex-between">
-                <h3 class="card-title text-lg">أداء الذكاء الاصطناعي والأتمتة</h3>
-                <span class="badge badge-primary-light">AI Confidence: <?= $mlAccuracy ?>%</span>
+                <h3 class="card-title text-lg" data-i18n="statistics.ui.txt_d8a6505d">أداء الذكاء الاصطناعي والأتمتة</h3>
+                <span class="badge badge-primary-light"><span data-i18n="statistics.ui.ai_confidence">AI Confidence:</span> <?= $mlAccuracy ?>%</span>
             </div>
             <div class="card-body">
                 <div class="grid-4 gap-4 mb-6">
                     <div class="text-center p-3 border rounded bg-secondary-light">
                         <div class="text-3xl font-bold text-primary mb-1"><?= $aiMatchRate ?>%</div>
-                        <div class="text-sm text-secondary">نسبة المطابقة الآلية</div>
+                        <div class="text-sm text-secondary" data-i18n="statistics.ui.txt_3ab37258">نسبة المطابقة الآلية</div>
                     </div>
                     <div class="text-center p-3 border rounded bg-secondary-light">
                         <div class="text-3xl font-bold text-success mb-1"><?= formatNumber($autoMatchEvents) ?></div>
-                        <div class="text-sm text-secondary">عمليات دمج تلقائي</div>
+                        <div class="text-sm text-secondary" data-i18n="statistics.ui.txt_1c9063d3">عمليات دمج تلقائي</div>
                     </div>
                     <div class="text-center p-3 border rounded bg-secondary-light">
                         <div class="text-3xl font-bold text-info mb-1"><?= formatNumber($mlStats['confirmations']) ?></div>
-                        <div class="text-sm text-secondary">أنماط تم تعلمها</div>
+                        <div class="text-sm text-secondary" data-i18n="statistics.ui.txt_683cbfbc">أنماط تم تعلمها</div>
                     </div>
                     <div class="text-center p-3 border rounded bg-secondary-light">
                         <div class="text-3xl font-bold text-warning mb-1"><?= $timeSaved ?>h</div>
-                        <div class="text-sm text-secondary">وقت تم توفيره</div>
+                        <div class="text-sm text-secondary" data-i18n="statistics.ui.txt_4aba8222">وقت تم توفيره</div>
                     </div>
                 </div>
 
                 <div class="grid-2 gap-6">
                     <!-- Learned Patterns -->
                     <div>
-                        <h4 class="font-bold text-sm mb-3 text-secondary">أكثر الأنماط المؤكدة (Verified Patterns)</h4>
+                        <h4 class="font-bold text-sm mb-3 text-secondary" data-i18n="statistics.ui.txt_f67daced">أكثر الأنماط المؤكدة (Verified Patterns)</h4>
                         <table class="table table-sm border">
-                            <thead><tr><th>النص الأصلي</th><th>الاسم الرسمي</th><th class="text-center">تكرار</th></tr></thead>
+                            <thead><tr><th data-i18n="statistics.ui.txt_503e56ad">النص الأصلي</th><th data-i18n="statistics.ui.txt_5ced8856">الاسم الرسمي</th><th class="text-center" data-i18n="statistics.ui.txt_000838e1">تكرار</th></tr></thead>
                             <tbody>
                                 <?php foreach ($confirmedPatterns as $p): ?>
                                 <tr>
-                                    <td class="text-xs text-muted truncate" style="max-width: 150px;"><?= htmlspecialchars($p['raw_supplier_name']) ?></td>
+                                    <td class="text-xs text-muted truncate stats-truncate-150"><?= htmlspecialchars($p['raw_supplier_name']) ?></td>
                                     <td class="text-xs font-bold"><?= htmlspecialchars($p['official_name']) ?></td>
                                     <td class="text-center"><span class="badge badge-success-light"><?= $p['count'] ?></span></td>
                                 </tr>
@@ -1229,13 +1367,13 @@ try {
 
                     <!-- Rejected Patterns -->
                     <div>
-                        <h4 class="font-bold text-sm mb-3 text-secondary">أنماط تم رفضها (False Positives)</h4>
+                        <h4 class="font-bold text-sm mb-3 text-secondary" data-i18n="statistics.ui.txt_a5334b5c">أنماط تم رفضها (False Positives)</h4>
                         <table class="table table-sm border">
-                            <thead><tr><th>النص الأصلي</th><th>الاقتراح المرفوض</th><th class="text-center">تكرار</th></tr></thead>
+                            <thead><tr><th data-i18n="statistics.ui.txt_503e56ad">النص الأصلي</th><th data-i18n="statistics.ui.txt_bb78450f">الاقتراح المرفوض</th><th class="text-center" data-i18n="statistics.ui.txt_000838e1">تكرار</th></tr></thead>
                             <tbody>
                                 <?php foreach ($rejectedPatterns as $p): ?>
                                 <tr>
-                                    <td class="text-xs text-muted truncate" style="max-width: 150px;"><?= htmlspecialchars($p['raw_supplier_name']) ?></td>
+                                    <td class="text-xs text-muted truncate stats-truncate-150"><?= htmlspecialchars($p['raw_supplier_name']) ?></td>
                                     <td class="text-xs text-danger"><?= htmlspecialchars($p['official_name']) ?></td>
                                     <td class="text-center"><span class="badge badge-danger-light"><?= $p['count'] ?></span></td>
                                 </tr>
@@ -1255,8 +1393,8 @@ try {
         <div class="card mb-6">
             <div class="card-header border-bottom">
                 <h3 class="card-title text-lg flex items-center gap-2">
-                    <i data-lucide="calendar-range" style="width: 18px;"></i>
-                    ضغط الانتهاء المتوقع (12 شهر القادمة)
+                    <i data-lucide="calendar-range" class="icon-18"></i>
+                    <span data-i18n="statistics.ui.section.expiry_pressure_12m">ضغط الانتهاء المتوقع (12 شهر القادمة)</span>
                 </h3>
             </div>
             <div class="card-body">
@@ -1264,25 +1402,21 @@ try {
                     <?php 
                     $maxCount = 1;
                     foreach ($expirationByMonth as $m) $maxCount = max($maxCount, $m['count']);
-                    
-                    // Month map for Arabic
-                    $arMonths = [
-                        '01'=>'يناير','02'=>'فبراير','03'=>'مارس','04'=>'أبريل','05'=>'مايو','06'=>'يونيو',
-                        '07'=>'يوليو','08'=>'أغسطس','09'=>'سبتمبر','10'=>'أكتوبر','11'=>'نوفمبر','12'=>'ديسمبر'
-                    ];
 
                     foreach ($expirationByMonth as $month): 
                         $isPeak = ($peakMonth['month'] ?? '') === $month['month'];
                         $percentage = ($month['count'] / $maxCount) * 100;
                         $mPart = substr($month['month'], 5, 2);
                         $yPart = substr($month['month'], 2, 2);
-                        $mDisplay = ($arMonths[$mPart] ?? $mPart) . " " . $yPart;
+                        $monthLabelKey = $statsMonthKeyMap[$mPart] ?? '';
+                        $monthLabel = $monthLabelKey !== '' ? $statsT($monthLabelKey, [], $mPart) : $mPart;
+                        $mDisplay = $monthLabel . ' ' . $yPart;
                     ?>
-                    <div class="month-stat-card <?= $isPeak ? 'is-peak' : '' ?>" style="padding: 8px 4px; min-height: 70px;">
-                        <div class="month-stat-bar" style="height: <?= $percentage ?>%"></div>
+                    <div class="month-stat-card stats-month-card <?= $isPeak ? 'is-peak' : '' ?>">
+                        <div class="month-stat-bar stats-month-column" data-bar-height="<?= $percentage ?>"></div>
                         <div class="month-stat-content">
-                            <div class="text-xs text-muted mb-1" style="font-size: 9px; line-height: 1;"><?= $mDisplay ?></div>
-                            <div class="text-base font-bold <?= $isPeak ? 'text-danger' : 'text-primary' ?>" style="font-size: 14px;"><?= $month['count'] ?></div>
+                            <div class="text-xs text-muted mb-1 stats-month-label"><?= $mDisplay ?></div>
+                            <div class="text-base font-bold stats-month-value <?= $isPeak ? 'text-danger' : 'text-primary' ?>"><?= $month['count'] ?></div>
                         </div>
                     </div>
                     <?php endforeach; ?>
@@ -1294,36 +1428,36 @@ try {
             <!-- 1. Time Trends -->
             <div class="card">
                 <div class="card-header border-bottom">
-                    <h3 class="card-title text-base">أنماط الوقت والنشاط</h3>
+                    <h3 class="card-title text-base" data-i18n="statistics.ui.txt_6347effc">أنماط الوقت والنشاط</h3>
                 </div>
                 <div class="card-body">
                     <div class="flex items-center justify-between mb-4 pb-4 border-bottom border-light">
                         <div>
-                            <div class="text-sm text-secondary mb-1">ساعة الذروة</div>
+                            <div class="text-sm text-secondary mb-1" data-i18n="statistics.ui.txt_639a60dc">ساعة الذروة</div>
                             <div class="text-2xl font-bold text-primary"><?= $peakHour['hour'] ?? '00' ?>:00</div>
                         </div>
                         <div class="text-right">
-                            <div class="text-xs text-muted">عدد العمليات</div>
+                            <div class="text-xs text-muted" data-i18n="statistics.ui.txt_2cbbc5ba">عدد العمليات</div>
                             <div class="font-bold"><?= formatNumber($peakHour['count'] ?? 0) ?></div>
                         </div>
                     </div>
                     <div class="flex items-center justify-between mb-4 pb-4 border-bottom border-light">
                         <div>
-                            <div class="text-sm text-secondary mb-1">اليوم الأكثر نشاطاً</div>
-                            <div class="text-2xl font-bold text-primary"><?= $busiestDay['weekday'] ?? '-' ?></div>
+                            <div class="text-sm text-secondary mb-1" data-i18n="statistics.ui.txt_d6372313">اليوم الأكثر نشاطاً</div>
+                            <div class="text-2xl font-bold text-primary"><?= htmlspecialchars($busiestDayLabel) ?></div>
                         </div>
                         <div class="text-right">
-                            <div class="text-xs text-muted">عدد العمليات</div>
+                            <div class="text-xs text-muted" data-i18n="statistics.ui.txt_2cbbc5ba">عدد العمليات</div>
                             <div class="font-bold"><?= formatNumber($busiestDay['count'] ?? 0) ?></div>
                         </div>
                     </div>
                     <div>
-                        <div class="text-sm text-secondary mb-2">النمو الأسبوعي</div>
+                        <div class="text-sm text-secondary mb-2" data-i18n="statistics.ui.txt_cc1a11a4">النمو الأسبوعي</div>
                         <div class="flex items-center gap-2">
                             <span class="text-3xl font-bold <?= $trendPercent >= 0 ? 'text-success' : 'text-danger' ?>">
                                 <?= $trendDirection ?>
                             </span>
-                            <span class="text-xs text-muted">(مقارنة بالأسبوع الماضي)</span>
+                            <span class="text-xs text-muted" data-i18n="statistics.ui.txt_075b9ecc">(مقارنة بالأسبوع الماضي)</span>
                         </div>
                     </div>
                 </div>
@@ -1332,15 +1466,16 @@ try {
             <!-- 2. Types Distribution (Restored) -->
             <div class="card">
                 <div class="card-header border-bottom">
-                    <h3 class="card-title text-base">توزيع أنواع الضمانات</h3>
+                    <h3 class="card-title text-base" data-i18n="statistics.ui.txt_88b1d3a1">توزيع أنواع الضمانات</h3>
                 </div>
                 <div class="card-body p-0">
                     <table class="table">
-                        <thead><tr><th>النوع</th><th class="text-center">العدد</th></tr></thead>
+                        <thead><tr><th data-i18n="statistics.ui.table.type">النوع</th><th class="text-center" data-i18n="statistics.ui.txt_a82c1974">العدد</th></tr></thead>
                         <tbody>
                             <?php foreach ($typeDistribution as $type): ?>
+                            <?php $typeLabel = isset($type['type']) && $type['type'] !== '' ? (string)$type['type'] : $statsT('statistics.ui.unknown'); ?>
                             <tr>
-                                <td class="text-sm"><?= htmlspecialchars($type['type'] ?? 'غير محدد') ?></td>
+                                <td class="text-sm"><?= htmlspecialchars($typeLabel) ?></td>
                                 <td class="text-center font-bold"><?= formatNumber($type['count']) ?></td>
                             </tr>
                             <?php endforeach; ?>
@@ -1352,21 +1487,25 @@ try {
             <!-- 3. Financial Correlation -->
             <div class="card">
                 <div class="card-header border-bottom">
-                    <h3 class="card-title text-base">تحليل المبالغ والتمديد</h3>
+                    <h3 class="card-title text-base" data-i18n="statistics.ui.txt_7e11865b">تحليل المبالغ والتمديد</h3>
                 </div>
                 <div class="card-body p-0">
                     <table class="table">
                         <thead>
                             <tr>
-                                <th>الفئة</th>
-                                <th class="text-center">العدد</th>
-                                <th class="text-center">تمديد</th>
+                                <th data-i18n="statistics.ui.txt_59de6a8f">الفئة</th>
+                                <th class="text-center" data-i18n="statistics.ui.txt_a82c1974">العدد</th>
+                                <th class="text-center" data-i18n="statistics.ui.table.extend">تمديد</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($amountCorrelation as $row): ?>
+                            <?php
+                            $rangeKey = $statsAmountRangeKeyMap[(string)($row['range'] ?? '')] ?? null;
+                            $rangeLabel = $rangeKey !== null ? $statsT($rangeKey, [], (string)($row['range'] ?? '')) : (string)($row['range'] ?? '');
+                            ?>
                             <tr>
-                                <td class="text-sm font-bold truncate"><?= $row['range'] ?></td>
+                                <td class="text-sm font-bold truncate"><?= htmlspecialchars($rangeLabel) ?></td>
                                 <td class="text-center text-secondary"><?= formatNumber($row['total']) ?></td>
                                 <td class="text-center">
                                     <span class="badge <?= $row['ext_rate'] > 50 ? 'badge-warning-light' : 'badge-neutral' ?>">
@@ -1383,10 +1522,22 @@ try {
 
     </div>
 
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Lucide Icons (local, CSP-safe) -->
+    <script src="../public/js/vendor/lucide.min.js"></script>
     <script>
-        lucide.createIcons();
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+        }
+
+        document.querySelectorAll('[data-bar-width]').forEach((el) => {
+            const width = Number(el.dataset.barWidth || 0);
+            el.style.setProperty('--bar-width', `${Math.max(0, Math.min(100, width))}%`);
+        });
+
+        document.querySelectorAll('[data-bar-height]').forEach((el) => {
+            const height = Number(el.dataset.barHeight || 0);
+            el.style.setProperty('--bar-height', `${Math.max(0, Math.min(100, height))}%`);
+        });
     </script>
 </body>
 </html>

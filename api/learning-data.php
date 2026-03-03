@@ -9,43 +9,29 @@ wbgl_api_require_login();
 try {
     $db = Database::connect();
 
-    // 1. Fetch Confirmations (Aggregated)
-    $stmt = $db->query("
-        SELECT 
-            MIN(lc.id) as id,
-            lc.raw_supplier_name as pattern,
-            lc.supplier_id,
-            s.official_name,
-            lc.matched_anchor,
-            COUNT(*) as count,
-            MAX(lc.updated_at) as updated_at
-        FROM learning_confirmations lc
-        LEFT JOIN suppliers s ON lc.supplier_id = s.id
-        WHERE lc.action = 'confirm'
-        GROUP BY lc.raw_supplier_name, lc.supplier_id
-        ORDER BY updated_at DESC
-        LIMIT 100
-    ");
-    $confirmations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $fetchAggregated = static function (PDO $db, string $action): array {
+        $stmt = $db->prepare("
+            SELECT
+                MIN(lc.id) as id,
+                lc.raw_supplier_name as pattern,
+                lc.supplier_id,
+                MAX(s.official_name) as official_name,
+                MAX(lc.matched_anchor) as matched_anchor,
+                COUNT(*) as count,
+                MAX(lc.updated_at) as updated_at
+            FROM learning_confirmations lc
+            LEFT JOIN suppliers s ON lc.supplier_id = s.id
+            WHERE lc.action = :action
+            GROUP BY lc.raw_supplier_name, lc.supplier_id
+            ORDER BY MAX(lc.updated_at) DESC
+            LIMIT 100
+        ");
+        $stmt->execute(['action' => $action]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    };
 
-    // 2. Fetch Rejections (Aggregated)
-    $stmt = $db->query("
-        SELECT 
-            MIN(lc.id) as id,
-            lc.raw_supplier_name as pattern,
-            lc.supplier_id,
-            s.official_name,
-            lc.matched_anchor,
-            COUNT(*) as count,
-            MAX(lc.updated_at) as updated_at
-        FROM learning_confirmations lc
-        LEFT JOIN suppliers s ON lc.supplier_id = s.id
-        WHERE lc.action = 'reject'
-        GROUP BY lc.raw_supplier_name, lc.supplier_id
-        ORDER BY updated_at DESC
-        LIMIT 100
-    ");
-    $rejections = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $confirmations = $fetchAggregated($db, 'confirm');
+    $rejections = $fetchAggregated($db, 'reject');
 
     echo json_encode([
         'success' => true,

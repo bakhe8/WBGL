@@ -15,7 +15,10 @@ use App\Support\Input;
 use App\Support\Logger;
 
 header('Content-Type: application/json; charset=utf-8');
-wbgl_api_require_login();
+wbgl_api_require_permission('guarantee_save');
+
+$policyContext = null;
+$surface = null;
 
 try {
     // Get POST data
@@ -31,13 +34,58 @@ try {
     $currentIndex = Input::int($input, 'current_index', 1) ?? 1;
     
     if (!$guaranteeId) {
-        echo json_encode(['success' => false, 'error' => 'guarantee_id is required']);
+        echo json_encode([
+            'success' => false,
+            'error' => 'guarantee_id is required',
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
+
+    wbgl_api_require_guarantee_visibility((int)$guaranteeId);
     
     $db = Database::connect();
+    $context = wbgl_api_policy_surface_for_guarantee($db, (int)$guaranteeId);
+    $policyContext = $context['policy'];
+    $surface = $context['surface'];
+    $resolveCurrentStep = static function (PDO $db, int $guaranteeId): string {
+        $stepStmt = $db->prepare('SELECT workflow_step FROM guarantee_decisions WHERE guarantee_id = ? LIMIT 1');
+        $stepStmt->execute([$guaranteeId]);
+        return (string)($stepStmt->fetchColumn() ?: 'unknown');
+    };
+
+    if (!($surface['can_execute_actions'] ?? false)) {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Permission Denied',
+            'message' => 'لا يمكن تنفيذ الحفظ على هذا السجل في حالته الحالية.',
+            'required_permission' => 'guarantee_save',
+            'current_step' => $resolveCurrentStep($db, (int)$guaranteeId),
+            'reason_code' => 'SURFACE_NOT_GRANTED_CAN_EXECUTE_ACTIONS',
+            'policy' => $policyContext,
+            'surface' => $surface,
+            'reasons' => $policyContext['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     $guaranteeRepo = new GuaranteeRepository($db);
     $currentGuarantee = $guaranteeRepo->find($guaranteeId);
+    if (!$currentGuarantee) {
+        http_response_code(404);
+        echo json_encode([
+            'success' => false,
+            'error' => 'guarantee_not_found',
+            'message' => 'السجل غير موجود.',
+            'policy' => $policyContext,
+            'surface' => $surface,
+            'reasons' => $policyContext['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     $decidedBy = Input::string($input, 'decided_by', wbgl_api_current_user_display());
 
     $policy = GuaranteeMutationPolicyService::evaluate(
@@ -47,11 +95,18 @@ try {
         $decidedBy
     );
     if (!$policy['allowed']) {
-        http_response_code(400);
+        http_response_code(403);
         echo json_encode([
             'success' => false,
             'error' => 'released_read_only',
             'message' => $policy['reason'],
+            'required_permission' => 'guarantee_save',
+            'current_step' => $resolveCurrentStep($db, (int)$guaranteeId),
+            'reason_code' => 'MUTATION_POLICY_DENIED',
+            'policy' => $policyContext,
+            'surface' => $surface,
+            'reasons' => $policyContext['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -249,8 +304,15 @@ try {
                     'success' => false,
                     'error' => 'creation_failed',
                     'message' => 'فشل إنشاء المورد تلقائياً: ' . $e->getMessage(),
-                    'supplier_name' => $supplierName
-                ]);
+                    'supplier_name' => $supplierName,
+                    'required_permission' => 'guarantee_save',
+                    'current_step' => $resolveCurrentStep($db, (int)$guaranteeId),
+                    'reason_code' => 'AUTO_SUPPLIER_CREATE_FAILED',
+                    'policy' => $policyContext,
+                    'surface' => $surface,
+                    'reasons' => $policyContext['reasons'] ?? [],
+                    'request_id' => wbgl_api_request_id(),
+                ], JSON_UNESCAPED_UNICODE);
                 exit;
             }
         }
@@ -276,8 +338,15 @@ try {
             'success' => false, 
             'error' => 'Missing required fields', 
             'message' => 'حقول مطلوبة مفقودة: ' . implode(', ', $missing),
-            'missing_fields' => $missing
-        ]);
+            'missing_fields' => $missing,
+            'required_permission' => 'guarantee_save',
+            'current_step' => $resolveCurrentStep($db, (int)$guaranteeId),
+            'reason_code' => 'MISSING_REQUIRED_FIELDS',
+            'policy' => $policyContext,
+            'surface' => $surface,
+            'reasons' => $policyContext['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
     
@@ -345,8 +414,15 @@ try {
             'success' => false, 
             'error' => 'bank_required',
             'message' => 'لم يتم تحديد البنك - يجب مطابقة البنك تلقائياً أولاً. يرجى التأكد من وجود البنك في قاعدة البيانات.',
-            'details' => 'Bank ID is missing from guarantee_decisions'
-        ]);
+            'details' => 'Bank ID is missing from guarantee_decisions',
+            'required_permission' => 'guarantee_save',
+            'current_step' => $resolveCurrentStep($db, (int)$guaranteeId),
+            'reason_code' => 'BANK_REQUIRED_FOR_DECISION',
+            'policy' => $policyContext,
+            'surface' => $surface,
+            'reasons' => $policyContext['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -581,12 +657,16 @@ try {
         $response = [
             'success' => true,
             'finished' => true,
-            'message' => 'تم الانتهاء من جميع السجلات'
+            'message' => 'تم الانتهاء من جميع السجلات',
+            'policy' => $policyContext,
+            'surface' => $surface,
+            'reasons' => $policyContext['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
         ];
         if (!empty($meta)) {
             $response['meta'] = $meta;
         }
-        echo json_encode($response);
+        echo json_encode($response, JSON_UNESCAPED_UNICODE);
         exit;
     }
     
@@ -644,14 +724,25 @@ try {
         'record' => $record,
         'banks' => $banks,
         'currentIndex' => $nextNavInfo['currentIndex'],
-        'totalRecords' => $nextNavInfo['totalRecords']
+        'totalRecords' => $nextNavInfo['totalRecords'],
+        'policy' => $policyContext,
+        'surface' => $surface,
+        'reasons' => $policyContext['reasons'] ?? [],
+        'request_id' => wbgl_api_request_id(),
     ];
     if (!empty($meta)) {
         $response['meta'] = $meta;
     }
-    echo json_encode($response);
+    echo json_encode($response, JSON_UNESCAPED_UNICODE);
     
 } catch (\Exception $e) {
     http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    echo json_encode([
+        'success' => false,
+        'error' => $e->getMessage(),
+        'policy' => $policyContext,
+        'surface' => $surface,
+        'reasons' => is_array($policyContext) ? ($policyContext['reasons'] ?? []) : [],
+        'request_id' => wbgl_api_request_id(),
+    ], JSON_UNESCAPED_UNICODE);
 }

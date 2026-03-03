@@ -20,6 +20,10 @@ final class EnterpriseApiFlowsTest extends TestCase
     private static int $operatorUserId = 0;
     private static string $operatorUsername = '';
     private static string $operatorToken = '';
+    private static int $supervisorUserId = 0;
+    private static string $supervisorToken = '';
+    private static int $approverUserId = 0;
+    private static string $approverToken = '';
 
     /** @var int[] */
     private static array $undoRequestIds = [];
@@ -29,6 +33,8 @@ final class EnterpriseApiFlowsTest extends TestCase
     private static array $printGuaranteeIds = [];
     /** @var int[] */
     private static array $fixtureGuaranteeIds = [];
+    /** @var string[] */
+    private static array $batchImportSources = [];
 
     public static function setUpBeforeClass(): void
     {
@@ -69,10 +75,33 @@ final class EnterpriseApiFlowsTest extends TestCase
             }
 
             if (!empty(self::$fixtureGuaranteeIds)) {
-                $in = implode(',', array_fill(0, count(self::$fixtureGuaranteeIds), '?'));
                 $fixtureIds = array_values(array_unique(self::$fixtureGuaranteeIds));
+                $in = implode(',', array_fill(0, count($fixtureIds), '?'));
 
                 $stmt = self::$db->prepare("DELETE FROM undo_requests WHERE guarantee_id IN ({$in})");
+                $stmt->execute($fixtureIds);
+
+                $attachmentStmt = self::$db->prepare("SELECT file_path FROM guarantee_attachments WHERE guarantee_id IN ({$in})");
+                $attachmentStmt->execute($fixtureIds);
+                $attachmentRows = $attachmentStmt->fetchAll(PDO::FETCH_ASSOC);
+                if (is_array($attachmentRows)) {
+                    foreach ($attachmentRows as $attachmentRow) {
+                        $relativePath = trim((string)($attachmentRow['file_path'] ?? ''));
+                        if ($relativePath === '') {
+                            continue;
+                        }
+                        $normalizedRelativePath = str_replace('/', DIRECTORY_SEPARATOR, ltrim($relativePath, '/\\'));
+                        $absolutePath = self::$projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . $normalizedRelativePath;
+                        if (is_file($absolutePath)) {
+                            @unlink($absolutePath);
+                        }
+                    }
+                }
+
+                $stmt = self::$db->prepare("DELETE FROM guarantee_attachments WHERE guarantee_id IN ({$in})");
+                $stmt->execute($fixtureIds);
+
+                $stmt = self::$db->prepare("DELETE FROM guarantee_notes WHERE guarantee_id IN ({$in})");
                 $stmt->execute($fixtureIds);
 
                 $stmt = self::$db->prepare("DELETE FROM guarantee_history WHERE guarantee_id IN ({$in})");
@@ -83,9 +112,37 @@ final class EnterpriseApiFlowsTest extends TestCase
 
                 $stmt = self::$db->prepare("DELETE FROM guarantees WHERE id IN ({$in})");
                 $stmt->execute($fixtureIds);
+
+                $fixtureTargetIds = array_map(static fn(int $id): string => (string)$id, $fixtureIds);
+                $stmt = self::$db->prepare("DELETE FROM break_glass_events WHERE target_type = 'guarantee' AND target_id IN ({$in})");
+                $stmt->execute($fixtureTargetIds);
+            }
+
+            if (!empty(self::$batchImportSources)) {
+                $sources = array_values(array_unique(self::$batchImportSources));
+                $in = implode(',', array_fill(0, count($sources), '?'));
+
+                $stmt = self::$db->prepare("DELETE FROM batch_audit_events WHERE import_source IN ({$in})");
+                $stmt->execute($sources);
+
+                $stmt = self::$db->prepare("DELETE FROM batch_metadata WHERE import_source IN ({$in})");
+                $stmt->execute($sources);
+
+                $stmt = self::$db->prepare("DELETE FROM break_glass_events WHERE target_type = 'batch' AND target_id IN ({$in})");
+                $stmt->execute($sources);
             }
 
             self::$db->exec("DELETE FROM api_access_tokens WHERE token_name LIKE 'integration-%'");
+
+            if (self::$approverUserId > 0) {
+                $stmt = self::$db->prepare('DELETE FROM users WHERE id = ?');
+                $stmt->execute([self::$approverUserId]);
+            }
+
+            if (self::$supervisorUserId > 0) {
+                $stmt = self::$db->prepare('DELETE FROM users WHERE id = ?');
+                $stmt->execute([self::$supervisorUserId]);
+            }
 
             if (self::$operatorUserId > 0) {
                 $stmt = self::$db->prepare('DELETE FROM users WHERE id = ?');
@@ -95,6 +152,8 @@ final class EnterpriseApiFlowsTest extends TestCase
 
         self::$adminToken = '';
         self::$operatorToken = '';
+        self::$supervisorToken = '';
+        self::$approverToken = '';
         self::stopServer();
     }
 
@@ -188,6 +247,191 @@ final class EnterpriseApiFlowsTest extends TestCase
         $this->assertStringContainsString('record-form-section', $response['body']);
     }
 
+    public function testGetRecordReadPathDoesNotPersistAutoMatches(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $fixture = self::createGetRecordReadOnlyFixture();
+        $guaranteeId = (int)$fixture['guarantee_id'];
+        $recordIndex = self::indexForGuaranteeInAllFilter($guaranteeId);
+
+        $decisionBefore = self::decisionSnapshotForGuarantee($guaranteeId);
+        $historyCountBefore = self::historyCountForGuarantee($guaranteeId);
+        $this->assertNotEmpty($decisionBefore, 'Fixture must include a visible pending decision row.');
+        $this->assertNull($decisionBefore['supplier_id'] ?? null, 'Fixture must start without supplier decision.');
+        $this->assertNull($decisionBefore['bank_id'] ?? null, 'Fixture must start without bank decision.');
+        $this->assertSame('pending', (string)($decisionBefore['status'] ?? ''), 'Fixture must start in pending status.');
+        $this->assertSame(0, $historyCountBefore, 'Fixture must start without history rows.');
+
+        $response = self::request(
+            'GET',
+            '/api/get-record.php?index=' . $recordIndex . '&filter=all',
+            [
+                'Accept: text/html',
+                'Authorization: Bearer ' . self::$adminToken,
+            ]
+        );
+
+        $this->assertSame(200, $response['status'], $response['body']);
+        $this->assertStringContainsString('record-form-section', $response['body']);
+
+        $decisionAfter = self::decisionSnapshotForGuarantee($guaranteeId);
+        $historyCountAfter = self::historyCountForGuarantee($guaranteeId);
+
+        $this->assertSame($decisionBefore['supplier_id'] ?? null, $decisionAfter['supplier_id'] ?? null, 'GET /api/get-record.php must not mutate supplier decision.');
+        $this->assertSame($decisionBefore['bank_id'] ?? null, $decisionAfter['bank_id'] ?? null, 'GET /api/get-record.php must not mutate bank decision.');
+        $this->assertSame((string)($decisionBefore['status'] ?? ''), (string)($decisionAfter['status'] ?? ''), 'GET /api/get-record.php must not mutate decision status.');
+        $this->assertSame((string)($decisionBefore['decision_source'] ?? ''), (string)($decisionAfter['decision_source'] ?? ''), 'GET /api/get-record.php must not mutate decision source.');
+        $this->assertSame($historyCountBefore, $historyCountAfter, 'GET /api/get-record.php must not write timeline events.');
+    }
+
+    public function testGetRecordOutOfScopeActionableFilterReturnsEmptyStateWithoutSensitiveFields(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $fixture = self::createHiddenWriteFixture();
+        $guaranteeId = (int)$fixture['guarantee_id'];
+        $guaranteeNumber = self::guaranteeNumberForGuarantee($guaranteeId);
+        $rawData = self::rawDataForGuarantee($guaranteeId);
+
+        $response = self::request(
+            'GET',
+            '/api/get-record.php?index=1&filter=actionable&stage=draft',
+            [
+                'Accept: text/html',
+                'Authorization: Bearer ' . self::$supervisorToken,
+            ]
+        );
+
+        $this->assertSame(200, $response['status'], $response['body']);
+        $this->assertStringContainsString('record-form-section', $response['body']);
+        $this->assertStringContainsString('decision-card-empty-state', $response['body']);
+        $this->assertStringContainsString('data-surface-can-view-record="0"', $response['body']);
+        $this->assertStringContainsString('data-surface-can-view-preview="0"', $response['body']);
+
+        $this->assertStringNotContainsString($guaranteeNumber, $response['body']);
+        $this->assertStringNotContainsString('data-record-id="' . $guaranteeId . '"', $response['body']);
+
+        $supplierName = trim((string)($rawData['supplier'] ?? ''));
+        if ($supplierName !== '') {
+            $this->assertStringNotContainsString($supplierName, $response['body']);
+        }
+
+        $contractNumber = trim((string)($rawData['contract_number'] ?? ''));
+        if ($contractNumber !== '') {
+            $this->assertStringNotContainsString($contractNumber, $response['body']);
+        }
+    }
+
+    public function testSaveAndNextRejectsInvisibleGuaranteeAndPreventsWrites(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $fixture = self::createHiddenWriteFixture();
+        $guaranteeId = (int)$fixture['guarantee_id'];
+        $supplierId = (int)$fixture['supplier_id'];
+        $supplierName = (string)$fixture['supplier_name'];
+
+        $decisionBefore = self::decisionSnapshotForGuarantee($guaranteeId);
+        $historyCountBefore = self::historyCountForGuarantee($guaranteeId);
+
+        $response = self::request('POST', '/api/save-and-next.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$supervisorToken,
+        ], [
+            'guarantee_id' => $guaranteeId,
+            'supplier_id' => $supplierId,
+            'supplier_name' => $supplierName,
+            'status_filter' => 'all',
+        ]);
+
+        $this->assertSame(403, $response['status'], $response['body']);
+        $payload = json_decode($response['body'], true);
+        $this->assertIsArray($payload);
+        $this->assertSame(false, $payload['success'] ?? null, $response['body']);
+        $this->assertSame('Permission Denied', (string)($payload['error'] ?? ''), $response['body']);
+
+        $decisionAfter = self::decisionSnapshotForGuarantee($guaranteeId);
+        $historyCountAfter = self::historyCountForGuarantee($guaranteeId);
+
+        $this->assertSame($decisionBefore['supplier_id'] ?? null, $decisionAfter['supplier_id'] ?? null, 'Invisible save-and-next must not mutate supplier_id.');
+        $this->assertSame($decisionBefore['bank_id'] ?? null, $decisionAfter['bank_id'] ?? null, 'Invisible save-and-next must not mutate bank_id.');
+        $this->assertSame((string)($decisionBefore['status'] ?? ''), (string)($decisionAfter['status'] ?? ''), 'Invisible save-and-next must not mutate status.');
+        $this->assertSame((string)($decisionBefore['decision_source'] ?? ''), (string)($decisionAfter['decision_source'] ?? ''), 'Invisible save-and-next must not mutate decision source.');
+        $this->assertSame($historyCountBefore, $historyCountAfter, 'Invisible save-and-next must not write timeline events.');
+    }
+
+    public function testSaveNoteRejectsInvisibleGuaranteeAndPreventsWrites(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $fixture = self::createHiddenWriteFixture();
+        $guaranteeId = (int)$fixture['guarantee_id'];
+        $notesBefore = self::notesCountForGuarantee($guaranteeId);
+
+        $response = self::request('POST', '/api/save-note.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$supervisorToken,
+        ], [
+            'guarantee_id' => $guaranteeId,
+            'content' => 'Hidden record note should be denied',
+        ]);
+
+        $this->assertSame(403, $response['status'], $response['body']);
+        $payload = json_decode($response['body'], true);
+        $this->assertIsArray($payload);
+        $this->assertSame(false, $payload['success'] ?? null, $response['body']);
+        $this->assertSame('Permission Denied', (string)($payload['error'] ?? ''), $response['body']);
+
+        $notesAfter = self::notesCountForGuarantee($guaranteeId);
+        $this->assertSame($notesBefore, $notesAfter, 'Invisible save-note must not insert notes.');
+    }
+
+    public function testUploadAttachmentRejectsInvisibleGuaranteeAndPreventsWrites(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $fixture = self::createHiddenWriteFixture();
+        $guaranteeId = (int)$fixture['guarantee_id'];
+        $attachmentsBefore = self::attachmentsCountForGuarantee($guaranteeId);
+
+        $response = self::requestMultipart(
+            '/api/upload-attachment.php',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$supervisorToken,
+            ],
+            [
+                'guarantee_id' => (string)$guaranteeId,
+            ],
+            [
+                'field_name' => 'file',
+                'filename' => 'hidden-visibility.txt',
+                'content_type' => 'text/plain',
+                'content' => 'hidden fixture upload payload',
+            ]
+        );
+
+        $this->assertSame(403, $response['status'], $response['body']);
+        $payload = json_decode($response['body'], true);
+        $this->assertIsArray($payload);
+        $this->assertSame(false, $payload['success'] ?? null, $response['body']);
+        $this->assertSame('Permission Denied', (string)($payload['error'] ?? ''), $response['body']);
+
+        $attachmentsAfter = self::attachmentsCountForGuarantee($guaranteeId);
+        $this->assertSame($attachmentsBefore, $attachmentsAfter, 'Invisible upload-attachment must not insert attachments.');
+    }
+
     public function testUndoGovernanceWorkflowEnforcesDualControl(): void
     {
         $guaranteeId = self::requireGuaranteeIdWithDecision();
@@ -266,21 +510,26 @@ final class EnterpriseApiFlowsTest extends TestCase
         $newAmount = (float)$fixture['new_amount'];
 
         $extend = self::request('POST', '/api/extend.php', [
-            'Accept: text/html',
+            'Accept: application/json',
             'Authorization: Bearer ' . self::$adminToken,
         ], [
             'guarantee_id' => $guaranteeId,
             'decided_by' => 'integration_admin',
         ]);
         $this->assertSame(200, $extend['status'], $extend['body']);
-        $this->assertStringContainsString('record-form-section', $extend['body']);
+        $extendPayload = json_decode($extend['body'], true);
+        $this->assertIsArray($extendPayload);
+        $this->assertTrue((bool)($extendPayload['success'] ?? false), $extend['body']);
+        $this->assertNull($extendPayload['error'] ?? null, $extend['body']);
+        $this->assertNotSame('', trim((string)($extendPayload['request_id'] ?? '')), $extend['body']);
+        $this->assertStringContainsString('record-form-section', (string)($extendPayload['data']['html'] ?? ''));
 
         $rawAfterExtend = self::rawDataForGuarantee($guaranteeId);
         $expectedExpiry = date('Y-m-d', strtotime($oldExpiry . ' +1 year'));
         $this->assertSame($expectedExpiry, (string)($rawAfterExtend['expiry_date'] ?? ''), json_encode($rawAfterExtend, JSON_UNESCAPED_UNICODE));
 
         $reduce = self::request('POST', '/api/reduce.php', [
-            'Accept: text/html',
+            'Accept: application/json',
             'Authorization: Bearer ' . self::$adminToken,
         ], [
             'guarantee_id' => $guaranteeId,
@@ -288,13 +537,18 @@ final class EnterpriseApiFlowsTest extends TestCase
             'decided_by' => 'integration_admin',
         ]);
         $this->assertSame(200, $reduce['status'], $reduce['body']);
-        $this->assertStringContainsString('record-form-section', $reduce['body']);
+        $reducePayload = json_decode($reduce['body'], true);
+        $this->assertIsArray($reducePayload);
+        $this->assertTrue((bool)($reducePayload['success'] ?? false), $reduce['body']);
+        $this->assertNull($reducePayload['error'] ?? null, $reduce['body']);
+        $this->assertNotSame('', trim((string)($reducePayload['request_id'] ?? '')), $reduce['body']);
+        $this->assertStringContainsString('record-form-section', (string)($reducePayload['data']['html'] ?? ''));
 
         $rawAfterReduce = self::rawDataForGuarantee($guaranteeId);
         $this->assertSame((float)$newAmount, (float)($rawAfterReduce['amount'] ?? 0.0), json_encode($rawAfterReduce, JSON_UNESCAPED_UNICODE));
 
         $release = self::request('POST', '/api/release.php', [
-            'Accept: text/html',
+            'Accept: application/json',
             'Authorization: Bearer ' . self::$adminToken,
         ], [
             'guarantee_id' => $guaranteeId,
@@ -302,7 +556,12 @@ final class EnterpriseApiFlowsTest extends TestCase
             'decided_by' => 'integration_admin',
         ]);
         $this->assertSame(200, $release['status'], $release['body']);
-        $this->assertStringContainsString('خطاب الإفراج', $release['body']);
+        $releasePayload = json_decode($release['body'], true);
+        $this->assertIsArray($releasePayload);
+        $this->assertTrue((bool)($releasePayload['success'] ?? false), $release['body']);
+        $this->assertNull($releasePayload['error'] ?? null, $release['body']);
+        $this->assertNotSame('', trim((string)($releasePayload['request_id'] ?? '')), $release['body']);
+        $this->assertStringContainsString('خطاب الإفراج', (string)($releasePayload['data']['html'] ?? ''));
 
         $releaseDecision = self::decisionStateForGuarantee($guaranteeId);
         $this->assertSame('released', (string)($releaseDecision['status'] ?? ''));
@@ -371,6 +630,161 @@ final class EnterpriseApiFlowsTest extends TestCase
             $this->assertSame(1, (int)($row['is_anchor'] ?? 0), json_encode($row, JSON_UNESCAPED_UNICODE));
             $this->assertNotSame('', trim((string)($row['anchor_snapshot'] ?? '')), json_encode($row, JSON_UNESCAPED_UNICODE));
         }
+    }
+
+    public function testSaveImportUsesUnifiedEnvelope(): void
+    {
+        $valid = self::request('POST', '/api/save-import.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'import_id' => 'integration-envelope-check',
+            'guarantees' => [],
+        ]);
+        $this->assertSame(200, $valid['status'], $valid['body']);
+        $validPayload = json_decode($valid['body'], true);
+        $this->assertIsArray($validPayload);
+        $this->assertTrue((bool)($validPayload['success'] ?? false), $valid['body']);
+        $this->assertNull($validPayload['error'] ?? null, $valid['body']);
+        $this->assertNotSame('', trim((string)($validPayload['request_id'] ?? '')), $valid['body']);
+        $this->assertSame(0, (int)($validPayload['data']['saved_count'] ?? -1), $valid['body']);
+
+        $invalid = self::request('POST', '/api/save-import.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'guarantees' => [],
+        ]);
+        $this->assertSame(400, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertSame('Invalid Input Data', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
+    }
+
+    public function testReopenEndpointAllowsSupervisorWithoutManageData(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $guaranteeId = self::createReleasedGuaranteeFixture();
+        $response = self::request('POST', '/api/reopen.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$supervisorToken,
+        ], [
+            'guarantee_id' => $guaranteeId,
+            'reason' => '[integration] supervisor reopen request',
+        ]);
+
+        $this->assertSame(200, $response['status'], $response['body']);
+        $payload = json_decode($response['body'], true);
+        $this->assertIsArray($payload);
+        $this->assertTrue((bool)($payload['success'] ?? false), $response['body']);
+        $this->assertNotSame('break_glass_direct', (string)($payload['mode'] ?? ''));
+
+        if ((string)($payload['mode'] ?? '') === 'undo_request') {
+            $requestId = (int)($payload['request_id'] ?? 0);
+            $this->assertGreaterThan(0, $requestId, $response['body']);
+            self::$undoRequestIds[] = $requestId;
+        }
+    }
+
+    public function testBreakGlassReopenEnforcesTicketAndRecordsAuditForApprover(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $guaranteeId = self::createReleasedGuaranteeFixture();
+        $withoutTicket = self::request('POST', '/api/reopen.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$approverToken,
+        ], [
+            'guarantee_id' => $guaranteeId,
+            'break_glass' => [
+                'enabled' => true,
+                'reason' => 'Critical correction window',
+            ],
+        ]);
+        $this->assertSame(400, $withoutTicket['status'], $withoutTicket['body']);
+        $withoutTicketPayload = json_decode($withoutTicket['body'], true);
+        $this->assertIsArray($withoutTicketPayload);
+        $this->assertStringContainsString('رقم التذكرة/الحادث مطلوب', (string)($withoutTicketPayload['error'] ?? ''));
+
+        $beforeCount = self::countBreakGlassEventsForTarget('reopen_guarantee_direct', 'guarantee', (string)$guaranteeId);
+        $ticketRef = 'INC-' . bin2hex(random_bytes(4));
+        $withTicket = self::request('POST', '/api/reopen.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$approverToken,
+        ], [
+            'guarantee_id' => $guaranteeId,
+            'break_glass' => [
+                'enabled' => true,
+                'reason' => 'Critical correction window',
+                'ticket_ref' => $ticketRef,
+                'ttl_minutes' => 45,
+            ],
+        ]);
+        $this->assertSame(200, $withTicket['status'], $withTicket['body']);
+        $withTicketPayload = json_decode($withTicket['body'], true);
+        $this->assertIsArray($withTicketPayload);
+        $this->assertTrue((bool)($withTicketPayload['success'] ?? false), $withTicket['body']);
+        $this->assertSame('break_glass_direct', (string)($withTicketPayload['mode'] ?? ''));
+
+        $event = self::latestBreakGlassEventForTarget('reopen_guarantee_direct', 'guarantee', (string)$guaranteeId);
+        $this->assertIsArray($event);
+        $this->assertSame($ticketRef, (string)($event['ticket_ref'] ?? ''));
+        $this->assertSame('Critical correction window', (string)($event['reason'] ?? ''));
+        $afterCount = self::countBreakGlassEventsForTarget('reopen_guarantee_direct', 'guarantee', (string)$guaranteeId);
+        $this->assertSame($beforeCount + 1, $afterCount);
+
+        $decision = self::decisionStateForGuarantee($guaranteeId);
+        $this->assertSame('pending', (string)($decision['status'] ?? ''), json_encode($decision, JSON_UNESCAPED_UNICODE));
+        $this->assertSame(0, (int)($decision['is_locked'] ?? 1), json_encode($decision, JSON_UNESCAPED_UNICODE));
+    }
+
+    public function testBatchReopenAllowsSupervisorWithoutManageDataAndRecordsAudit(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $importSource = 'integration_batch_reopen_' . bin2hex(random_bytes(4));
+        self::$batchImportSources[] = $importSource;
+
+        $stmt = self::$db->prepare(
+            "INSERT INTO batch_metadata (import_source, status, created_at) VALUES (?, 'completed', CURRENT_TIMESTAMP)"
+        );
+        $stmt->execute([$importSource]);
+
+        $response = self::request('POST', '/api/batches.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$supervisorToken,
+        ], [
+            'action' => 'reopen',
+            'import_source' => $importSource,
+            'reason' => '[integration] supervisor batch reopen',
+        ]);
+        $this->assertSame(200, $response['status'], $response['body']);
+        $payload = json_decode($response['body'], true);
+        $this->assertIsArray($payload);
+        $this->assertTrue((bool)($payload['success'] ?? false), $response['body']);
+
+        $statusStmt = self::$db->prepare('SELECT status FROM batch_metadata WHERE import_source = ? LIMIT 1');
+        $statusStmt->execute([$importSource]);
+        $this->assertSame('active', (string)$statusStmt->fetchColumn());
+
+        $auditStmt = self::$db->prepare(
+            'SELECT event_type, reason FROM batch_audit_events WHERE import_source = ? ORDER BY id DESC LIMIT 1'
+        );
+        $auditStmt->execute([$importSource]);
+        $audit = $auditStmt->fetch(PDO::FETCH_ASSOC);
+        $this->assertIsArray($audit);
+        $this->assertSame('batch_reopened', (string)($audit['event_type'] ?? ''), json_encode($audit, JSON_UNESCAPED_UNICODE));
+        $this->assertSame('[integration] supervisor batch reopen', (string)($audit['reason'] ?? ''), json_encode($audit, JSON_UNESCAPED_UNICODE));
     }
 
     public function testSchedulerDeadLetterResolveFlow(): void
@@ -548,32 +962,80 @@ final class EnterpriseApiFlowsTest extends TestCase
         $adminIssued = ApiTokenService::issueToken(self::$adminUserId, 'integration-admin-token', 2, ['*']);
         self::$adminToken = (string)$adminIssued['token'];
 
-        $roleId = self::$db->query("SELECT id FROM roles WHERE slug = 'data_entry' LIMIT 1")->fetchColumn();
-        if (!$roleId) {
-            $roleId = self::$db->query("SELECT id FROM roles WHERE slug = 'developer' LIMIT 1")->fetchColumn();
-        }
-        if (!$roleId) {
-            throw new RuntimeException('No role found for integration operator bootstrap');
+        $operator = self::provisionUserForRole('data_entry', 'integration_operator_', 'Integration Operator', 'integration-operator-token');
+        self::$operatorUserId = (int)$operator['user_id'];
+        self::$operatorUsername = (string)$operator['username'];
+        self::$operatorToken = (string)$operator['token'];
+
+        $supervisor = self::provisionUserForRole('supervisor', 'integration_supervisor_', 'Integration Supervisor', 'integration-supervisor-token');
+        self::$supervisorUserId = (int)$supervisor['user_id'];
+        self::$supervisorToken = (string)$supervisor['token'];
+
+        $approver = self::provisionUserForRole('approver', 'integration_approver_', 'Integration Approver', 'integration-approver-token');
+        self::$approverUserId = (int)$approver['user_id'];
+        self::$approverToken = (string)$approver['token'];
+    }
+
+    /**
+     * @return array{user_id:int,username:string,token:string}
+     */
+    private static function provisionUserForRole(
+        string $roleSlug,
+        string $usernamePrefix,
+        string $fullName,
+        string $tokenName
+    ): array {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
         }
 
-        self::$operatorUsername = 'integration_operator_' . bin2hex(random_bytes(4));
+        $roleId = self::resolveRoleId($roleSlug);
+        $username = $usernamePrefix . bin2hex(random_bytes(4));
+
         $stmt = self::$db->prepare(
             'INSERT INTO users (username, password_hash, full_name, email, role_id, preferred_language, preferred_theme, preferred_direction)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         );
         $stmt->execute([
-            self::$operatorUsername,
+            $username,
             password_hash('integration-pass', PASSWORD_DEFAULT),
-            'Integration Operator',
-            self::$operatorUsername . '@local.test',
-            (int)$roleId,
+            $fullName,
+            $username . '@local.test',
+            $roleId,
             'ar',
             'system',
             'auto',
         ]);
-        self::$operatorUserId = (int)self::$db->lastInsertId();
-        $operatorIssued = ApiTokenService::issueToken(self::$operatorUserId, 'integration-operator-token', 2, ['*']);
-        self::$operatorToken = (string)$operatorIssued['token'];
+
+        $userId = (int)self::$db->lastInsertId();
+        $issued = ApiTokenService::issueToken($userId, $tokenName, 2, ['*']);
+
+        return [
+            'user_id' => $userId,
+            'username' => $username,
+            'token' => (string)$issued['token'],
+        ];
+    }
+
+    private static function resolveRoleId(string $roleSlug): int
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $stmt = self::$db->prepare('SELECT id FROM roles WHERE slug = ? LIMIT 1');
+        $stmt->execute([$roleSlug]);
+        $roleId = $stmt->fetchColumn();
+        if ($roleId) {
+            return (int)$roleId;
+        }
+
+        $fallback = self::$db->query("SELECT id FROM roles WHERE slug = 'developer' LIMIT 1")->fetchColumn();
+        if ($fallback) {
+            return (int)$fallback;
+        }
+
+        throw new RuntimeException('No role found for integration bootstrap: ' . $roleSlug);
     }
 
     private static function startServer(): void
@@ -682,6 +1144,59 @@ final class EnterpriseApiFlowsTest extends TestCase
             'status' => $status,
             'headers' => $responseHeaders,
             'body' => is_string($body) ? $body : '',
+        ];
+    }
+
+    /**
+     * @param array<string,string> $fields
+     * @param array{field_name:string,filename:string,content_type:string,content:string} $file
+     * @return array{status:int,headers:array<int,string>,body:string}
+     */
+    private static function requestMultipart(string $path, array $headers, array $fields, array $file): array
+    {
+        $url = self::$baseUrl . $path;
+        $boundary = '----wbgl' . bin2hex(random_bytes(12));
+
+        $body = '';
+        foreach ($fields as $name => $value) {
+            $body .= '--' . $boundary . "\r\n";
+            $body .= 'Content-Disposition: form-data; name="' . $name . '"' . "\r\n\r\n";
+            $body .= $value . "\r\n";
+        }
+
+        $fieldName = $file['field_name'];
+        $filename = $file['filename'];
+        $contentType = $file['content_type'];
+        $fileContent = $file['content'];
+
+        $body .= '--' . $boundary . "\r\n";
+        $body .= 'Content-Disposition: form-data; name="' . $fieldName . '"; filename="' . $filename . '"' . "\r\n";
+        $body .= 'Content-Type: ' . $contentType . "\r\n\r\n";
+        $body .= $fileContent . "\r\n";
+        $body .= '--' . $boundary . "--\r\n";
+
+        $headerLines = $headers;
+        $headerLines[] = 'Content-Type: multipart/form-data; boundary=' . $boundary;
+        $headerLines[] = 'Content-Length: ' . strlen($body);
+
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => implode("\r\n", $headerLines),
+                'content' => $body,
+                'ignore_errors' => true,
+                'timeout' => 10,
+            ],
+        ]);
+
+        $responseBody = @file_get_contents($url, false, $context);
+        $responseHeaders = $http_response_header ?? [];
+        $status = self::extractHttpStatus($responseHeaders);
+
+        return [
+            'status' => $status,
+            'headers' => $responseHeaders,
+            'body' => is_string($responseBody) ? $responseBody : '',
         ];
     }
 
@@ -836,6 +1351,117 @@ final class EnterpriseApiFlowsTest extends TestCase
     }
 
     /**
+     * @return array{guarantee_id:int,guarantee_number:string}
+     */
+    private static function createGetRecordReadOnlyFixture(): array
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $bankRow = self::$db
+            ->query(
+                'SELECT b.id AS bank_id, a.alternative_name
+                 FROM banks b
+                 JOIN bank_alternative_names a ON a.bank_id = b.id
+                 ORDER BY a.id ASC
+                 LIMIT 1'
+            )
+            ->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($bankRow) || empty($bankRow['bank_id']) || trim((string)($bankRow['alternative_name'] ?? '')) === '') {
+            throw new RuntimeException('Read-only fixture requires at least one bank alternative name');
+        }
+
+        $adminMetaStmt = self::$db->prepare('SELECT username, full_name FROM users WHERE id = ? LIMIT 1');
+        $adminMetaStmt->execute([self::$adminUserId]);
+        $adminMeta = $adminMetaStmt->fetch(PDO::FETCH_ASSOC);
+        $importedBy = trim((string)($adminMeta['username'] ?? ''));
+        if ($importedBy === '') {
+            $importedBy = trim((string)($adminMeta['full_name'] ?? ''));
+        }
+        if ($importedBy === '') {
+            $importedBy = 'phpunit';
+        }
+
+        $guaranteeNumber = 'INT-GET-RO-' . bin2hex(random_bytes(6));
+        $rawData = json_encode([
+            'supplier' => 'Read Only Fixture Supplier ' . bin2hex(random_bytes(3)),
+            'bank' => (string)$bankRow['alternative_name'],
+            'amount' => 9450.25,
+            'contract_number' => 'INT-RO-C-' . bin2hex(random_bytes(3)),
+            'expiry_date' => date('Y-m-d', strtotime('+120 days')),
+            'issue_date' => date('Y-m-d', strtotime('-15 days')),
+            'type' => 'Initial',
+            'related_to' => 'contract',
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $stmt = self::$db->prepare(
+            'INSERT INTO guarantees
+                (guarantee_number, raw_data, import_source, imported_at, imported_by, normalized_supplier_name, is_test_data)
+             VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)'
+        );
+        $stmt->execute([
+            $guaranteeNumber,
+            $rawData,
+            'integration_flow',
+            $importedBy,
+            'read only fixture supplier',
+            0,
+        ]);
+
+        $guaranteeId = (int)self::$db->lastInsertId();
+        self::$fixtureGuaranteeIds[] = $guaranteeId;
+
+        $decidedBy = trim((string)($adminMeta['username'] ?? ''));
+        if ($decidedBy === '') {
+            $decidedBy = $importedBy;
+        }
+        $lastModifiedBy = trim((string)($adminMeta['full_name'] ?? ''));
+        if ($lastModifiedBy === '') {
+            $lastModifiedBy = $decidedBy;
+        }
+
+        $decisionStmt = self::$db->prepare(
+            "INSERT INTO guarantee_decisions
+                (guarantee_id, status, supplier_id, bank_id, decision_source, decided_by, last_modified_by, created_at, updated_at, workflow_step, signatures_received)
+             VALUES (?, 'pending', NULL, NULL, 'manual', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'draft', 0)"
+        );
+        $decisionStmt->execute([$guaranteeId, $decidedBy, $lastModifiedBy]);
+
+        return [
+            'guarantee_id' => $guaranteeId,
+            'guarantee_number' => $guaranteeNumber,
+        ];
+    }
+
+    private static function indexForGuaranteeInAllFilter(int $guaranteeId): int
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $conditions = '
+            FROM guarantees g
+            LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
+            WHERE g.id <= ?
+              AND (d.is_locked IS NULL OR d.is_locked = FALSE)
+        ';
+        if (\App\Support\Settings::getInstance()->isProductionMode()) {
+            $conditions .= ' AND g.is_test_data = 0';
+        }
+
+        $stmt = self::$db->prepare('SELECT COUNT(*) ' . $conditions);
+        $stmt->execute([$guaranteeId]);
+        $index = (int)$stmt->fetchColumn();
+
+        if ($index < 1) {
+            throw new RuntimeException('Could not resolve fixture index for get-record read-only test');
+        }
+
+        return $index;
+    }
+
+    /**
      * @return array<string,mixed>
      */
     private static function rawDataForGuarantee(int $guaranteeId): array
@@ -849,6 +1475,140 @@ final class EnterpriseApiFlowsTest extends TestCase
         $raw = (string)$stmt->fetchColumn();
         $decoded = json_decode($raw, true);
         return is_array($decoded) ? $decoded : [];
+    }
+
+    private static function guaranteeNumberForGuarantee(int $guaranteeId): string
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $stmt = self::$db->prepare('SELECT guarantee_number FROM guarantees WHERE id = ? LIMIT 1');
+        $stmt->execute([$guaranteeId]);
+        return (string)$stmt->fetchColumn();
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private static function decisionSnapshotForGuarantee(int $guaranteeId): array
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $stmt = self::$db->prepare(
+            'SELECT supplier_id, bank_id, status, decision_source
+             FROM guarantee_decisions
+             WHERE guarantee_id = ?
+             LIMIT 1'
+        );
+        $stmt->execute([$guaranteeId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : [];
+    }
+
+    private static function historyCountForGuarantee(int $guaranteeId): int
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $stmt = self::$db->prepare('SELECT COUNT(*) FROM guarantee_history WHERE guarantee_id = ?');
+        $stmt->execute([$guaranteeId]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * @return array{guarantee_id:int,supplier_id:int,supplier_name:string}
+     */
+    private static function createHiddenWriteFixture(): array
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $supplier = self::$db
+            ->query('SELECT id, official_name FROM suppliers ORDER BY id ASC LIMIT 1')
+            ->fetch(PDO::FETCH_ASSOC);
+        $bank = self::$db
+            ->query('SELECT id, arabic_name FROM banks ORDER BY id ASC LIMIT 1')
+            ->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($supplier) || !is_array($bank)) {
+            throw new RuntimeException('Hidden write fixture requires at least one supplier and one bank');
+        }
+
+        $supplierId = (int)($supplier['id'] ?? 0);
+        $supplierName = trim((string)($supplier['official_name'] ?? ''));
+        $bankId = (int)($bank['id'] ?? 0);
+        $bankName = trim((string)($bank['arabic_name'] ?? ''));
+        if ($supplierId <= 0 || $supplierName === '' || $bankId <= 0 || $bankName === '') {
+            throw new RuntimeException('Hidden write fixture could not resolve supplier/bank baseline');
+        }
+
+        $guaranteeNumber = 'INT-HIDDEN-WRITE-' . bin2hex(random_bytes(6));
+        $rawData = json_encode([
+            'supplier' => 'Hidden Write Fixture Supplier',
+            'bank' => $bankName,
+            'amount' => 7530.10,
+            'contract_number' => 'INT-HIDDEN-' . bin2hex(random_bytes(3)),
+            'expiry_date' => date('Y-m-d', strtotime('+75 days')),
+            'issue_date' => date('Y-m-d', strtotime('-10 days')),
+            'type' => 'Initial',
+            'related_to' => 'contract',
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $insertGuarantee = self::$db->prepare(
+            'INSERT INTO guarantees
+                (guarantee_number, raw_data, import_source, imported_at, imported_by, normalized_supplier_name, is_test_data)
+             VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)'
+        );
+        $insertGuarantee->execute([
+            $guaranteeNumber,
+            $rawData,
+            'integration_flow',
+            'hidden_fixture_actor',
+            'hidden write fixture supplier',
+            0,
+        ]);
+
+        $guaranteeId = (int)self::$db->lastInsertId();
+        self::$fixtureGuaranteeIds[] = $guaranteeId;
+
+        $insertDecision = self::$db->prepare(
+            "INSERT INTO guarantee_decisions
+                (guarantee_id, status, is_locked, supplier_id, bank_id, decision_source, decided_by, last_modified_by, created_at, updated_at, workflow_step, signatures_received)
+             VALUES (?, 'pending', FALSE, NULL, ?, 'manual', 'hidden_fixture_actor', 'hidden_fixture_actor', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'draft', 0)"
+        );
+        $insertDecision->execute([$guaranteeId, $bankId]);
+
+        return [
+            'guarantee_id' => $guaranteeId,
+            'supplier_id' => $supplierId,
+            'supplier_name' => $supplierName,
+        ];
+    }
+
+    private static function notesCountForGuarantee(int $guaranteeId): int
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $stmt = self::$db->prepare('SELECT COUNT(*) FROM guarantee_notes WHERE guarantee_id = ?');
+        $stmt->execute([$guaranteeId]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    private static function attachmentsCountForGuarantee(int $guaranteeId): int
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $stmt = self::$db->prepare('SELECT COUNT(*) FROM guarantee_attachments WHERE guarantee_id = ?');
+        $stmt->execute([$guaranteeId]);
+        return (int)$stmt->fetchColumn();
     }
 
     /**
@@ -889,5 +1649,68 @@ final class EnterpriseApiFlowsTest extends TestCase
         $stmt->execute([$guaranteeId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         return is_array($rows) ? $rows : [];
+    }
+
+    private static function createReleasedGuaranteeFixture(): int
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $fixture = self::createLifecycleFixture();
+        $guaranteeId = (int)$fixture['guarantee_id'];
+
+        $stmt = self::$db->prepare(
+            "UPDATE guarantee_decisions
+             SET status = 'released',
+                 is_locked = TRUE,
+                 locked_reason = 'released',
+                 last_modified_at = CURRENT_TIMESTAMP,
+                 last_modified_by = 'integration_admin'
+             WHERE guarantee_id = ?"
+        );
+        $stmt->execute([$guaranteeId]);
+
+        return $guaranteeId;
+    }
+
+    private static function countBreakGlassEventsForTarget(string $actionName, string $targetType, string $targetId): int
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $stmt = self::$db->prepare(
+            'SELECT COUNT(*)
+             FROM break_glass_events
+             WHERE action_name = ?
+               AND target_type = ?
+               AND target_id = ?'
+        );
+        $stmt->execute([$actionName, $targetType, $targetId]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function latestBreakGlassEventForTarget(string $actionName, string $targetType, string $targetId): ?array
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $stmt = self::$db->prepare(
+            'SELECT id, reason, ticket_ref, ttl_minutes, created_at
+             FROM break_glass_events
+             WHERE action_name = ?
+               AND target_type = ?
+               AND target_id = ?
+             ORDER BY id DESC
+             LIMIT 1'
+        );
+        $stmt->execute([$actionName, $targetType, $targetId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
     }
 }

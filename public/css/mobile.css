@@ -3,6 +3,10 @@
    Target: Width <= 768px (Mobile & Tablet Portrait)
    ═══════════════════════════════════════════════════════════════ */
 
+body.mobile-no-scroll {
+    overflow: hidden;
+}
+
 @media (max-width: 768px) {
 
     /* 1. Global Layout Stack */
@@ -24,8 +28,8 @@
         z-index: 999;
         /* Ensure it stays on top */
         justify-content: space-between;
-        background: #ffffff;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        background: var(--bg-card);
+        box-shadow: 0 1px 3px var(--theme-overlay-soft);
     }
 
     /* Hide text labels, show icons only */
@@ -46,13 +50,13 @@
         font-size: 18px;
         background: transparent !important;
         border: none !important;
-        color: #64748b;
+        color: var(--text-muted);
         border-radius: 50%;
     }
 
     .btn-global.active {
         color: var(--accent-primary);
-        background: rgba(59, 130, 246, 0.1) !important;
+        background: var(--theme-focus-ring-soft) !important;
     }
 
     /* 3. Sidebar (Off-Canvas Drawer - RIGHT for RTL) */
@@ -66,8 +70,8 @@
         max-width: 300px;
         z-index: 40;
         transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: -4px 0 15px rgba(0, 0, 0, 0.1);
-        background: #f8fafc;
+        box-shadow: -4px 0 15px var(--theme-overlay-medium);
+        background: var(--bg-secondary);
     }
 
     .sidebar.active {
@@ -86,9 +90,9 @@
         max-width: 320px;
         z-index: 40;
         transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
+        box-shadow: 4px 0 15px var(--theme-overlay-medium);
         display: flex;
-        background: #ffffff;
+        background: var(--bg-card);
     }
 
     .timeline-sidebar.active,
@@ -123,14 +127,14 @@
     }
 
     .mobile-toggle-btn:active {
-        background: rgba(0, 0, 0, 0.05);
+        background: var(--theme-overlay-soft);
     }
 
     /* 7. Overlay */
     .mobile-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--theme-overlay-backdrop);
         z-index: 30;
         opacity: 0;
         pointer-events: none;
@@ -152,7 +156,7 @@
 
     .fields-grid>.field-group:first-child {
         border-left: none;
-        border-bottom: 1px solid #e2e8f0;
+        border-bottom: 1px solid var(--border-primary);
         padding-left: 0;
         padding-bottom: 16px;
         margin-bottom: 16px;
@@ -166,7 +170,7 @@
         padding-bottom: 16px;
         height: auto;
         background: white;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--bg-body);
         margin-bottom: 16px;
         margin-top: 8px;
         /* Breathing room from sticky header */
@@ -230,6 +234,22 @@
         /* Slightly smaller font */
     }
 
+    .workflow-controls {
+        display: contents;
+        margin-inline-start: 0;
+    }
+
+    .workflow-stage-pill {
+        width: 100%;
+        justify-content: center;
+        min-height: 38px;
+    }
+
+    .workflow-action-btn {
+        width: 100%;
+        min-width: 0;
+    }
+
     .decision-card {
         padding: 12px !important;
     }
@@ -243,7 +263,7 @@
     .field-label {
         min-width: auto;
         font-size: 13px;
-        color: #64748b;
+        color: var(--text-muted);
         font-weight: 500;
     }
 
@@ -277,13 +297,13 @@
         background: white;
         padding: 10px;
         border-radius: 8px;
-        border: 1px solid #f1f5f9;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+        border: 1px solid var(--bg-body);
+        box-shadow: 0 1px 2px var(--theme-overlay-subtle);
     }
 
     .info-label {
         font-size: 11px;
-        color: #94a3b8;
+        color: var(--text-light);
     }
 
     .info-value {
@@ -292,9 +312,9 @@
     }
 
     /* 10. Letter Preview Scaling */
-    .letter-preview {
+    .letter-preview[data-guarantee-id] {
         padding: 8px;
-        background: #f1f5f9;
+        background: var(--preview-canvas-bg, var(--bg-body));
         overflow: hidden;
         border-radius: 8px;
         margin-top: 16px;
@@ -305,7 +325,9 @@
     }
 
     /* Force hide print button on mobile */
-    .print-icon-btn {
+    .print-icon-btn,
+    .btn-print-overlay,
+    .wbgl-unified-print-btn {
         display: none !important;
     }
 
@@ -315,7 +337,7 @@
         transform: scale(0.42);
         margin-bottom: -58%;
         height: auto;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 4px 6px -1px var(--theme-overlay-medium);
         margin-left: 0 !important;
         margin-right: 0 !important;
     }
@@ -327,3 +349,4 @@
         }
     }
 }
+

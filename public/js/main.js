@@ -1,4 +1,4 @@
-﻿
+
 // Toast Notification Helper (Unified)
 window.Toast = {
     show(message, type = 'info', duration = 3500) {
@@ -7,25 +7,11 @@ window.Toast = {
             const isRtl = (document.documentElement.getAttribute('dir') || 'rtl') === 'rtl';
             container = document.createElement('div');
             container.id = 'toast-container';
-            container.style.cssText = [
-                'position: fixed',
-                'top: 20px',
-                isRtl ? 'right: 20px' : 'left: 20px',
-                'z-index: 9999',
-                'display: flex',
-                'flex-direction: column',
-                'gap: 10px',
-                `direction: ${isRtl ? 'rtl' : 'ltr'}`
-            ].join(';');
+            container.className = `toast-container ${isRtl ? '' : 'toast-container--ltr'}`.trim();
+            container.setAttribute('dir', isRtl ? 'rtl' : 'ltr');
             document.body.appendChild(container);
         }
 
-        const colors = {
-            success: '#10b981',
-            error: '#ef4444',
-            warning: '#f59e0b',
-            info: '#3b82f6'
-        };
         const icons = {
             success: 'OK',
             error: 'ERR',
@@ -34,28 +20,9 @@ window.Toast = {
         };
 
         const toast = document.createElement('div');
-        const borderColor = colors[type] || colors.info;
-
         toast.setAttribute('role', 'status');
         toast.setAttribute('aria-live', 'polite');
-        toast.style.cssText = [
-            'background: #ffffff',
-            'color: #111827',
-            'padding: 12px 16px',
-            'border-radius: 10px',
-            'box-shadow: 0 10px 20px rgba(0,0,0,0.12)',
-            `border-inline-start: 4px solid ${borderColor}`,
-            'min-width: 240px',
-            'max-width: 420px',
-            'font-family: inherit',
-            'font-size: 14px',
-            'display: flex',
-            'align-items: center',
-            'gap: 8px',
-            'opacity: 0',
-            'transform: translateY(-8px)',
-            'transition: opacity 0.2s ease, transform 0.2s ease'
-        ].join(';');
+        toast.className = `toast toast--inline toast-${type || 'info'}`;
 
         const icon = icons[type] || icons.info;
         toast.textContent = `${icon}: ${message}`;
@@ -67,13 +34,11 @@ window.Toast = {
         container.appendChild(toast);
 
         requestAnimationFrame(() => {
-            toast.style.opacity = '1';
-            toast.style.transform = 'translateY(0)';
+            toast.classList.add('show');
         });
 
         setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateY(-8px)';
+            toast.classList.remove('show');
             setTimeout(() => toast.remove(), 200);
         }, duration);
     }
@@ -88,6 +53,13 @@ window.BglLogger = window.BglLogger || {
     warn: (...args) => { if (window.BGL_DEBUG) console.warn(...args); },
     error: (...args) => { console.error(...args); }
 };
+
+function wbglT(key, fallback, params) {
+    if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
+        return window.WBGLI18n.t(key, fallback || key, params || {});
+    }
+    return fallback || key;
+}
 
 function wbglCanHandleGlobalShortcut(event) {
     if (event.ctrlKey || event.metaKey || event.altKey) {
@@ -128,42 +100,33 @@ function wbglEnsureShortcutModal() {
         return modal;
     }
 
-    const t = (key, fallback) => window.WBGLI18n ? window.WBGLI18n.t(key, fallback) : fallback;
     modal = document.createElement('div');
     modal.id = 'wbgl-shortcuts-modal';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
-    modal.style.cssText = [
-        'display:none',
-        'position:fixed',
-        'inset:0',
-        'background:rgba(0,0,0,0.45)',
-        'z-index:11000',
-        'align-items:center',
-        'justify-content:center',
-        'padding:16px'
-    ].join(';');
+    modal.className = 'wbgl-shortcuts-overlay';
+    modal.hidden = true;
 
     modal.innerHTML = `
-        <div style="background:#fff;max-width:520px;width:100%;border-radius:14px;padding:20px;box-shadow:0 25px 50px rgba(0,0,0,0.25);">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                <h3 style="margin:0;font-size:18px;">${t('shortcuts.title', 'اختصارات النظام')}</h3>
-                <button type="button" id="wbgl-shortcuts-close" style="border:none;background:#f1f5f9;border-radius:8px;padding:6px 10px;cursor:pointer;">${t('shortcuts.close', 'إغلاق')}</button>
+        <div class="wbgl-shortcuts-dialog">
+            <div class="wbgl-shortcuts-dialog__header">
+                <h3 class="wbgl-shortcuts-dialog__title">${wbglT('shortcuts.title', '')}</h3>
+                <button type="button" id="wbgl-shortcuts-close" class="wbgl-shortcuts-dialog__close">${wbglT('shortcuts.close', '')}</button>
             </div>
-            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px 12px;font-size:14px;">
-                <code>G</code><span>${t('shortcuts.open_main', 'الانتقال إلى الرئيسية')}</span>
-                <code>B</code><span>${t('shortcuts.open_batches', 'فتح صفحة الدفعات')}</span>
-                <code>S</code><span>${t('shortcuts.open_settings', 'فتح الإعدادات')}</span>
-                <code>T</code><span>${t('shortcuts.open_stats', 'فتح الإحصائيات')}</span>
-                <code>/</code><span>${t('shortcuts.focus_search', 'تركيز البحث')}</span>
-                <code>?</code><span>${t('shortcuts.toggle_help', 'فتح/إغلاق نافذة الاختصارات')}</span>
+            <div class="wbgl-shortcuts-grid">
+                <code>G</code><span>${wbglT('shortcuts.open_main', '')}</span>
+                <code>B</code><span>${wbglT('shortcuts.open_batches', '')}</span>
+                <code>S</code><span>${wbglT('shortcuts.open_settings', '')}</span>
+                <code>T</code><span>${wbglT('shortcuts.open_stats', '')}</span>
+                <code>/</code><span>${wbglT('shortcuts.focus_search', '')}</span>
+                <code>?</code><span>${wbglT('shortcuts.toggle_help', '')}</span>
             </div>
         </div>
     `;
 
     modal.addEventListener('click', (event) => {
         if (event.target === modal) {
-            modal.style.display = 'none';
+            modal.hidden = true;
         }
     });
 
@@ -172,7 +135,7 @@ function wbglEnsureShortcutModal() {
     const closeBtn = document.getElementById('wbgl-shortcuts-close');
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
-            modal.style.display = 'none';
+            modal.hidden = true;
         });
     }
 
@@ -181,7 +144,7 @@ function wbglEnsureShortcutModal() {
 
 function wbglToggleShortcutsModal() {
     const modal = wbglEnsureShortcutModal();
-    modal.style.display = modal.style.display === 'flex' ? 'none' : 'flex';
+    modal.hidden = !modal.hidden;
 }
 
 function wbglBindGlobalShortcuts() {
@@ -243,19 +206,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         try {
                             const json = JSON.parse(txt);
                             if (json.success || json.status === 'success') {
-                                showToast('Import successful!', 'success');
+                                showToast(wbglT('common.ui.import_successful', ''), 'success');
                                 setTimeout(() => window.location.reload(), 1000); // Wait for toast
                             } else {
-                                showToast('Import failed: ' + (json.message || txt), 'error');
+                                showToast(wbglT('common.ui.import_failed', '') + ' ' + (json.message || txt), 'error');
                             }
                         } catch (e) {
                             window.location.reload();
                         }
                     } else {
-                        showToast('Upload failed: ' + res.status, 'error');
+                        showToast(wbglT('common.ui.upload_failed', '') + ' ' + res.status, 'error');
                     }
                 } catch (e) {
-                    showToast('Network error during upload', 'error');
+                    showToast(wbglT('messages.records.error.network', ''), 'error');
                 }
             }
         });
@@ -268,12 +231,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const guaranteeId = document.querySelector('[data-record-id]')?.dataset.recordId;
         if (!guaranteeId) {
-            showToast('معرف الضمان غير موجود', 'error');
+            showToast(wbglT('messages.records.error.no_record', ''), 'error');
             return;
         }
 
         btn.disabled = true;
-        btn.innerHTML = '... جاري التنفيذ';
+        btn.textContent = wbglT('index.workflow.execute_next_step', '');
 
         try {
             const response = await fetch('/api/workflow-advance.php', {
@@ -298,16 +261,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     location.reload();
                 }
-            } else {
-                showToast('خطأ: ' + (data.error || data.message || 'فشل تنفيذ الإجراء'), 'error');
+                } else {
+                showToast(wbglT('messages.records.error.prefix', '') + (data.error || data.message || wbglT('messages.error.unknown', '')), 'error');
                 btn.disabled = false;
-                btn.innerHTML = '⚡ تنفيذ الإجراء';
+                btn.textContent = wbglT('index.workflow.execute_next_step', '');
             }
         } catch (err) {
-            console.error('Workflow error:', err);
-            showToast('حدث خطأ في الشبكة', 'error');
+            console.error('WORKFLOW_ERROR', err);
+            showToast(wbglT('messages.records.error.network', ''), 'error');
             btn.disabled = false;
-            btn.innerHTML = '⚡ تنفيذ الإجراء';
+            btn.textContent = wbglT('index.workflow.execute_next_step', '');
         }
     });
 

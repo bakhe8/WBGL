@@ -10,11 +10,13 @@ use App\Repositories\GuaranteeDecisionRepository;
 use App\Repositories\GuaranteeRepository;
 use App\Repositories\SupplierRepository;
 use App\Support\Database;
+use App\Support\Guard;
 use App\Support\Input;
 use App\Services\LetterBuilder;
 
-header('Content-Type: text/html; charset=utf-8');
-wbgl_api_require_permission('manage_data');
+wbgl_api_require_permission('guarantee_release');
+$policyContext = null;
+$surface = null;
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -29,11 +31,36 @@ try {
     if (!$guaranteeId) {
         throw new \RuntimeException('Missing guarantee_id');
     }
+
+    wbgl_api_require_guarantee_visibility((int)$guaranteeId);
     
     // Initialize services
     $db = Database::connect();
+    $context = wbgl_api_policy_surface_for_guarantee($db, (int)$guaranteeId);
+    $policyContext = $context['policy'];
+    $surface = $context['surface'];
     $decisionRepo = new GuaranteeDecisionRepository($db);
     $guaranteeRepo = new GuaranteeRepository($db);
+    $stepStmt = $db->prepare("SELECT workflow_step FROM guarantee_decisions WHERE guarantee_id = ? LIMIT 1");
+    $stepStmt->execute([$guaranteeId]);
+    $currentStep = (string)($stepStmt->fetchColumn() ?: 'unknown');
+
+    if (!($surface['can_execute_actions'] ?? false) && !Guard::has('manage_data')) {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Permission Denied',
+            'message' => 'لا يمكن تنفيذ الإفراج على هذا السجل في حالته الحالية.',
+            'required_permission' => 'guarantee_release',
+            'current_step' => $currentStep,
+            'reason_code' => 'SURFACE_NOT_GRANTED_CAN_EXECUTE_ACTIONS',
+            'policy' => $policyContext,
+            'surface' => $surface,
+            'reasons' => $policyContext['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     
     // ===== LIFECYCLE GATE: Prevent release on pending guarantees =====
     $statusCheck = $db->prepare("
@@ -45,11 +72,7 @@ try {
     $currentStatus = $statusCheck->fetchColumn();
     
     if ($currentStatus !== 'ready') {
-        http_response_code(400);
-        echo '<div id="record-form-section" class="card" data-current-event-type="current">';
-        echo '<div class="card-body" style="color: red;">لا يمكن إفراج عن ضمان غير مكتمل. يجب اختيار المورد والبنك أولاً.</div>';
-        echo '</div>';
-        exit;
+        throw new \RuntimeException('لا يمكن إفراج عن ضمان غير مكتمل. يجب اختيار المورد والبنك أولاً.');
     }
     // ================================================================
     
@@ -142,6 +165,7 @@ try {
     $banks = $banksStmt->fetchAll(PDO::FETCH_ASSOC);
     
     // Include partial template
+    ob_start();
     echo '<div id="record-form-section" class="decision-card" data-current-event-type="current">';
     include __DIR__ . '/../partials/record-form.php';
     
@@ -151,10 +175,27 @@ try {
     echo $letterHtml;
     echo '</div>';
     echo '</div>';
+    $html = (string)ob_get_clean();
+
+    wbgl_api_success([
+        'html' => $html,
+        'guarantee_id' => (int)$guaranteeId,
+        'status' => 'released',
+        'active_action' => 'release',
+        'policy' => $policyContext,
+        'surface' => $surface,
+        'reasons' => $policyContext['reasons'] ?? [],
+    ]);
     
 } catch (\Throwable $e) {
     http_response_code(400);
-    echo '<div id="record-form-section" class="card" data-current-event-type="current">';
-    echo '<div class="card-body" style="color: red;">خطأ: ' . htmlspecialchars($e->getMessage()) . '</div>';
-    echo '</div>';
+    echo json_encode([
+        'success' => false,
+        'error' => $e->getMessage(),
+        'reason_code' => 'RELEASE_OPERATION_FAILED',
+        'policy' => $policyContext,
+        'surface' => $surface,
+        'reasons' => is_array($policyContext) ? ($policyContext['reasons'] ?? []) : [],
+        'request_id' => wbgl_api_request_id(),
+    ], JSON_UNESCAPED_UNICODE);
 }

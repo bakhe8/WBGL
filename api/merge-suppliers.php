@@ -7,7 +7,7 @@ use App\Services\SupplierMergeService;
 use App\Support\Database;
 
 header('Content-Type: application/json');
-wbgl_api_require_permission('manage_data');
+wbgl_api_require_permission('supplier_manage');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo JSON_encode(['success' => false, 'error' => 'Invalid request method']);

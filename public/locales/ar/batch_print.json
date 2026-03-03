@@ -1,0 +1,9 @@
+{
+    "batch_print.actions.close": "✕ إغلاق",
+    "batch_print.actions.print_all": "🖨️ طباعة الكل",
+    "batch_print.error.missing_ids": "معرفات السجلات مفقودة.",
+    "batch_print.error.no_valid_records": "لا توجد سجلات صالحة للطباعة.",
+    "batch_print.error.no_valid_records_production": "لا توجد سجلات صالحة للطباعة في وضع الإنتاج.",
+    "batch_print.meta.title": "طباعة مجمعة - {{count}} خطابات",
+    "batch_print.ui.unknown": "غير محدد"
+}

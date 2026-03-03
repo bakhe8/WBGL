@@ -17,7 +17,10 @@ wbgl_api_require_login();
 
 // 2. Input Validation
 $input = json_decode(file_get_contents('php://input'), true);
-$guaranteeId = $input['guarantee_id'] ?? null;
+if (!is_array($input)) {
+    $input = [];
+}
+$guaranteeId = (int)($input['guarantee_id'] ?? 0);
 
 if (!$guaranteeId) {
     http_response_code(400);
@@ -25,20 +28,49 @@ if (!$guaranteeId) {
     exit;
 }
 
+wbgl_api_require_guarantee_visibility($guaranteeId);
+
 try {
     $userName = wbgl_api_current_user_display();
     $db = Database::connect();
     $decisionRepo = new GuaranteeDecisionRepository($db);
+    $context = wbgl_api_policy_surface_for_guarantee($db, (int)$guaranteeId);
+    $policy = $context['policy'];
+    $surface = $context['surface'];
 
     // 3. Fetch current state
     $decision = $decisionRepo->findByGuarantee((int)$guaranteeId);
     if (!$decision) {
         http_response_code(404);
-        echo json_encode(['success' => false, 'error' => 'No decision found for this guarantee']);
+        echo json_encode([
+            'success' => false,
+            'error' => 'No decision found for this guarantee',
+            'policy' => $policy,
+            'surface' => $surface,
+            'reasons' => $policy['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
     $currentStep = $decision->workflowStep;
+
+    if (!($surface['can_execute_actions'] ?? false)) {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Permission Denied',
+            'message' => 'لا يمكن تنفيذ إجراء سير العمل على هذا السجل في حالته الحالية.',
+            'required_permission' => 'workflow_advance',
+            'current_step' => $currentStep,
+            'reason_code' => 'SURFACE_NOT_GRANTED_CAN_EXECUTE_ACTIONS',
+            'policy' => $policy,
+            'surface' => $surface,
+            'reasons' => $policy['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
 
     // 4. Permission & Logical Check via WorkflowService
     if (!WorkflowService::canAdvance($decision)) {
@@ -46,15 +78,32 @@ try {
         echo json_encode([
             'success' => false,
             'error' => 'Permission Denied',
-            'message' => 'ليس لديك الصلاحية لاعتماد هذه المرحلة أو أن الضمان ليس في الحالة الصحيحة.'
-        ]);
+            'message' => 'ليس لديك الصلاحية لاعتماد هذه المرحلة أو أن الضمان ليس في الحالة الصحيحة.',
+            'required_permission' => 'workflow_advance',
+            'current_step' => $currentStep,
+            'reason_code' => 'WORKFLOW_ADVANCE_DENIED',
+            'policy' => $policy,
+            'surface' => $surface,
+            'reasons' => $policy['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
     // 5. Determine Next Step
     $nextStep = WorkflowService::getNextStage($currentStep);
     if (!$nextStep) {
-        echo json_encode(['success' => false, 'error' => 'No further stages available']);
+        echo json_encode([
+            'success' => false,
+            'error' => 'No further stages available',
+            'required_permission' => 'workflow_advance',
+            'current_step' => $currentStep,
+            'reason_code' => 'NO_NEXT_STAGE',
+            'policy' => $policy,
+            'surface' => $surface,
+            'reasons' => $policy['reasons'] ?? [],
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -69,8 +118,12 @@ try {
             echo json_encode([
                 'success' => true,
                 'message' => 'تم تسجيل التوقيع بنجاح. بانتظار بقية التواقيع.',
-                'workflow_step' => $currentStep
-            ]);
+                'workflow_step' => $currentStep,
+                'policy' => $policy,
+                'surface' => $surface,
+                'reasons' => $policy['reasons'] ?? [],
+                'request_id' => wbgl_api_request_id(),
+            ], JSON_UNESCAPED_UNICODE);
             exit;
         }
     }
@@ -95,9 +148,17 @@ try {
     echo json_encode([
         'success' => true,
         'message' => 'تم الانتقال بنجاح إلى مرحلة: ' . $nextStep,
-        'workflow_step' => $nextStep
-    ]);
+        'workflow_step' => $nextStep,
+        'policy' => $policy,
+        'surface' => $surface,
+        'reasons' => $policy['reasons'] ?? [],
+        'request_id' => wbgl_api_request_id(),
+    ], JSON_UNESCAPED_UNICODE);
 } catch (\Exception $e) {
     http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    echo json_encode([
+        'success' => false,
+        'error' => $e->getMessage(),
+        'request_id' => wbgl_api_request_id(),
+    ], JSON_UNESCAPED_UNICODE);
 }

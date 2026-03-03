@@ -8,6 +8,7 @@ use App\Services\ImportService;
 use App\Repositories\GuaranteeRepository;
 use App\Models\Guarantee;
 use App\Support\TypeNormalizer;
+use App\Services\GuaranteeVisibilityService;
 use App\Services\SmartPaste\ConfidenceCalculator;  // ✅ NEW (Phase 2)
 use App\Repositories\BatchMetadataRepository; // ✅ NEW (Phase 3)
 
@@ -415,6 +416,10 @@ class ParseCoordinatorService
         // Check if exists
         $existing = $repo->findByNumber($rowData['guarantee_number']);
         if ($existing) {
+            if (!GuaranteeVisibilityService::canAccessGuarantee((int)$existing->id)) {
+                throw new \RuntimeException('Permission Denied');
+            }
+
             return [
                 'id' => $existing->id,
                 'guarantee_number' => $rowData['guarantee_number'],
@@ -494,6 +499,10 @@ class ParseCoordinatorService
         $existing = $repo->findByNumber($extracted['guarantee_number']);
         
         if ($existing) {
+            if (!GuaranteeVisibilityService::canAccessGuarantee((int)$existing->id)) {
+                throw new \RuntimeException('Permission Denied');
+            }
+
             // Record duplicate
             try {
                 \App\Services\TimelineRecorder::recordDuplicateImportEvent($existing->id, 'smart_paste');
@@ -592,7 +601,11 @@ class ParseCoordinatorService
      */
     private static function logPasteAttempt(string $text, array $extracted, array $fieldStatus, bool $success): void
     {
-        $logFile = __DIR__ . '/../../storage/paste_debug.log';
+        $logsDir = __DIR__ . '/../../storage/logs';
+        if (!is_dir($logsDir)) {
+            @mkdir($logsDir, 0755, true);
+        }
+        $logFile = $logsDir . '/paste_debug.log';
         $timestamp = date('Y-m-d H:i:s');
         
         $logEntry = "\n" . str_repeat("=", 80) . "\n";

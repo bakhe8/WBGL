@@ -75,6 +75,13 @@
         window.WBGLI18n.applyTranslations();
     }
 
+    function runtimeT(key, fallback, params) {
+        if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
+            return window.WBGLI18n.t(key, fallback, params);
+        }
+        return fallback || key;
+    }
+
     function refreshUiSurfaces() {
         renderNavigation();
         applyPolicyGuards();
@@ -99,7 +106,7 @@
                 return;
             }
             if (status === 403 && typeof window.showToast === 'function') {
-                window.showToast('ليس لديك صلاحية لتنفيذ هذا الإجراء', 'error');
+                window.showToast(runtimeT('policy.denied.default', 'policy.denied.default'), 'error');
             }
         });
     }

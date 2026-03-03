@@ -15,9 +15,19 @@
  * @var string $action - Action type (extension, release, etc.)
  * @var int|null $guarantee_id - Current guarantee id (if available)
  */
+ $signatureMarginTop = trim((string)($signature['margin_top'] ?? '3em'));
+ if ($signatureMarginTop === '') {
+     $signatureMarginTop = '3em';
+ }
+ $signatureMarginToken = preg_replace('/[^0-9]+/', '-', strtolower($signatureMarginTop));
+ $signatureMarginToken = trim((string)$signatureMarginToken, '-');
+ if ($signatureMarginToken === '') {
+     $signatureMarginToken = 'default';
+ }
+ $signatureMarginClass = 'signature-seal-margin-' . $signatureMarginToken;
 ?>
 <div class="letter-preview" data-guarantee-id="<?= isset($guarantee_id) ? (int)$guarantee_id : 0 ?>">
-    <main class="letter-paper" style="position: relative;">
+    <main class="letter-paper">
         
         <!-- Print Button Overlay (Only for screen) -->
         <button
@@ -25,11 +35,49 @@
                 ? window.WBGLPrintAudit.handleOverlayPrint(this)
                 : (window.print(), false)"
             class="btn-print-overlay"
-            title="طباعة الخطاب"
-            aria-label="طباعة الخطاب">
+            title=""
+            aria-label=""
+            data-i18n-title="timeline.ui.print_letter"
+            data-i18n-aria-label="timeline.ui.print_letter">
             🖨️
         </button>
         <style>
+            .letter-paper {
+                position: relative;
+            }
+
+            .preview-inline-code {
+                display: inline-block;
+            }
+
+            .cc-section {
+                margin-top: 40px;
+                font-size: 12px !important;
+            }
+
+            .cc-title {
+                font-weight: bold;
+                margin-bottom: 0 !important;
+                line-height: 14px !important;
+                padding: 0 !important;
+            }
+
+            .cc-list {
+                list-style-type: none;
+                padding-right: 20px !important;
+                margin: 0 !important;
+            }
+
+            .cc-item {
+                margin: 0 !important;
+                padding: 0 !important;
+                line-height: 14px !important;
+            }
+
+            .<?= htmlspecialchars($signatureMarginClass, ENT_QUOTES, 'UTF-8') ?> {
+                margin-top: <?= htmlspecialchars($signatureMarginTop, ENT_QUOTES, 'UTF-8') ?>;
+            }
+
             .btn-print-overlay {
                 position: absolute;
                 top: 20px;
@@ -63,30 +111,30 @@
         <!-- رأس الخطاب: اسم البنك + المحترمين -->
         <div class="preview-header">
             <div class="preview-recipient-name">
-                <div>السادة <span class="symbol">/</span> <span><?= htmlspecialchars($header['bank_name']) ?></span></div>
+                <div data-i18n-skip="true">السادة <span class="symbol">/</span> <span><?= htmlspecialchars($header['bank_name']) ?></span></div>
             </div>
             <div class="preview-salutation">
-                <div>المحترمين</div>
+                <div data-i18n-skip="true">المحترمين</div>
             </div>
         </div>
         
         <!-- معلومات البنك -->
         <div class="preview-recipient">
             <div><?= htmlspecialchars($header['bank_center']) ?></div>
-            <div>ص.ب. <span lang="ar"><?= htmlspecialchars($header['bank_po_box']) ?></span></div>
-            <div>البريد الإلكتروني<span class="symbol">:</span> <span lang="en"><?= htmlspecialchars($header['bank_email']) ?></span></div>
+            <div data-i18n-skip="true">ص.ب. <span lang="ar"><?= htmlspecialchars($header['bank_po_box']) ?></span></div>
+            <div data-i18n-skip="true">البريد الإلكتروني<span class="symbol">:</span> <span lang="en"><?= htmlspecialchars($header['bank_email']) ?></span></div>
         </div>
         
         <!-- السلام عليكم -->
         <div class="preview-greeting">
-            <div>السَّلام عليكُم ورحمَة الله وبركاتِه</div>
+            <div data-i18n-skip="true">السَّلام عليكُم ورحمَة الله وبركاتِه</div>
         </div>
         
         <!-- الموضوع -->
         <div class="preview-subject">
-            <div class="preview-subject-label">الموضوع<span class="symbol">:</span>&nbsp;</div>
+            <div class="preview-subject-label" data-i18n-skip="true">الموضوع<span class="symbol">:</span>&nbsp;</div>
             <div class="preview-subject-text">
-                <?= $subject_parts['text'] ?> الضمان البنكي رقم (<span data-preview-target="guarantee_number" lang="en" dir="ltr" style="display:inline-block;"><?= $subject_parts['guarantee_number'] ?></span>) والعائد <span data-preview-target="related_label"><?= $subject_parts['related_label'] ?></span> (<span data-preview-target="contract_number" <?= $relatedTo === 'contract' ? 'lang="en"' : 'lang="ar"' ?>><?= $subject_parts['contract_number'] ?></span>).
+                <span data-i18n-skip="true"><?= $subject_parts['text'] ?> الضمان البنكي رقم (<span data-preview-target="guarantee_number" lang="en" dir="ltr" class="preview-inline-code"><?= $subject_parts['guarantee_number'] ?></span>) والعائد <span data-preview-target="related_label"><?= $subject_parts['related_label'] ?></span> (<span data-preview-target="contract_number" <?= $relatedTo === 'contract' ? 'lang="en"' : 'lang="ar"' ?>><?= $subject_parts['contract_number'] ?></span>).</span>
             </div>
         </div>
         
@@ -100,9 +148,9 @@
                     <!-- Address box AFTER first paragraph (if applicable) -->
                     <?php if ($content['has_address_box']): ?>
                         <div class="preview-address-box" lang="ar">
-                            <div class="letter-line">مستشفى الملك فيصل التخصصي ومركز الأبحاث - الرياض</div>
-                            <div class="letter-line">ص.ب ٣٣٥٤ الرياض ١١٢١١</div>
-                            <div class="letter-line">مكتب الخدمات الإدارية</div>
+                            <div class="letter-line" data-i18n-skip="true">مستشفى الملك فيصل التخصصي ومركز الأبحاث - الرياض</div>
+                            <div class="letter-line" data-i18n-skip="true">ص.ب ٣٣٥٤ الرياض ١١٢١١</div>
+                            <div class="letter-line" data-i18n-skip="true">مكتب الخدمات الإدارية</div>
                         </div>
                     <?php endif; ?>
                 <?php else: ?>
@@ -114,20 +162,20 @@
         
         <!-- التوقيع -->
         <div class="preview-clearfix">
-            <div class="letter-line preview-note">وَتفضَّلوا بِقبُول خَالِص تحيَّاتي</div>
+            <div class="letter-line preview-note" data-i18n-skip="true">وَتفضَّلوا بِقبُول خَالِص تحيَّاتي</div>
             <div class="preview-signature">
                 <div><?= $signature['title'] ?></div>
-                <div class="signature-seal" style="margin-top: <?= $signature['margin_top'] ?>;"><?= $signature['name'] ?></div>
+                <div class="signature-seal <?= htmlspecialchars($signatureMarginClass, ENT_QUOTES, 'UTF-8') ?>"><?= $signature['name'] ?></div>
             </div>
         </div>
         
         <?php if ($cc !== null): ?>
             <!-- صورة إلى (CC) - فقط للإفراج -->
-            <div class="cc-section" style="margin-top: 40px; font-size: 12px !important;">
-                <div style="font-weight: bold; margin-bottom: 0px !important; line-height: 14px !important; padding: 0 !important;">صورة إلى:</div>
-                <ul style="list-style-type: none; padding-right: 20px !important; margin: 0 !important;">
+            <div class="cc-section">
+                <div class="cc-title" data-i18n-skip="true">صورة إلى:</div>
+                <ul class="cc-list">
                     <?php foreach ($cc['recipients'] as $recipient): ?>
-                        <li style="margin: 0 !important; padding: 0 !important; line-height: 14px !important;">
+                        <li class="cc-item">
                             - <?= $recipient ?>
                         </li>
                     <?php endforeach; ?>
@@ -137,7 +185,7 @@
         
         <!-- التذييل (ثابت - لا يتغير أبداً) -->
         <div class="sheet-footer">
-            <span class="footer-left" lang="en">MBC: 9-2</span>
+            <span class="footer-left" lang="en" data-i18n-skip="true">MBC: 9-2</span>
             <span class="footer-right" lang="en">BAMZ</span>
         </div>
         

@@ -325,7 +325,7 @@
 - **Evidence:**  
   - denied-access audited: `api/_bootstrap.php:50-63` + `AuditTrailService.php:34-51`
   - matrix موجودة: `ApiPolicyMatrix.php:13-77`
-  - matrix غير مستخدمة runtime للتنفيذ المركزي: usage فقط في tests/maint (`tests/...ApiPolicyMatrixCoverageTest.php`, `maint/run-execution-loop.php`)؛ لا استدعاء في bootstrap.
+  - matrix غير مستخدمة runtime للتنفيذ المركزي: usage تاريخي في tests/maint (`tests/...ApiPolicyMatrixCoverageTest.php`, `maint/run-execution-loop.php` المتقاعد)؛ لا استدعاء في bootstrap.
 - **Reachability:** audit wired، matrix enforcement غير wired مركزيًا.
 - **Risk:** `Medium`
 
@@ -561,4 +561,3 @@ vendor\bin\phpunit --list-tests --testsuite Integration
 ## خاتمة البروتوكول
 
 No additional feature-level behavior is extractable from code structure.
-

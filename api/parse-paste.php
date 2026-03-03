@@ -21,7 +21,7 @@ use App\Support\Settings;
 use App\Services\ParseCoordinatorService;
 
 header('Content-Type: application/json; charset=utf-8');
-wbgl_api_require_login();
+wbgl_api_require_permission('import_excel');
 
 // ============================================================================
 // MAIN PROCESSING

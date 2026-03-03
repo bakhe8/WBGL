@@ -1,0 +1,9 @@
+{
+    "batch_print.actions.close": "✕ Close",
+    "batch_print.actions.print_all": "🖨️ Print all",
+    "batch_print.error.missing_ids": "Missing record IDs.",
+    "batch_print.error.no_valid_records": "No printable records were found.",
+    "batch_print.error.no_valid_records_production": "No printable records were found in production mode.",
+    "batch_print.meta.title": "Batch print - {{count}} letters",
+    "batch_print.ui.unknown": "Unknown"
+}

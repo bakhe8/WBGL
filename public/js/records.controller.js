@@ -15,6 +15,7 @@ if (!window.RecordsController) {
             this.bindEvents();
             this.bindGlobalEvents();
             this.initializeState();
+            this.syncSuggestionVisibility();
             this.flushPendingToast();
             // ADR-007: No auto-preview. Preview only shows after explicit action.
         }
@@ -41,6 +42,21 @@ if (!window.RecordsController) {
 
         queueToast(message, type = 'info') {
             sessionStorage.setItem('wbgl_pending_toast', JSON.stringify({ message, type }));
+        }
+
+        t(key, fallback, params) {
+            if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
+                return window.WBGLI18n.t(key, fallback, params);
+            }
+            return fallback || key;
+        }
+
+        setModalOpen(modal, open) {
+            if (!modal) {
+                return;
+            }
+            modal.classList.toggle('is-open', Boolean(open));
+            modal.setAttribute('aria-hidden', open ? 'false' : 'true');
         }
 
         bindGlobalEvents() {
@@ -83,7 +99,8 @@ if (!window.RecordsController) {
             // 🔥 NEW: Listen for remote updates (e.g. from Timeline Controller)
             // This ensures preview updates ONLY after the Data Card is updated.
             document.addEventListener('guarantee:updated', () => {
-                BglLogger.debug('⚡ Guarantee Updated Event Received - Refreshing Preview...');
+                this.syncSuggestionVisibility();
+                BglLogger.debug('records.guarantee_updated');
                 this.updatePreviewFromDOM();
 
                 // ✨ Apply formatting AFTER refresh (fix race condition)
@@ -121,8 +138,47 @@ if (!window.RecordsController) {
             // Handle specific models
             if (model === 'supplier_name') {
                 // Could trigger suggestions fetch here if needed
-                BglLogger.debug('Supplier changed:', value);
+                BglLogger.debug('records.supplier_changed', value);
             }
+        }
+
+        normalizeDecisionStatus(value) {
+            const normalized = String(value || '').trim().toLowerCase();
+            return normalized === 'approved' ? 'ready' : normalized;
+        }
+
+        isDecisionFinalizedStatus(status) {
+            const normalized = this.normalizeDecisionStatus(status);
+            return ['ready', 'issued', 'released', 'signed'].includes(normalized);
+        }
+
+        isHistoricalMode() {
+            const bannerContainer = document.getElementById('historical-banner-container');
+            const bannerVisible = bannerContainer instanceof HTMLElement
+                ? !bannerContainer.hidden && !bannerContainer.classList.contains('u-hidden')
+                : false;
+            return bannerVisible || Boolean(window.timelineController?.isHistoricalView);
+        }
+
+        syncSuggestionVisibility(options = {}) {
+            const suggestionsContainer = document.getElementById('supplier-suggestions');
+            const addSupplierContainer = document.getElementById('addSupplierContainer');
+            if (!(suggestionsContainer instanceof HTMLElement)) {
+                return true;
+            }
+
+            const decisionStatusInput = document.getElementById('decisionStatus');
+            const statusValue = decisionStatusInput ? decisionStatusInput.value : '';
+            const shouldHide = Boolean(options.forceHide) ||
+                this.isHistoricalMode() ||
+                this.isDecisionFinalizedStatus(statusValue);
+
+            suggestionsContainer.hidden = shouldHide;
+            if (shouldHide && addSupplierContainer instanceof HTMLElement) {
+                addSupplierContainer.hidden = true;
+            }
+
+            return shouldHide;
         }
 
         // UI Actions
@@ -141,12 +197,11 @@ if (!window.RecordsController) {
             if (statusBadge) {
                 const isPending = statusBadge.classList.contains('badge-pending') ||
                     statusBadge.classList.contains('status-pending') ||
-                    statusBadge.textContent.includes('يحتاج قرار') ||
+                    statusBadge.textContent.includes(this.t('messages.records.status.needs_decision')) ||
                     statusBadge.textContent.includes('pending');
 
                 if (isPending) {
-                    BglLogger.debug('⚠️ Preview update blocked: guarantee status is pending');
-                    BglLogger.debug('   Preview will be available once supplier and bank are selected');
+                    BglLogger.debug('records.preview_blocked_pending');
                     return; // Exit early - no preview update
                 }
             }
@@ -157,18 +212,11 @@ if (!window.RecordsController) {
             const hasAction = activeActionInput && activeActionInput.value;
 
             if (!hasAction) {
-                BglLogger.debug('⚠️ Preview update blocked: no action taken');
-                BglLogger.debug('   User must execute an action (extend/reduce/release) to generate a letter');
+                BglLogger.debug('records.preview_blocked_no_action');
                 this.showNoActionState();
                 return; // Exit early - no preview without action
             }
             // =========================================
-
-            // Arabic month names for date formatting
-            const arabicMonths = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-                'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-
-
 
             // Get all fields with data-preview-field
             const fields = document.querySelectorAll('[data-preview-field]');
@@ -189,7 +237,7 @@ if (!window.RecordsController) {
 
                 // خاص بالتاريخ: تنسيق بالصيغة العربية
                 if (fieldName === 'expiry_date' && fieldValue) {
-                    fieldValue = this.formatArabicDate(fieldValue, arabicMonths);
+                    fieldValue = this.formatArabicDate(fieldValue);
                 }
 
                 // خاص بالنوع: تحديث الجملة كاملة بدلاً من النوع فقط
@@ -210,23 +258,23 @@ if (!window.RecordsController) {
                         eventSource = activeActionInput ? activeActionInput.value : '';
                     }
 
-                    let fullPhrase = 'إشارة إلى الضمان البنكي الموضح أعلاه'; // Default
+                    let fullPhrase = this.t('messages.records.preview.full_intro.default');
 
                     // Logic based on action/event source
                     if (eventSource) {
                         if (eventSource === 'extension') {
-                            fullPhrase = 'طلب تمديد الضمان البنكي الموضح أعلاه';
+                            fullPhrase = this.t('messages.records.preview.full_intro.extension');
                         } else if (eventSource === 'reduction') {
-                            fullPhrase = 'طلب تخفيض الضمان البنكي الموضح أعلاه';
+                            fullPhrase = this.t('messages.records.preview.full_intro.reduction');
                         } else if (eventSource === 'release') {
-                            fullPhrase = 'طلب الإفراج عن الضمان البنكي الموضح أعلاه';
+                            fullPhrase = this.t('messages.records.preview.full_intro.release');
                         }
                     } else {
                         // Fallback to type-based logic
                         if (typeRaw.includes('Final')) {
-                            fullPhrase = 'إشارة إلى الضمان البنكي النهائي الموضح أعلاه';
+                            fullPhrase = this.t('messages.records.preview.full_intro.final');
                         } else if (typeRaw.includes('Advance')) {
-                            fullPhrase = 'إشارة إلى ضمان الدفعة المقدمة البنكي الموضح أعلاه';
+                            fullPhrase = this.t('messages.records.preview.full_intro.advance');
                         }
                     }
 
@@ -246,9 +294,9 @@ if (!window.RecordsController) {
                         const activeActionInput = document.getElementById('activeAction');
                         const actionType = activeActionInput ? activeActionInput.value : '';
 
-                        if (actionType === 'extension') subjectText = 'طلب تمديد';
-                        else if (actionType === 'reduction') subjectText = 'طلب تخفيض';
-                        else if (actionType === 'release') subjectText = 'طلب الإفراج عن';
+                        if (actionType === 'extension') subjectText = this.t('messages.records.preview.subject.extension');
+                        else if (actionType === 'reduction') subjectText = this.t('messages.records.preview.subject.reduction');
+                        else if (actionType === 'release') subjectText = this.t('messages.records.preview.subject.release');
 
                         subjectTarget.textContent = subjectText;
                     }
@@ -272,7 +320,9 @@ if (!window.RecordsController) {
                         // 2. Update Label: Contract=للعقد رقم, PO=لأمر الشراء رقم
                         const labelTarget = document.querySelector('[data-preview-target="related_label"]');
                         if (labelTarget) {
-                            labelTarget.textContent = (relatedTo === 'purchase_order') ? 'لأمر الشراء رقم' : 'للعقد رقم';
+                            labelTarget.textContent = (relatedTo === 'purchase_order')
+                                ? this.t('messages.records.preview.related_label.purchase_order')
+                                : this.t('messages.records.preview.related_label.contract');
                         }
                     }
                 }
@@ -285,7 +335,7 @@ if (!window.RecordsController) {
         }
 
         // Standard helpers
-        formatArabicDate(dateStr, arabicMonths) {
+        formatArabicDate(dateStr) {
             if (!dateStr) return '';
 
             // Try to parse the date
@@ -310,11 +360,15 @@ if (!window.RecordsController) {
 
             if (isNaN(date.getTime())) return dateStr;
 
-            const day = date.getDate();
-            const month = arabicMonths[date.getMonth()];
-            const year = date.getFullYear();
+            const locale = (window.WBGLI18n && typeof window.WBGLI18n.getLanguage === 'function')
+                ? window.WBGLI18n.getLanguage()
+                : 'ar';
 
-            return `${day} ${month} ${year}`;
+            return new Intl.DateTimeFormat(locale === 'ar' ? 'ar-SA' : 'en-US', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+            }).format(date);
         }
 
         getFieldValue(element) {
@@ -340,7 +394,7 @@ if (!window.RecordsController) {
             if (!recordIdEl) return;
             const id = recordIdEl.dataset.recordId;
 
-            if (!await this.customConfirm('هل تريد إعادة فتح هذا الضمان لتعديل البيانات؟ سيؤدي ذلك إلى تحويل الحالة إلى "يحتاج قرار" مؤقتاً.')) return;
+            if (!await this.customConfirm(this.t('messages.records.reopen.confirm'))) return;
 
             try {
                 const response = await fetch('/api/reopen.php', {
@@ -351,15 +405,15 @@ if (!window.RecordsController) {
 
                 const data = await response.json();
                 if (data.success) {
-                    window.showToast('تم إعادة فتح السجل للتعديل', 'success');
+                    window.showToast(this.t('messages.records.reopen.success'), 'success');
                     // Reload to reflect changes in UI (unlock fields, update button states)
                     window.location.reload();
                 } else {
-                    window.showToast('خطأ: ' + (data.error || 'فشل التعديل'), 'error');
+                    window.showToast(this.t('messages.records.error.prefix') + (data.error || this.t('messages.records.reopen.failed')), 'error');
                 }
             } catch (error) {
-                console.error('Reopen error:', error);
-                window.showToast('حدث خطأ في الاتصال', 'error');
+                console.error('REOPEN_ERROR', error);
+                window.showToast(this.t('messages.records.error.network'), 'error');
             }
         }
 
@@ -390,7 +444,7 @@ if (!window.RecordsController) {
                 previewSection.innerHTML = template.innerHTML;
             } else {
                 // Fallback (should not be reached if partial is included)
-                previewSection.innerHTML = '<div style="padding:20px;text-align:center">No Action Taken</div>';
+                previewSection.innerHTML = `<div class="wbgl-preview-empty-state">${this.t('messages.records.preview.no_action')}</div>`;
             }
         }
 
@@ -442,11 +496,11 @@ if (!window.RecordsController) {
             if (target) {
                 const originalContent = target.innerHTML;
                 target.disabled = true;
-                target.innerHTML = '⌛ جاري الحفظ...';
+                target.innerHTML = this.t('messages.records.save_next.saving');
             }
             const recordIdEl = document.querySelector('[data-record-id]');
             if (!recordIdEl) {
-                window.showToast('خطأ: لا يوجد سجل', 'error');
+                window.showToast(this.t('messages.records.error.no_record'), 'error');
                 return;
             }
 
@@ -476,10 +530,10 @@ if (!window.RecordsController) {
 
                 if (data.success) {
                     if (data.meta && data.meta.created_supplier_name) {
-                        this.queueToast(`تم إنشاء مورد جديد: ${data.meta.created_supplier_name}`, 'success');
+                        this.queueToast(`${this.t('messages.records.supplier.created_prefix')} ${data.meta.created_supplier_name}`, 'success');
                     }
                     if (data.finished) {
-                        window.showToast(data.message || 'تم الانتهاء من جميع السجلات', 'success');
+                        window.showToast(data.message || this.t('messages.records.save_next.finished_all'), 'success');
 
                         // ✅ FIX: Redirect to clear the current record from view and show next or empty state
                         setTimeout(() => {
@@ -499,31 +553,31 @@ if (!window.RecordsController) {
                 } else {
                     // Handle supplier_required error specially
                     if (data.error === 'supplier_required') {
-                        window.showToast(data.message || 'يجب اختيار مورد من الاقتراحات أو إضافة مورد جديد', 'error');
+                        window.showToast(data.message || this.t('messages.records.save_next.supplier_required'), 'error');
                         // Show the add supplier button with the name
                         this.showAddSupplierButton(data.supplier_name || '');
                     } else {
-                        window.showToast('خطأ: ' + (data.message || data.error || 'فشل الحفظ'), 'error');
+                        window.showToast(this.t('messages.records.error.prefix') + (data.message || data.error || this.t('messages.records.save_next.failed')), 'error');
                     }
                 }
             } catch (error) {
-                console.error('Save error:', error);
-                window.showToast('فشل الحفظ', 'error');
+                console.error('SAVE_ERROR', error);
+                window.showToast(this.t('messages.records.save_next.failed'), 'error');
             } finally {
                 if (target && (!data || !data.success)) {
                     target.disabled = false;
-                    target.innerHTML = '💾 حفظ';
+                    target.innerHTML = this.t('messages.records.save_next.button_default');
                 }
             }
         }
 
         // Actions
         async extend() {
-            if (!await this.customConfirm('هل تريد تمديد هذا الضمان لمدة سنة؟')) return;
+            if (!await this.customConfirm(this.t('messages.records.actions.extend.confirm'))) return;
 
             const recordIdEl = document.querySelector('[data-record-id]');
             if (!recordIdEl) {
-                window.showToast('خطأ: لا يوجد سجل', 'error');
+                window.showToast(this.t('messages.records.error.no_record'), 'error');
                 return;
             }
 
@@ -534,16 +588,11 @@ if (!window.RecordsController) {
                     body: JSON.stringify({ guarantee_id: recordIdEl.dataset.recordId })
                 });
 
-                const text = await response.text();
-
-                if (!response.ok) {
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(text, 'text/html');
-                    const errorBody = doc.querySelector('.card-body');
-                    const msg = errorBody ? errorBody.textContent.trim() : 'فشل التمديد';
-
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    const msg = data.error || this.t('messages.records.actions.extend.failed');
                     if (msg.includes('No expiry date')) {
-                        window.showToast('عفواً، لا يوجد تاريخ انتهاء محفوظ. يرجى حفظ السجل أولاً.', 'error');
+                        window.showToast(this.t('messages.records.actions.extend.no_expiry_date'), 'error');
                     } else {
                         window.showToast(msg, 'error');
                     }
@@ -552,16 +601,16 @@ if (!window.RecordsController) {
                 window.location.reload();
             } catch (e) {
                 console.error(e);
-                window.showToast('حدث خطأ في الاتصال', 'error');
+                window.showToast(this.t('messages.records.error.network'), 'error');
             }
         }
 
         async release() {
-            if (!await this.customConfirm('هل تريد الإفراج عن هذا الضمان؟')) return;
+            if (!await this.customConfirm(this.t('messages.records.actions.release.confirm'))) return;
 
             const recordIdEl = document.querySelector('[data-record-id]');
             if (!recordIdEl) {
-                window.showToast('خطأ: لا يوجد سجل', 'error');
+                window.showToast(this.t('messages.records.error.no_record'), 'error');
                 return;
             }
 
@@ -572,35 +621,32 @@ if (!window.RecordsController) {
                     body: JSON.stringify({ guarantee_id: recordIdEl.dataset.recordId })
                 });
 
-                const text = await response.text();
-                if (!response.ok) {
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(text, 'text/html');
-                    const errorBody = doc.querySelector('.card-body');
-                    const msg = errorBody ? errorBody.textContent.trim() : 'فشل الإفراج';
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    const msg = data.error || this.t('messages.records.actions.release.failed');
                     window.showToast(msg, 'error');
                     return;
                 }
                 window.location.reload();
             } catch (e) {
                 console.error(e);
-                window.showToast('حدث خطأ في الاتصال', 'error');
+                window.showToast(this.t('messages.records.error.network'), 'error');
             }
         }
 
         async reduce() {
             const recordIdEl = document.querySelector('[data-record-id]');
             if (!recordIdEl) {
-                window.showToast('خطأ: لا يوجد سجل', 'error');
+                window.showToast(this.t('messages.records.error.no_record'), 'error');
                 return;
             }
 
-            const newAmountStr = await this.customPrompt('الرجاء إدخال المبلغ الجديد:');
+            const newAmountStr = await this.customPrompt(this.t('messages.records.actions.reduce.prompt_amount'));
             if (!newAmountStr) return;
 
             const newAmount = parseFloat(newAmountStr);
             if (isNaN(newAmount) || newAmount <= 0) {
-                window.showToast('الرجاء إدخال مبلغ صحيح (أرقام فقط)', 'error');
+                window.showToast(this.t('messages.records.actions.reduce.invalid_amount'), 'error');
                 return;
             }
 
@@ -614,19 +660,16 @@ if (!window.RecordsController) {
                     })
                 });
 
-                const text = await response.text();
-                if (!response.ok) {
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(text, 'text/html');
-                    const errorBody = doc.querySelector('.card-body');
-                    const msg = errorBody ? errorBody.textContent.trim() : 'فشل التخفيض';
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    const msg = data.error || this.t('messages.records.actions.reduce.failed');
                     window.showToast(msg, 'error');
                     return;
                 }
                 window.location.reload();
             } catch (e) {
                 console.error(e);
-                window.showToast('حدث خطأ في الاتصال', 'error');
+                window.showToast(this.t('messages.records.error.network'), 'error');
             }
         }
 
@@ -650,11 +693,11 @@ if (!window.RecordsController) {
                 const noBtn = document.getElementById('wbgl-confirm-no');
 
                 // Show modal
-                overlay.style.display = 'flex';
+                this.setModalOpen(overlay, true);
 
                 // cleanup function
                 const cleanup = () => {
-                    overlay.style.display = 'none';
+                    this.setModalOpen(overlay, false);
                     // clear handlers to prevent leaks/duplicates
                     if (yesBtn) yesBtn.onclick = null;
                     if (noBtn) noBtn.onclick = null;
@@ -676,16 +719,16 @@ if (!window.RecordsController) {
             return new Promise((resolve) => {
                 const overlay = document.createElement('div');
                 overlay.id = 'wbgl-prompt-overlay';
-                overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);';
+                overlay.className = 'wbgl-prompt-overlay';
 
                 overlay.innerHTML = `
-                    <div style="background:white;padding:24px;border-radius:12px;text-align:center;min-width:320px;box-shadow:0 10px 25px rgba(0,0,0,0.2);transform:scale(0.9);animation:popIn 0.2s forwards;">
-                        <h3 style="margin:0 0 16px;color:#1e293b;font-size:18px">إدخال مطلوب</h3>
-                        <label style="display:block;margin-bottom:8px;color:#64748b;font-size:14px">${message}</label>
-                        <input type="number" id="prompt-input" style="width:100%;padding:10px;margin-bottom:20px;border:1px solid #cbd5e1;border-radius:6px;font-size:16px;text-align:center" autofocus>
-                        <div style="display:flex;justify-content:center;gap:12px">
-                            <button id="prompt-ok" class="btn btn-primary" style="background:#2563eb;color:white;border:none;padding:8px 20px;border-radius:6px;cursor:pointer">موافق</button>
-                            <button id="prompt-cancel" class="btn btn-secondary" style="background:#e2e8f0;color:#475569;border:none;padding:8px 20px;border-radius:6px;cursor:pointer">إلغاء</button>
+                    <div class="wbgl-prompt-dialog">
+                        <h3 class="wbgl-prompt-title">${this.t('messages.records.prompt.title')}</h3>
+                        <label class="wbgl-prompt-label">${message}</label>
+                        <input type="number" id="prompt-input" class="wbgl-prompt-input" autofocus>
+                        <div class="wbgl-prompt-actions">
+                            <button id="prompt-ok" class="wbgl-prompt-btn wbgl-prompt-btn--primary">${this.t('messages.records.prompt.ok')}</button>
+                            <button id="prompt-cancel" class="wbgl-prompt-btn wbgl-prompt-btn--secondary">${this.t('messages.records.prompt.cancel')}</button>
                         </div>
                     </div>
                 `;
@@ -733,6 +776,11 @@ if (!window.RecordsController) {
         }
 
         processSupplierInput(target) {
+            if (this.syncSuggestionVisibility() || target.disabled || target.readOnly) {
+                this.hideAddSupplierButton();
+                return;
+            }
+
             // Debounced suggestion fetching
             clearTimeout(this.supplierSearchTimeout);
             const value = target.value.trim();
@@ -761,6 +809,11 @@ if (!window.RecordsController) {
                     // Update suggestions container
                     const container = document.getElementById('supplier-suggestions');
                     if (container) {
+                        if (this.syncSuggestionVisibility()) {
+                            this.hideAddSupplierButton();
+                            return;
+                        }
+
                         // We replace the innerHTML because the partial is the *list* of buttons, 
                         // not the container itself (based on how partial is written).
                         // The partial iterates and echoes buttons.
@@ -771,15 +824,7 @@ if (!window.RecordsController) {
                         // This is compliant.
                         container.innerHTML = html;
 
-                        // Check for add button logic - we need to know if there were suggestions
-                        // The HTML contains "لا توجد اقتراحات" if empty.
-                        // We can check if html contains 'chip-unified'
-
                         if (!html.includes('chip-unified')) {
-                            // Logic to show add button if no matches
-                            // We might need to parse the HTML or rely on strict server logic?
-                            // User plan: "Day 3: Update JS".
-                            // For now, let's keep it simple.
                             this.showAddSupplierButton(value);
                         } else {
                             const hasExactMatch = html.includes(`data-name="${value.replace(/"/g, '&quot;')}"`);
@@ -791,7 +836,7 @@ if (!window.RecordsController) {
                         }
                     }
                 } catch (error) {
-                    console.error('Suggestions fetch error:', error);
+                    console.error('SUGGESTIONS_FETCH_ERROR', error);
                 }
             }, 300);
         }
@@ -802,7 +847,7 @@ if (!window.RecordsController) {
             const container = document.getElementById('addSupplierContainer');
             const nameSpan = document.getElementById('newSupplierName');
             if (container) {
-                container.style.display = 'block';
+                container.hidden = false;
                 if (nameSpan) nameSpan.textContent = supplierName;
             }
         }
@@ -810,7 +855,7 @@ if (!window.RecordsController) {
         hideAddSupplierButton() {
             const container = document.getElementById('addSupplierContainer');
             if (container) {
-                container.style.display = 'none';
+                container.hidden = true;
             }
         }
 
@@ -819,7 +864,7 @@ if (!window.RecordsController) {
             const supplierName = supplierInput?.value?.trim();
 
             if (!supplierName) {
-                window.showToast('الرجاء إدخال اسم المورد أولاً', 'error');
+                window.showToast(this.t('messages.records.supplier.enter_name_first'), 'error');
                 return;
             }
 
@@ -847,13 +892,13 @@ if (!window.RecordsController) {
                     // Hide add button
                     this.hideAddSupplierButton();
 
-                    window.showToast(`تم إضافة المورد: ${data.official_name || supplierName}`, 'success');
+                    window.showToast(`${this.t('messages.records.supplier.added_prefix')} ${data.official_name || supplierName}`, 'success');
                 } else {
-                    window.showToast('خطأ: ' + (data.message || data.error || 'فشل إضافة المورد'), 'error');
+                    window.showToast(this.t('messages.records.error.prefix') + (data.message || data.error || this.t('messages.records.supplier.create_failed')), 'error');
                 }
             } catch (error) {
-                console.error('Create supplier error:', error);
-                window.showToast('فشل إضافة المورد', 'error');
+                console.error('CREATE_SUPPLIER_ERROR', error);
+                window.showToast(this.t('messages.records.supplier.create_failed'), 'error');
             }
         }
 
@@ -861,7 +906,7 @@ if (!window.RecordsController) {
         showManualInput() {
             const modal = document.getElementById('manualEntryModal');
             if (modal) {
-                modal.style.display = 'block';
+                this.setModalOpen(modal, true);
                 document.getElementById('manualSupplier')?.focus();
             }
         }
@@ -869,7 +914,7 @@ if (!window.RecordsController) {
         showPasteModal() {
             const modal = document.getElementById('smartPasteModal');
             if (modal) {
-                modal.style.display = 'flex';
+                this.setModalOpen(modal, true);
                 document.getElementById('smartPasteInput')?.focus();
             }
         }
@@ -881,11 +926,80 @@ if (!window.RecordsController) {
                 fileInput.click();
             } else {
                 // Error: File input not found
-                console.error('File input element #hiddenFileInput not found');
+                console.error('HIDDEN_FILE_INPUT_NOT_FOUND');
                 // Note: showToast is in RecordsController context, not available here
                 // The import feature should be properly implemented with the file input element
             }
         }
+
+        parseRecordSurfaceFromHtml(html) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(String(html || ''), 'text/html');
+            const section = doc.getElementById('record-form-section');
+            if (!section) {
+                return null;
+            }
+
+            const isEnabled = (value) => String(value || '0') === '1';
+            const recordIdNode = doc.querySelector('[data-record-id]');
+            const guaranteeNumberNode = doc.querySelector('[data-preview-field="guarantee_number"]');
+            const recordId = parseInt(recordIdNode?.getAttribute('data-record-id') || '0', 10) || 0;
+
+            return {
+                recordId: recordId,
+                guaranteeNumber: guaranteeNumberNode ? (guaranteeNumberNode.textContent || '').trim() : '',
+                policyVisible: isEnabled(section.getAttribute('data-policy-visible')),
+                policyActionable: isEnabled(section.getAttribute('data-policy-actionable')),
+                policyExecutable: isEnabled(section.getAttribute('data-policy-executable')),
+                canViewRecord: isEnabled(section.getAttribute('data-surface-can-view-record')),
+                canViewPreview: isEnabled(section.getAttribute('data-surface-can-view-preview')),
+                canExecuteActions: isEnabled(section.getAttribute('data-surface-can-execute-actions')),
+            };
+        }
+
+        applyRecordSurfaceState(surface) {
+            const hideRecord = !surface || !surface.canViewRecord || surface.recordId <= 0;
+            const guaranteeNumberDisplay = document.getElementById('guarantee-number-display');
+            const statusElements = document.querySelectorAll('.record-title .badge, .record-title .status-badge, .record-title .record-edit-btn');
+            const previewSection = document.getElementById('preview-section');
+            const historicalBannerContainer = document.getElementById('historical-banner-container');
+
+            if (hideRecord) {
+                if (guaranteeNumberDisplay) {
+                    guaranteeNumberDisplay.textContent = '—';
+                }
+                statusElements.forEach((el) => el.classList.add('u-hidden'));
+
+                if (previewSection) {
+                    previewSection.innerHTML = '';
+                    previewSection.hidden = true;
+                    previewSection.classList.add('u-hidden');
+                }
+
+                if (historicalBannerContainer) {
+                    historicalBannerContainer.hidden = true;
+                    historicalBannerContainer.classList.add('u-hidden');
+                }
+                return;
+            }
+
+            if (guaranteeNumberDisplay && surface.guaranteeNumber) {
+                guaranteeNumberDisplay.textContent = surface.guaranteeNumber;
+            }
+            statusElements.forEach((el) => el.classList.remove('u-hidden'));
+
+            if (previewSection) {
+                if (surface.canViewPreview) {
+                    previewSection.hidden = false;
+                    previewSection.classList.remove('u-hidden');
+                } else {
+                    previewSection.innerHTML = '';
+                    previewSection.hidden = true;
+                    previewSection.classList.add('u-hidden');
+                }
+            }
+        }
+
         // Navigation Implementation
         async loadRecord(index) {
             try {
@@ -900,9 +1014,15 @@ if (!window.RecordsController) {
                     query.set('search', searchTerm);
                 }
 
+                const stageFilter = urlParams.get('stage');
+                if (stageFilter && stageFilter.trim() !== '') {
+                    query.set('stage', stageFilter);
+                }
+
                 // Fetch Record HTML
                 const res = await fetch(`/api/get-record.php?${query.toString()}`);
                 const html = await res.text();
+                const parsedSurface = this.parseRecordSurfaceFromHtml(html);
 
                 // Replace Record Section (Server Driven)
                 const recordSection = document.getElementById('record-form-section');
@@ -910,9 +1030,20 @@ if (!window.RecordsController) {
                     recordSection.outerHTML = html;
                 }
 
-                // 🔥 Notify system that Data Card has been updated
-                // This triggers the preview update via the listener in bindGlobalEvents
-                document.dispatchEvent(new CustomEvent('guarantee:updated'));
+                if (window.WBGLPolicy && typeof window.WBGLPolicy.applyDomGuards === 'function') {
+                    window.WBGLPolicy.applyDomGuards(document);
+                }
+
+                this.applyRecordSurfaceState(parsedSurface);
+
+                const canPublishUpdate = Boolean(parsedSurface && parsedSurface.canViewRecord && parsedSurface.recordId > 0);
+                if (canPublishUpdate) {
+                    // 🔥 Notify system that Data Card has been updated
+                    // This triggers the preview update via the listener in bindGlobalEvents
+                    document.dispatchEvent(new CustomEvent('guarantee:updated'));
+                } else {
+                    this.syncSuggestionVisibility({ forceHide: true });
+                }
 
                 // Sync Timeline (if generic timeline exists)
                 // Note: If using Time Machine timeline, it's separate. 
@@ -921,7 +1052,7 @@ if (!window.RecordsController) {
 
                 // Update URL logic if needed
             } catch (e) {
-                console.error('Nav Error:', e);
+                console.error('NAV_ERROR', e);
             }
         }
 
@@ -938,11 +1069,19 @@ if (!window.RecordsController) {
                     query.set('search', searchTerm);
                 }
 
+                const stageFilter = urlParams.get('stage');
+                if (stageFilter && stageFilter.trim() !== '') {
+                    query.set('stage', stageFilter);
+                }
+
                 const res = await fetch(`/api/get-timeline.php?${query.toString()}`);
                 const html = await res.text();
                 const timelineSection = document.getElementById('timeline-section');
                 if (timelineSection) {
                     timelineSection.outerHTML = html;
+                }
+                if (window.WBGLPolicy && typeof window.WBGLPolicy.applyDomGuards === 'function') {
+                    window.WBGLPolicy.applyDomGuards(document);
                 }
             } catch (e) { /* Ignore */ }
         }
@@ -959,6 +1098,9 @@ if (!window.RecordsController) {
                 const recordSection = document.getElementById('record-form-section');
                 if (recordSection) {
                     recordSection.outerHTML = html;
+                }
+                if (window.WBGLPolicy && typeof window.WBGLPolicy.applyDomGuards === 'function') {
+                    window.WBGLPolicy.applyDomGuards(document);
                 }
             } catch (e) {
                 console.error(e);

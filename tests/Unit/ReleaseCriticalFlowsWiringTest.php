@@ -53,16 +53,14 @@ final class ReleaseCriticalFlowsWiringTest extends TestCase
 
     public function testSchedulerAndDeadLetterWiringIsPresent(): void
     {
-        $scheduleRunner = $this->readFile('maint/schedule.php');
+        $jobCatalog = $this->readFile('app/Services/SchedulerJobCatalog.php');
+        $notifyScript = $this->readFile('app/Scripts/notify-expiry.php');
         $runtimeService = $this->readFile('app/Services/SchedulerRuntimeService.php');
-        $deadLetterCommand = $this->readFile('maint/schedule-dead-letters.php');
         $deadLetterApi = $this->readFile('api/scheduler-dead-letters.php');
 
-        $this->assertStringContainsString('SchedulerRuntimeService::runJob', $scheduleRunner);
+        $this->assertStringContainsString("base_path('app/Scripts/notify-expiry.php')", $jobCatalog);
+        $this->assertStringContainsString('NotificationService::create', $notifyScript);
         $this->assertStringContainsString('SchedulerDeadLetterService::recordFailure', $runtimeService);
-        $this->assertStringContainsString("if (\$action === 'list')", $deadLetterCommand);
-        $this->assertStringContainsString("if (\$action === 'resolve')", $deadLetterCommand);
-        $this->assertStringContainsString("if (\$action === 'retry')", $deadLetterCommand);
         $this->assertStringContainsString("if (\$action === 'resolve')", $deadLetterApi);
         $this->assertStringContainsString("if (\$action === 'retry')", $deadLetterApi);
     }

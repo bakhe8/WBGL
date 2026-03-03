@@ -8,6 +8,7 @@ use App\Repositories\UserRepository;
 use App\Support\AuthService;
 use App\Support\Database;
 use App\Support\DirectionResolver;
+use App\Support\Guard;
 use App\Support\Input;
 use App\Support\LocaleResolver;
 use App\Support\Settings;
@@ -68,6 +69,16 @@ $hasDirection = $directionInput !== '';
 
 if (!$hasLanguage && !$hasTheme && !$hasDirection) {
     wbgl_api_fail(422, 'At least one preference is required');
+}
+
+if ($hasLanguage && !Guard::has('ui_change_language')) {
+    wbgl_api_fail(403, 'Permission Denied: ui_change_language');
+}
+if ($hasTheme && !Guard::has('ui_change_theme')) {
+    wbgl_api_fail(403, 'Permission Denied: ui_change_theme');
+}
+if ($hasDirection && !Guard::has('ui_change_direction')) {
+    wbgl_api_fail(403, 'Permission Denied: ui_change_direction');
 }
 
 $language = $hasLanguage ? LocaleResolver::normalize($languageInput) : null;

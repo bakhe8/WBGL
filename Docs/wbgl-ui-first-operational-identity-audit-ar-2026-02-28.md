@@ -128,7 +128,7 @@
 - Break-glass policy: صلاحية منفصلة + سبب + ticket + TTL + ledger (`app/Services/BreakGlassService.php:75-99`, `:107-121`).
 - Release read-only policy: منع تعديل released إلا break-glass (`app/Services/GuaranteeMutationPolicyService.php:50-90`).
 - workflow stages + permission-per-transition (`app/Services/WorkflowService.php:17-41`, `:58-71`).
-- Unproven: `ApiPolicyMatrix` موجودة (`app/Support/ApiPolicyMatrix.php:13-77`) لكن لم يثبت أنها enforced runtime مباشرة؛ الاستخدام الظاهر في أدوات صيانة (`maint/run-execution-loop.php:1270`, `:2394`).
+- Unproven: `ApiPolicyMatrix` موجودة (`app/Support/ApiPolicyMatrix.php:13-77`) لكن لم يثبت أنها enforced runtime مباشرة؛ الاستخدام الظاهر كان تاريخيًا في أدوات صيانة متقاعدة (`maint/run-execution-loop.php`).
 
 ### B) أسطح الإنتاجية (Throughput Surfaces)
 - `save-and-next` يقلل الانتقال اليدوي ويعيد next id (`public/js/records.controller.js:441-495`, `api/save-and-next.php:561-573`, `:579-590`).

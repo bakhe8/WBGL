@@ -20,7 +20,7 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(255, 255, 255, 0.8);
+    background: var(--theme-glass-surface);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -70,7 +70,7 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--theme-overlay-backdrop);
     z-index: 10000;
     display: flex;
     align-items: center;
@@ -83,4 +83,140 @@
     width: 100%;
     max-width: 500px;
     box-shadow: var(--shadow-xl);
+}
+
+.bd-toast-container {
+    position: fixed;
+    top: var(--space-md);
+    right: var(--space-md);
+    z-index: var(--z-toast);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.is-hidden {
+    display: none !important;
+}
+
+.bd-flex-wrap-between {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+}
+
+.bd-info-column {
+    flex: 1;
+    min-width: 300px;
+}
+
+.bd-actions-column {
+    min-width: 250px;
+}
+
+.bd-select-col {
+    width: 40px;
+}
+
+.icon-14 {
+    width: 14px;
+}
+
+.icon-16 {
+    width: 16px;
+}
+
+.icon-18 {
+    width: 18px;
+}
+
+.icon-24 {
+    width: 24px;
+    height: 24px;
+}
+
+.icon-32 {
+    width: 32px;
+    height: 32px;
+}
+
+.icon-48 {
+    width: 48px;
+    height: 48px;
+}
+
+.icon-min-18 {
+    min-width: 18px;
+}
+
+.bd-empty-icon {
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.toast-card {
+    min-width: 300px;
+    background: var(--bg-card);
+}
+
+.toast-icon-success {
+    color: var(--accent-success);
+}
+
+.toast-icon-error {
+    color: var(--accent-danger);
+}
+
+.toast-icon-warning {
+    color: var(--accent-warning);
+}
+
+.toast-icon-info {
+    color: var(--accent-info);
+}
+
+.bd-modal-warn-icon-wrap {
+    padding: 12px;
+    border-radius: 999px;
+    background: var(--accent-warning-light);
+}
+
+.bd-modal-warn-icon {
+    color: var(--accent-warning);
+}
+
+.bd-modal-reason-wrap {
+    text-align: right;
+    margin-bottom: 12px;
+}
+
+.bd-required {
+    color: var(--accent-danger);
+}
+
+.bd-reason-textarea {
+    margin-top: 8px;
+}
+
+.bd-breakglass-wrap {
+    text-align: right;
+    margin-bottom: 16px;
+    border: 1px dashed var(--theme-warning-border);
+    border-radius: 10px;
+    padding: 10px;
+}
+
+.bd-breakglass-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bd-breakglass-fields {
+    display: none;
+    margin-top: 10px;
+}
+
+.bd-breakglass-ticket {
+    margin-bottom: 8px;
 }

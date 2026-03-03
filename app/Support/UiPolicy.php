@@ -15,13 +15,28 @@ class UiPolicy
         'navigation:view-maintenance' => 'manage_users',
         'navigation:view-users' => 'manage_users',
         'users:manage' => 'manage_users',
+        'roles:manage' => 'manage_roles',
         'settings:manage' => 'manage_users',
         'imports:create' => 'import_excel',
         'guarantee:manual-entry' => 'manual_entry',
         'guarantee:mutate' => 'manage_data',
+        'guarantee:save' => 'guarantee_save',
+        'guarantee:extend' => 'guarantee_extend',
+        'guarantee:reduce' => 'guarantee_reduce',
+        'guarantee:release' => 'guarantee_release',
+        'supplier:manage' => 'supplier_manage',
+        'bank:manage' => 'bank_manage',
         'batch:reopen' => 'reopen_batch',
         'guarantee:reopen' => 'reopen_guarantee',
         'system:break-glass' => 'break_glass_override',
+        'ui:change-language' => 'ui_change_language',
+        'ui:change-direction' => 'ui_change_direction',
+        'ui:change-theme' => 'ui_change_theme',
+        'timeline:view' => 'timeline_view',
+        'notes:view' => 'notes_view',
+        'notes:create' => 'notes_create',
+        'attachments:view' => 'attachments_view',
+        'attachments:upload' => 'attachments_upload',
     ];
 
     /**
@@ -71,4 +86,3 @@ class UiPolicy
         return false;
     }
 }
-

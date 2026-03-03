@@ -57,6 +57,22 @@
         return Boolean(boot?.user?.id);
     }
 
+    function isTruthy(value) {
+        if (value === true || value === 1) {
+            return true;
+        }
+        const normalized = String(value || '').trim().toLowerCase();
+        return normalized === '1' || normalized === 'true' || normalized === 'yes';
+    }
+
+    function isDirectionOverrideAllowed() {
+        const user = getBootstrap()?.user || null;
+        if (!user || !user.id) {
+            return false;
+        }
+        return isTruthy(user.is_developer);
+    }
+
     function applyDirection() {
         document.documentElement.setAttribute('dir', state.direction);
         document.documentElement.setAttribute('data-direction-source', state.source);
@@ -99,8 +115,15 @@
 
     async function setOverride(override, options) {
         const config = Object.assign({ persist: true, source: 'ui' }, options || {});
-        state.override = normalizeOverride(override);
-        localStorage.setItem('wbgl_direction_override', state.override);
+        const allowOverride = isDirectionOverrideAllowed();
+        const requestedOverride = normalizeOverride(override);
+        state.override = allowOverride ? requestedOverride : 'auto';
+        if (allowOverride) {
+            localStorage.setItem('wbgl_direction_override', state.override);
+        } else {
+            localStorage.removeItem('wbgl_direction_override');
+            config.persist = false;
+        }
 
         const resolved = resolveDirection(state.locale, state.override, state.defaultOverride);
         state.direction = resolved.direction;
@@ -122,13 +145,21 @@
     }
 
     function toggleOverride() {
+        if (!isDirectionOverrideAllowed()) {
+            return Promise.resolve(state.direction);
+        }
         const index = OVERRIDES.indexOf(state.override);
         const next = OVERRIDES[(index + 1) % OVERRIDES.length];
         return setOverride(next, { source: 'toggle' });
     }
 
     function bindToggleButtons() {
+        const allowOverride = isDirectionOverrideAllowed();
         document.querySelectorAll('[data-wbgl-direction-toggle]').forEach((button) => {
+            if (!allowOverride) {
+                button.hidden = true;
+                return;
+            }
             if (button.dataset.boundDirectionToggle === '1') {
                 return;
             }
@@ -149,9 +180,14 @@
 
         const userOverride = normalizeOverride(boot?.user?.preferences?.direction_override || 'auto');
         const cachedOverride = normalizeOverride(localStorage.getItem('wbgl_direction_override'));
-        state.override = boot?.user?.id ? userOverride : cachedOverride;
-        if (state.override === 'auto' && !boot?.user?.id) {
-            state.override = state.defaultOverride;
+        if (isDirectionOverrideAllowed()) {
+            state.override = boot?.user?.id ? userOverride : cachedOverride;
+            if (state.override === 'auto' && !boot?.user?.id) {
+                state.override = state.defaultOverride;
+            }
+        } else {
+            state.override = 'auto';
+            localStorage.removeItem('wbgl_direction_override');
         }
 
         const resolved = resolveDirection(state.locale, state.override, state.defaultOverride);

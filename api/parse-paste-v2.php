@@ -21,7 +21,7 @@ use App\Services\ParseCoordinatorService;
 use App\Services\SmartPaste\ConfidenceCalculator;
 
 header('Content-Type: application/json; charset=utf-8');
-wbgl_api_require_login();
+wbgl_api_require_permission('import_excel');
 
 try {
     // Get input
@@ -56,6 +56,17 @@ try {
     
     // Parse text using ParseCoordinatorService
     $result = ParseCoordinatorService::parseText($text, $db);
+
+    // Defense-in-depth: when parse resolves to an existing guarantee,
+    // enforce object-level visibility before returning its id/details.
+    if (
+        !empty($result['success'])
+        && !empty($result['exists_before'])
+        && !empty($result['id'])
+        && is_numeric($result['id'])
+    ) {
+        wbgl_api_require_guarantee_visibility((int)$result['id']);
+    }
     
     // ✅ NEW: Calculate confidence scores for extracted fields
     if ($result['success'] && !empty($result['extracted'])) {

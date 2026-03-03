@@ -8,6 +8,13 @@
 
 **WBGL** (Bank Guarantee Letters) هو نظام شامل لإدارة الضمانات البنكية مع ميزات الذكاء الاصطناعي للمطابقة التلقائية.
 
+## 🧭 مرجعية التنفيذ
+
+- المجلد `Docs/` هو المحرك الأساسي لكل العمل المستقبلي في المشروع.
+- نقطة الدخول المرجعية الإلزامية: `Docs/INDEX-DOCS-AR.md`.
+- سياسة التنفيذ الرسمية: `Docs/WBGL-DOCS-DRIVEN-EXECUTION-POLICY-AR.md`.
+- عند التعارض بين أي نص في `README.md` وأي وثيقة في `Docs/`، تكون الأولوية دائمًا لـ `Docs/`.
+
 ### ✨ المميزات الرئيسية
 
 - 📦 **إدارة الدفعات**: استيراد ومعالجة دفعات الضمانات من Excel
@@ -24,7 +31,7 @@
 ### Stack
 
 - **Backend**: PHP 8.3+ (Vanilla - no framework)
-- **Database**: SQLite 3
+- **Database**: PostgreSQL
 - **Frontend**: Vanilla JavaScript + Custom CSS Design System
 - **Icons**: Lucide Icons
 - **Fonts**: Tajawal (Google Fonts)
@@ -43,7 +50,7 @@ WBGL/
 ├── views/              # Page templates
 ├── partials/           # Reusable components
 ├── api/                # API endpoints
-└── docs/               # Documentation
+└── Docs/               # Documentation (Authoritative)
 
 ```
 
@@ -54,7 +61,7 @@ WBGL/
 ### المتطلبات
 
 - PHP 8.3 or higher
-- SQLite3 extension enabled
+- PostgreSQL server accessible from app runtime
 - Composer (optional)
 
 ### التشغيل السريع
@@ -82,10 +89,10 @@ http://localhost:<PORT>
 
 ### Database Setup
 
-السيرفر سينشئ قاعدة البيانات تلقائياً عند أول تشغيل:
+قاعدة البيانات المعتمدة للتشغيل:
 
-- `database.db` - SQLite database
-- جداول تُنشأ تلقائياً إذا لم تكن موجودة
+- PostgreSQL (`DB_DRIVER=pgsql`)
+- إعدادات الاتصال من `storage/settings.json` أو متغيرات البيئة
 
 ### SQL Migrations (Versioned)
 
@@ -93,20 +100,15 @@ http://localhost:<PORT>
 
 - `database/migrations/*.sql`
 
-أوامر التشغيل:
-
-```bash
-php maint/migration-status.php
-php maint/migrate.php --dry-run
-php maint/migrate.php
-php maint/run-execution-loop.php
-php maint/schedule.php
-```
+ملاحظة تشغيلية:
+- تم تقاعد مجلد `maint/` بالكامل.
+- أي تنفيذ تشغيلي/هجري يعتمد الآن على سياسة `Docs` والـ runbooks المحدثة فقط.
 
 مرجع التنفيذ المرحلي الحالي:
 
-- `docs/P0_EXECUTION_BASELINE.md`
-- `docs/NO_REINVENTION_POLICY.md`
+- `Docs/INDEX-DOCS-AR.md`
+- `Docs/WBGL-UNIFIED-OWNER-VISION-AR-2026-02-28.md`
+- `Docs/WBGL-FULL-TRACEABILITY-MATRIX-AR.md`
 
 ### Tests (P0 Baseline)
 
@@ -130,9 +132,10 @@ npm run test:e2e
 
 مراجع الحوكمة والتشغيل:
 
-- `docs/WBGL_ENTERPRISE_GRADE_EXECUTION_PLAN.md`
-- `docs/OBSERVABILITY_RUNBOOK.md`
-- `docs/WBGL_EXECUTION_LOOP_STATUS.md`
+- `Docs/WBGL-UNIFIED-RESOLVED-REPORT-AR-2026-02-28.md`
+- `Docs/WBGL-FINAL-CLAIMS-REGISTER-AR-2026-02-28.md`
+- `Docs/WBGL-DOCS-DRIVEN-EXECUTION-POLICY-AR.md`
+- `Docs/WBGL-MAINT-SCRIPT-BASELINE-AR.md`
 
 ## 📝 الترخيص
 

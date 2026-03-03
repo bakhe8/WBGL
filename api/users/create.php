@@ -8,6 +8,7 @@ require_once __DIR__ . '/../_bootstrap.php';
 
 use App\Services\AuditTrailService;
 use App\Support\Database;
+use App\Repositories\RoleRepository;
 use App\Repositories\UserRepository;
 use App\Models\User;
 use App\Support\DirectionResolver;
@@ -39,6 +40,13 @@ if (!$fullName || !$username || !$roleId || !$password) {
 try {
     $db = Database::connect();
     $repo = new UserRepository($db);
+    $roleRepo = new RoleRepository($db);
+
+    if (!$roleRepo->find((int)$roleId)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'الدور المحدد غير موجود']);
+        exit;
+    }
 
     // Check if username unique
     if ($repo->findByUsername($username)) {

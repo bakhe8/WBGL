@@ -26,6 +26,8 @@ try {
     $sourceDraftId = (int)$input['draft_id'];
     $sourceGuarantees = $input['guarantees'];
 
+    wbgl_api_require_guarantee_visibility($sourceDraftId);
+
     // 1. Get source attachments
     $sourceAttachments = $attachRepo->getByGuaranteeId($sourceDraftId);
 
@@ -51,9 +53,9 @@ try {
             $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($sourceDraftId);
             $repo->updateRawData($sourceDraftId, json_encode($rawData, JSON_UNESCAPED_UNICODE));
             
-            // Set guarantee_number and status
-            $stmt = $db->prepare("UPDATE guarantees SET guarantee_number = ?, status_flags = ? WHERE id = ?");
-            $stmt->execute([$gData['guarantee_number'], null, $sourceDraftId]);
+            // Set guarantee_number on the canonical guarantees schema (no legacy status_flags write).
+            $stmt = $db->prepare("UPDATE guarantees SET guarantee_number = ? WHERE id = ?");
+            $stmt->execute([$gData['guarantee_number'], $sourceDraftId]);
             
             $createdIds[] = $sourceDraftId;
             

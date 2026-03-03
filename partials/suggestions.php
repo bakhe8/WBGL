@@ -8,15 +8,15 @@
  */
 
 if (empty($suggestions)): ?>
-    <div style="font-size: 11px; color: #94a3b8; padding: 4px;">لا توجد اقتراحات</div>
+    <div class="record-suggestions-empty" data-i18n="index.suggestions.empty">لا توجد اقتراحات</div>
 <?php else: 
     foreach ($suggestions as $sugg):
         $score = $sugg['confidence'] ?? 0;
         
         // Determine tooltip
-        $tooltipText = 'ثقة عالية';
-        if ($score < 70) $tooltipText = 'ثقة متوسطة';
-        if ($score < 50) $tooltipText = 'ثقة منخفضة';
+        $tooltipKey = 'index.suggestions.confidence.high';
+        if ($score < 70) $tooltipKey = 'index.suggestions.confidence.medium';
+        if ($score < 50) $tooltipKey = 'index.suggestions.confidence.low';
         
         // Determine confidence level for CSS
         $confidenceLevel = 'high';
@@ -33,7 +33,8 @@ if (empty($suggestions)): ?>
         data-id="<?= htmlspecialchars($sugg['supplier_id'] ?? '') ?>"
         data-name="<?= $safeName ?>"
         data-confidence="<?= $confidenceLevel ?>"
-        title="<?= $tooltipText ?>">
+        title=""
+        data-i18n-title="<?= htmlspecialchars($tooltipKey, ENT_QUOTES, 'UTF-8') ?>">
         <span class="chip-name"><?= $safeName ?></span>
         <span class="chip-confidence"><?= $score ?>%</span>
     </button>

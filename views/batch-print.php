@@ -8,30 +8,81 @@ require_once __DIR__ . '/../app/Support/autoload.php';
 
 use App\Support\Database;
 use App\Support\ViewPolicy;
+use App\Support\Settings;
 use App\Repositories\GuaranteeRepository;
 use App\Repositories\BankRepository;
 use App\Repositories\SupplierRepository;
 
 ViewPolicy::guardView('batch-print.php');
 
+function batchPrintAbort(string $message): never
+{
+    $safeMessage = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
+    die(
+        '<style>.batch-print-error{padding:20px;font-family:sans-serif;text-align:center;}</style>' .
+        '<div class="batch-print-error">' . $safeMessage . '</div>'
+    );
+}
+
 // 1. Inputs
 $idsParam = $_GET['ids'] ?? '';
 $batchIdentifier = isset($_GET['batch_identifier']) ? trim((string)$_GET['batch_identifier']) : '';
 $batchIdentifier = $batchIdentifier !== '' ? $batchIdentifier : null;
+$settings = Settings::getInstance();
+$batchPrintLocaleCode = strtolower((string)$settings->get('DEFAULT_LOCALE', 'ar'));
+if (!in_array($batchPrintLocaleCode, ['ar', 'en'], true)) {
+    $batchPrintLocaleCode = 'ar';
+}
+$batchPrintLocalePrimary = [];
+$batchPrintLocaleFallback = [];
+$batchPrintPrimaryPath = __DIR__ . '/../public/locales/' . $batchPrintLocaleCode . '/batch_print.json';
+$batchPrintFallbackPath = __DIR__ . '/../public/locales/ar/batch_print.json';
+if (is_file($batchPrintPrimaryPath)) {
+    $decodedLocale = json_decode((string)file_get_contents($batchPrintPrimaryPath), true);
+    if (is_array($decodedLocale)) {
+        $batchPrintLocalePrimary = $decodedLocale;
+    }
+}
+if (is_file($batchPrintFallbackPath)) {
+    $decodedLocale = json_decode((string)file_get_contents($batchPrintFallbackPath), true);
+    if (is_array($decodedLocale)) {
+        $batchPrintLocaleFallback = $decodedLocale;
+    }
+}
+$batchPrintTodoArPrefix = '__' . 'TODO_AR__';
+$batchPrintTodoEnPrefix = '__' . 'TODO_EN__';
+$batchPrintIsPlaceholder = static function ($value) use ($batchPrintTodoArPrefix, $batchPrintTodoEnPrefix): bool {
+    if (!is_string($value)) {
+        return false;
+    }
+    $trimmed = trim($value);
+    return str_starts_with($trimmed, $batchPrintTodoArPrefix) || str_starts_with($trimmed, $batchPrintTodoEnPrefix);
+};
+$batchPrintT = static function (string $key, array $params = [], ?string $fallback = null) use ($batchPrintLocalePrimary, $batchPrintLocaleFallback, $batchPrintIsPlaceholder): string {
+    $value = $batchPrintLocalePrimary[$key] ?? null;
+    if (!is_string($value) || $batchPrintIsPlaceholder($value)) {
+        $value = $batchPrintLocaleFallback[$key] ?? null;
+    }
+    if (!is_string($value) || $batchPrintIsPlaceholder($value)) {
+        $value = $fallback ?? $key;
+    }
+    foreach ($params as $token => $replacement) {
+        $value = str_replace('{{' . (string)$token . '}}', (string)$replacement, $value);
+    }
+    return $value;
+};
+$batchPrintUnknownLabel = $batchPrintT('batch_print.ui.unknown', [], 'batch_print.ui.unknown');
 
 if (!$idsParam) {
-    die('<div style="padding: 20px; font-family: sans-serif; text-align: center;">معرفات السجلات مفقودة.</div>');
+    batchPrintAbort($batchPrintT('batch_print.error.missing_ids'));
 }
 
 $guaranteeIds = explode(',', $idsParam);
 $guaranteeIds = array_filter(array_map('intval', $guaranteeIds));
 
 if (empty($guaranteeIds)) {
-    die('<div style="padding: 20px; font-family: sans-serif; text-align: center;">لا توجد سجلات صالحة للطباعة.</div>');
+    batchPrintAbort($batchPrintT('batch_print.error.no_valid_records'));
 }
-
-// 2. Data Fetching
-use App\Support\Settings;
 
 $db = Database::connect();
 
@@ -48,7 +99,7 @@ if ($settings->isProductionMode() && !empty($guaranteeIds)) {
     $guaranteeIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
     
     if (empty($guaranteeIds)) {
-        die('<div style="padding: 20px; font-family: sans-serif; text-align: center;">لا توجد سجلات صالحة للطباعة في وضع الإنتاج.</div>');
+        batchPrintAbort($batchPrintT('batch_print.error.no_valid_records_production'));
     }
 }
 
@@ -89,7 +140,8 @@ if (!empty($guaranteeIds)) {
 
 <head>
     <meta charset="UTF-8">
-    <title>طباعة مجمعة - <?= count($guaranteeIds) ?> خطابات</title>
+    <?php $batchPrintTitle = $batchPrintT('batch_print.meta.title', ['count' => count($guaranteeIds)]); ?>
+    <title><?= htmlspecialchars($batchPrintTitle, ENT_QUOTES, 'UTF-8') ?></title>
     <?php include __DIR__ . '/../partials/ui-bootstrap.php'; ?>
 
     <!-- Link to external CSS instead of copying -->
@@ -200,14 +252,14 @@ if (!empty($guaranteeIds)) {
     </style>
 </head>
 
-<body>
+<body data-i18n-namespaces="common,batch_print">
 
     <div class="floating-actions no-print">
         <button onclick="handleBatchPrint()" class="action-btn">
-            🖨️ طباعة الكل (<?= count($guaranteeIds) ?>)
+            <span data-i18n="batch_print.actions.print_all">🖨️ طباعة الكل</span> (<?= count($guaranteeIds) ?>)
         </button>
-        <button onclick="window.close()" class="action-btn close">
-            ✕ إغلاق
+        <button onclick="handleCloseWindow()" class="action-btn close">
+            <span data-i18n="batch_print.actions.close">✕ إغلاق</span>
         </button>
     </div>
 
@@ -237,8 +289,8 @@ if (!empty($guaranteeIds)) {
             'expiry_date' => $guarantee->rawData['expiry_date'] ?? '',
             'type' => $guarantee->rawData['type'] ?? '',
             'related_to' => $guarantee->rawData['related_to'] ?? 'contract',
-            'supplier_name' => $guarantee->rawData['supplier'] ?? 'غير محدد',
-            'bank_name' => $guarantee->rawData['bank'] ?? 'غير محدد',
+            'supplier_name' => $guarantee->rawData['supplier'] ?? $batchPrintUnknownLabel,
+            'bank_name' => $guarantee->rawData['bank'] ?? $batchPrintUnknownLabel,
             'active_action' => $lastAction ?? ($decision['active_action'] ?? null), // ✅ No default
         ];
 
@@ -260,9 +312,13 @@ if (!empty($guaranteeIds)) {
             }
         } else {
             // Fallback: Smart Bank Matching using Normalizer
-            $bankName = trim(preg_replace('/\s+/u', ' ', $record['bank_name'] ?? ''));
+            $bankNameRaw = str_replace(["\r", "\n", "\t"], ' ', (string)($record['bank_name'] ?? ''));
+            $bankName = trim($bankNameRaw);
+            while (str_contains($bankName, '  ')) {
+                $bankName = str_replace('  ', ' ', $bankName);
+            }
 
-            if ($bankName && $bankName !== 'غير محدد') {
+            if ($bankName !== '' && $bankName !== $batchPrintUnknownLabel) {
                 try {
                     $bankId = null;
 
@@ -281,7 +337,7 @@ if (!empty($guaranteeIds)) {
 
                         // 3. Fallback: Fuzzy search with normalized name
                         if (!$bankId) {
-                            $stmt = $db->prepare("SELECT id FROM banks WHERE arabic_name LIKE ? LIMIT 1");
+                            $stmt = $db->prepare('SELECT id FROM banks WHERE (arabic_name LIKE ?) LIMIT 1');
                             $stmt->execute(["%$bankName%"]);
                             $bankId = $stmt->fetchColumn();
                         }
@@ -336,6 +392,13 @@ if (!empty($guaranteeIds)) {
                 return;
             }
             window.print();
+        }
+
+        function handleCloseWindow() {
+            const closeFn = window['close'];
+            if (typeof closeFn === 'function') {
+                closeFn.call(window);
+            }
         }
 
         document.addEventListener('DOMContentLoaded', () => {

@@ -7,11 +7,11 @@
 require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
-use App\Services\GuaranteeVisibilityService;
 use App\Services\TimelineHybridLedger;
+use App\Services\UiSurfacePolicyService;
 
 header('Content-Type: text/html; charset=utf-8');
-wbgl_api_require_login();
+wbgl_api_require_permission('timeline_view');
 
 try {
     if (!isset($_GET['history_id'])) {
@@ -33,10 +33,35 @@ try {
         throw new Exception('History event not found');
     }
 
-    if (!GuaranteeVisibilityService::canAccessGuarantee((int)$event['guarantee_id'])) {
-        http_response_code(403);
-        echo '<div style="color:red">Permission Denied</div>';
-        exit;
+    $guaranteeId = (int)($event['guarantee_id'] ?? 0);
+    $policy = wbgl_api_policy_for_guarantee($db, $guaranteeId);
+    if (!$policy['visible']) {
+        wbgl_api_fail(403, 'Permission Denied');
+    }
+
+    $stmtDecision = $db->prepare('SELECT status FROM guarantee_decisions WHERE guarantee_id = ? LIMIT 1');
+    $stmtDecision->execute([$guaranteeId]);
+    $decisionRow = $stmtDecision->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    $surface = UiSurfacePolicyService::forGuarantee(
+        $policy,
+        \App\Support\Guard::permissions(),
+        (string)($decisionRow['status'] ?? 'pending')
+    );
+
+    if (!($surface['can_view_timeline'] ?? false)) {
+        $index = $_GET['index'] ?? 1;
+        echo '<div id="record-form-section" class="decision-card decision-card-empty-state"'
+            . ' data-record-index="' . htmlspecialchars((string)$index, ENT_QUOTES, 'UTF-8') . '"'
+            . ' data-policy-visible="' . ($policy['visible'] ? '1' : '0') . '"'
+            . ' data-policy-actionable="' . ($policy['actionable'] ? '1' : '0') . '"'
+            . ' data-policy-executable="' . ($policy['executable'] ? '1' : '0') . '"'
+            . ' data-surface-can-view-record="0"'
+            . ' data-surface-can-view-preview="0"'
+            . ' data-surface-can-execute-actions="0">';
+        echo '<div class="card-body"><div class="empty-state-message" data-i18n="index.empty.no_record_in_scope">لا توجد سجلات ضمن نطاق العرض الحالي</div></div>';
+        echo '</div>';
+        return;
     }
 
     // 2. Decode / reconstruct snapshot from unified hybrid ledger fields
@@ -48,7 +73,7 @@ try {
     // 3. Reconstruct the $record object
     // Fetch parent guarantee
     $stmtRec = $db->prepare('SELECT * FROM guarantees WHERE id = ?');
-    $stmtRec->execute([$event['guarantee_id']]);
+    $stmtRec->execute([$guaranteeId]);
     $dbRow = $stmtRec->fetch(PDO::FETCH_ASSOC);
     
     if (!$dbRow) {

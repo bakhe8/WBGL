@@ -11,6 +11,8 @@ final class ApiBootstrapTest extends TestCase
     public function testBootstrapHelpersAreDefined(): void
     {
         $this->assertTrue(function_exists('wbgl_api_json_headers'));
+        $this->assertTrue(function_exists('wbgl_api_envelope'));
+        $this->assertTrue(function_exists('wbgl_api_success'));
         $this->assertTrue(function_exists('wbgl_api_fail'));
         $this->assertTrue(function_exists('wbgl_api_request_id'));
         $this->assertTrue(function_exists('wbgl_api_require_login'));

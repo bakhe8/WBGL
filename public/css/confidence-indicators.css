@@ -16,21 +16,21 @@
 }
 
 .confidence-high {
-    background: #d1fae5;
-    color: #065f46;
-    border: 1px solid #10b981;
+    background: var(--theme-success-surface);
+    color: var(--theme-success-text);
+    border: 1px solid var(--theme-success-border);
 }
 
 .confidence-medium {
-    background: #fef3c7;
-    color: #92400e;
-    border: 1px solid #f59e0b;
+    background: var(--theme-warning-surface);
+    color: var(--theme-warning-text);
+    border: 1px solid var(--theme-warning-border);
 }
 
 .confidence-low {
-    background: #fee2e2;
-    color: #991b1b;
-    border: 1px solid #ef4444;
+    background: var(--theme-danger-surface);
+    color: var(--theme-danger-text);
+    border: 1px solid var(--theme-danger-border);
 }
 
 .confidence-percentage {
@@ -50,17 +50,32 @@
     z-index: 10;
 }
 
+.confidence-field-high {
+    border-color: var(--theme-success-border) !important;
+    border-width: 2px !important;
+}
+
+.confidence-field-medium {
+    border-color: var(--theme-warning-border) !important;
+    border-width: 2px !important;
+}
+
+.confidence-field-low {
+    border-color: var(--theme-danger-border) !important;
+    border-width: 2px !important;
+}
+
 /* Warning for low confidence */
 .confidence-warning {
     display: flex;
     align-items: start;
     gap: 8px;
     padding: 10px 12px;
-    background: #fef3c7;
-    border: 1px solid #f59e0b;
+    background: var(--theme-warning-surface);
+    border: 1px solid var(--theme-warning-border);
     border-radius: 6px;
     font-size: 13px;
-    color: #92400e;
+    color: var(--theme-warning-text);
     margin-top: 8px;
 }
 
@@ -83,13 +98,13 @@
     transform: translateX(-50%);
     margin-bottom: 8px;
     padding: 6px 10px;
-    background: #1f2937;
+    background: var(--text-primary);
     color: white;
     font-size: 12px;
     border-radius: 6px;
     white-space: nowrap;
     z-index: 100;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 6px var(--theme-overlay-strong);
 }
 
 .confidence-tooltip:hover::before {
@@ -100,6 +115,7 @@
     transform: translateX(-50%);
     margin-bottom: 2px;
     border: 4px solid transparent;
-    border-top-color: #1f2937;
+    border-top-color: var(--text-primary);
     z-index: 100;
 }
+

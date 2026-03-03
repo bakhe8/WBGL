@@ -8,7 +8,6 @@
             href: 'index.php',
             icon: '🏠',
             labelKey: 'nav.home',
-            badgeKey: 'home_tasks',
         },
         {
             id: 'batches',
@@ -25,14 +24,6 @@
             labelKey: 'nav.statistics',
         },
         {
-            id: 'settings',
-            page: 'settings',
-            href: 'views/settings.php',
-            icon: '⚙',
-            labelKey: 'nav.settings',
-            capability: { resource: 'navigation', action: 'view-settings' },
-        },
-        {
             id: 'maintenance',
             page: 'maintenance',
             href: 'views/maintenance.php',
@@ -40,14 +31,6 @@
             labelKey: 'nav.maintenance',
             capability: { resource: 'navigation', action: 'view-maintenance' },
             hideInProduction: true,
-        },
-        {
-            id: 'users',
-            page: 'users',
-            href: 'views/users.php',
-            icon: '👥',
-            labelKey: 'nav.users',
-            capability: { resource: 'navigation', action: 'view-users' },
         },
     ];
 
@@ -76,7 +59,7 @@
         anchor.href = context.basePath + item.href;
         anchor.className = 'btn-global' + (context.currentPage === item.page ? ' active' : '');
         if (item.id === 'home') {
-            anchor.style.position = 'relative';
+            anchor.classList.add('btn-global-home');
         }
 
         const icon = document.createElement('span');
@@ -105,15 +88,12 @@
         const basePath = root.getAttribute('data-nav-base') || '/';
         const currentPage = (root.getAttribute('data-nav-current') || '').trim();
         const productionMode = root.getAttribute('data-nav-production-mode') === '1';
-        const homeBadge = Number(root.getAttribute('data-nav-home-badge') || 0);
 
         return {
             basePath: basePath,
             currentPage: currentPage,
             productionMode: productionMode,
-            badges: {
-                home_tasks: homeBadge > 0 ? homeBadge : 0,
-            },
+            badges: {},
         };
     }
 

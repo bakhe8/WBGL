@@ -5,17 +5,16 @@ require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 
-header('Content-Type: application/json');
 wbgl_api_require_permission('import_excel');
 
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        throw new Exception('Method Not Allowed');
+        throw new RuntimeException('Method Not Allowed', 405);
     }
 
     $input = json_decode(file_get_contents('php://input'), true);
     if (!$input || !isset($input['import_id']) || !isset($input['guarantees'])) {
-        throw new Exception('Invalid Input Data');
+        throw new RuntimeException('Invalid Input Data', 400);
     }
 
     $pdo = Database::connect();
@@ -39,6 +38,8 @@ try {
         $guaranteeId = null;
 
         if ($existing) {
+            wbgl_api_require_guarantee_visibility((int)$existing['id']);
+
             // Update Existing
             $currentData = json_decode($existing['raw_data'], true) ?? [];
             $newData = array_merge($currentData, [
@@ -160,17 +161,24 @@ try {
         $savedCount++;
         // Return ID for redirection
         $pdo->commit();
-        echo json_encode(['status' => 'success', 'saved_count' => 1, 'redirect_id' => $guaranteeId]);
-        exit;
+        wbgl_api_success([
+            'saved_count' => 1,
+            'redirect_id' => (int)$guaranteeId,
+        ]);
     }
 
     $pdo->commit();
-    echo json_encode(['status' => 'success', 'saved_count' => $savedCount]);
+    wbgl_api_success([
+        'saved_count' => (int)$savedCount,
+    ]);
 
-} catch (Exception $e) {
-    if (isset($pdo) && $pdo->inTransaction()) {
+} catch (Throwable $e) {
+    if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+    $statusCode = (int)$e->getCode();
+    if ($statusCode < 400 || $statusCode >= 600) {
+        $statusCode = 500;
+    }
+    wbgl_api_fail($statusCode, $e->getMessage());
 }

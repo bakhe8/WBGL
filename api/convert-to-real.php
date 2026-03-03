@@ -3,9 +3,12 @@
  * API: Convert Test Guarantee to Real Guarantee
  */
 
+declare(strict_types=1);
+
 require_once __DIR__ . '/_bootstrap.php';
 
 use App\Repositories\GuaranteeRepository;
+use App\Support\Database;
 
 header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_permission('manage_data');
@@ -23,8 +26,11 @@ try {
         echo json_encode(['success' => false, 'error' => 'Missing guarantee_id']);
         exit;
     }
+
+    wbgl_api_require_guarantee_visibility((int)$guaranteeId);
     
-    $repo = new GuaranteeRepository();
+    $db = Database::connect();
+    $repo = new GuaranteeRepository($db);
     $success = $repo->convertToReal((int)$guaranteeId);
     
     if ($success) {

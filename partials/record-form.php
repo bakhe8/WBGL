@@ -26,6 +26,7 @@ if (!isset($record)) {
 
 // Default $isHistorical to false if not set
 $isHistorical = $isHistorical ?? false;
+$recordCanExecuteActions = $recordCanExecuteActions ?? true;
 $bannerData = $bannerData ?? null; // Should contain ['timestamp' => '...', 'reason' => '...']
 ?>
 
@@ -44,21 +45,21 @@ $bannerData = $bannerData ?? null; // Should contain ['timestamp' => '...', 'rea
 
 </div>
 <?php if ($isHistorical): ?>
-    <div style="background-color: #fffbeb; border: 1px solid #f59e0b; padding: 12px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <span style="font-size: 20px;">📜</span>
+    <div class="historical-banner-card">
+        <div class="historical-banner-info">
+            <span class="historical-banner-icon">📜</span>
             <div>
-                <div style="font-weight: bold; color: #92400e; font-size: 14px;">نسخة تاريخية (READ ONLY)</div>
-                <div style="font-size: 12px; color: #b45309;">
-                    تم الحفظ في: <?= $bannerData['timestamp'] ?? 'N/A' ?>
+                <div class="historical-banner-title" data-i18n="index.historical.read_only_title">نسخة تاريخية (READ ONLY)</div>
+                <div class="historical-banner-subtitle">
+                    <span data-i18n="index.historical.saved_at">تم الحفظ في:</span> <?= $bannerData['timestamp'] ?? 'N/A' ?>
                     <?php if (!empty($bannerData['reason'])): ?>
-                        • السبب: <?= htmlspecialchars($bannerData['reason']) ?>
+                        • <span data-i18n="index.historical.reason">السبب:</span> <?= htmlspecialchars($bannerData['reason']) ?>
                     <?php endif; ?>
                 </div>
             </div>
         </div>
-        <button class="btn btn-sm btn-outline-warning" data-action="load-record" data-index="<?= $index ?? 1 ?>" style="background: white; border: 1px solid #d97706; color: #d97706;">
-            العودة للوضع الحالي ↩️
+        <button class="historical-banner-btn" data-action="load-record" data-index="<?= $index ?? 1 ?>">
+            <span data-i18n="index.historical.return_to_current">العودة للوضع الحالي ↩️</span>
         </button>
     </div>
 <?php endif; ?>
@@ -66,36 +67,61 @@ $bannerData = $bannerData ?? null; // Should contain ['timestamp' => '...', 'rea
 <!-- Record Form Content -->
 <?php
 // ===== LIFECYCLE GATE: Determine if actions are allowed =====
-// Only allow actions (extend/reduce/release) on READY guarantees
-$isReady = ($record['status'] ?? 'pending') === 'ready';
-$disabledAttr = !$isReady ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : '';
-$disabledTitle = !$isReady ? 'title="غير متاح قبل اكتمال بيانات الضمان"' : '';
+// Only allow actions on READY guarantees AND policy executable records.
+$recordStatusNormalized = strtolower(trim((string)($record['status'] ?? 'pending')));
+$isReady = in_array($recordStatusNormalized, ['ready', 'approved'], true);
+$canMutateRecord = $isReady && (bool)$recordCanExecuteActions;
+$saveDisabledAttr = !$recordCanExecuteActions ? 'disabled' : '';
+$saveDisabledClass = !$recordCanExecuteActions ? ' record-action-disabled' : '';
+$disabledAttr = !$canMutateRecord ? 'disabled' : '';
+$disabledClass = !$canMutateRecord ? ' record-action-disabled' : '';
+$disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable_before_ready" title="غير متاح قبل اكتمال بيانات الضمان"' : '';
 // ============================================================
 ?>
 <header class="card-header">
-    <div class="header-title" style="display: flex; align-items: center; width: 100%;">
-        <div class="record-actions" style="display: flex; gap: 8px; flex: 1; align-items: center;">
-            <button class="btn btn-secondary btn-sm" data-action="saveAndNext">💾 حفظ</button>
-            <div style="width: 1px; height: 20px; background: #e2e8f0; margin: 0 4px;"></div>
+    <div class="header-title record-header-title">
+        <div class="record-actions record-actions-row">
+            <button class="btn btn-secondary btn-sm<?= $saveDisabledClass ?>"
+                data-action="saveAndNext"
+                data-authorize-resource="guarantee"
+                data-authorize-action="save"
+                data-authorize-mode="disable"
+                data-authorize-denied-key="index.permissions.denied.save_changes"
+                <?= $saveDisabledAttr ?>>
+                <span data-i18n="index.actions.save">💾 حفظ</span>
+            </button>
+            <div class="record-actions-divider"></div>
 
             <!-- ⚠️ Actions disabled if not ready -->
-            <button class="btn btn-secondary btn-sm"
+            <button class="btn btn-secondary btn-sm<?= $disabledClass ?>"
                 data-action="extend"
+                data-authorize-resource="guarantee"
+                data-authorize-action="extend"
+                data-authorize-mode="disable"
+                data-authorize-denied-key="index.permissions.denied.extend"
                 <?= $disabledAttr ?>
                 <?= $disabledTitle ?>>
-                🔄 تمديد
+                <span data-i18n="index.actions.extend">🔄 تمديد</span>
             </button>
-            <button class="btn btn-secondary btn-sm"
+            <button class="btn btn-secondary btn-sm<?= $disabledClass ?>"
                 data-action="reduce"
+                data-authorize-resource="guarantee"
+                data-authorize-action="reduce"
+                data-authorize-mode="disable"
+                data-authorize-denied-key="index.permissions.denied.reduce"
                 <?= $disabledAttr ?>
                 <?= $disabledTitle ?>>
-                📉 تخفيض
+                <span data-i18n="index.actions.reduce">📉 تخفيض</span>
             </button>
-            <button class="btn btn-secondary btn-sm"
+            <button class="btn btn-secondary btn-sm<?= $disabledClass ?>"
                 data-action="release"
+                data-authorize-resource="guarantee"
+                data-authorize-action="release"
+                data-authorize-mode="disable"
+                data-authorize-denied-key="index.permissions.denied.release"
                 <?= $disabledAttr ?>
                 <?= $disabledTitle ?>>
-                📤 إفراج
+                <span data-i18n="index.actions.release">📤 إفراج</span>
             </button>
 
             <!-- Phase 3: Workflow Action Button -->
@@ -118,33 +144,31 @@ $disabledTitle = !$isReady ? 'title="غير متاح قبل اكتمال بيا�
             $workflowStep = $record['workflow_step'] ?? 'draft';
 
             // ✅ PHASE 12: Contextual Role Reinforcement
-            $currentResponsibility = '';
             $stagePermissionsMap = [
-                'draft' => ['p' => 'audit_data', 'l' => 'مدقق (Auditor)'],
-                'audited' => ['p' => 'analyze_guarantee', 'l' => 'محلل (Analyst)'],
-                'analyzed' => ['p' => 'supervise_analysis', 'l' => 'مشرف (Supervisor)'],
-                'supervised' => ['p' => 'approve_decision', 'l' => 'معتمد (Manager)'],
-                'approved' => ['p' => 'sign_letters', 'l' => 'موقع (Signatory)'],
+                'draft' => ['p' => 'audit_data'],
+                'audited' => ['p' => 'analyze_guarantee'],
+                'analyzed' => ['p' => 'supervise_analysis'],
+                'supervised' => ['p' => 'approve_decision'],
+                'approved' => ['p' => 'sign_letters'],
             ];
             $req = $stagePermissionsMap[$workflowStep] ?? null;
-            if ($req && Guard::has($req['p'])) {
-                $currentResponsibility = $req['l'];
-            }
+            $requiredWorkflowPermission = $req['p'] ?? '';
             ?>
-            <div style="flex: 1; display: flex; justify-content: flex-end; align-items: center; gap: 12px;">
-                <div class="workflow-status-badge" style="background: #f1f5f9; padding: 4px 12px; border-radius: 20px; font-size: 11px; border: 1px solid #e2e8f0; color: #64748b;">
-                    المرحلة: <span style="font-weight: bold; color: #334155;"><?= htmlspecialchars($workflowStep) ?></span>
+            <div class="workflow-controls">
+                <div class="workflow-stage-pill" title="" data-i18n-title="index.workflow.current_stage_title">
+                    <span data-i18n="index.workflow.stage_label">المرحلة:</span>
+                    <span class="workflow-stage-value"><?= htmlspecialchars($workflowStep) ?></span>
                 </div>
 
-                <?php if ($canAdvance): ?>
-                    <button class="btn btn-primary btn-sm"
+                <?php if ($canAdvance && $recordCanExecuteActions): ?>
+                    <button class="btn btn-secondary btn-sm workflow-action-btn"
                         data-action="workflow-advance"
                         data-step="<?= $workflowStep ?>"
-                        style="background: #2563eb; font-weight: bold; padding: 6px 16px; min-width: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2;">
-                        <span style="font-size: 13px;">⚡ <?= $actionLabel ?></span>
-                        <?php if ($currentResponsibility): ?>
-                            <span style="font-size: 9px; opacity: 0.7; font-weight: 500;"><?= $currentResponsibility ?></span>
-                        <?php endif; ?>
+                        data-authorize-permission="<?= htmlspecialchars($requiredWorkflowPermission, ENT_QUOTES, 'UTF-8') ?>"
+                        data-authorize-mode="hide"
+                        title=""
+                        data-i18n-title="index.workflow.execute_next_step">
+                        ⚡ <?= $actionLabel ?>
                     </button>
                 <?php endif; ?>
             </div>
@@ -154,54 +178,55 @@ $disabledTitle = !$isReady ? 'title="غير متاح قبل اكتمال بيا�
 
 <div class="card-body">
     <!-- Supplier Field Section -->
-    <div style="margin-bottom: 20px;">
+    <div class="record-supplier-section">
         <?php
-        $isDecisionMade = ($record['status'] ?? 'pending') === 'ready' || ($record['status'] ?? 'pending') === 'issued';
+        $isDecisionMade = in_array($recordStatusNormalized, ['ready', 'issued', 'approved', 'released', 'signed'], true);
         $hideSuggestions = $isHistorical || $isDecisionMade;
         ?>
         <!-- Supplier Field -->
         <div class="field-group">
             <div class="field-row">
                 <label class="field-label">
-                    المورد
+                    <span data-i18n="index.fields.supplier">المورد</span>
                     <?php
                     // Contextual status indicator for supplier
                     $supplierMissing = empty($record['supplier_id']);
                     if ($supplierMissing && ($record['status'] ?? 'pending') === 'pending'):
                     ?>
-                        <span class="field-status-indicator field-status-missing" title="المورد غير محدد - يحتاج قرار">⚠️</span>
+                        <span class="field-status-indicator field-status-missing" title="" data-i18n-title="index.fields.supplier_missing">⚠️</span>
                     <?php elseif (!$supplierMissing): ?>
-                        <span class="field-status-indicator field-status-ok" title="المورد محدد">✓</span>
+                        <span class="field-status-indicator field-status-ok" title="" data-i18n-title="index.fields.supplier_defined">✓</span>
                     <?php endif; ?>
                 </label>
+                <?php $supplierInputDisabled = ($isHistorical || $isDecisionMade || !$recordCanExecuteActions); ?>
                 <input type="text"
-                    class="field-input"
+                    class="field-input<?= $supplierInputDisabled ? ' field-input--readonly' : '' ?>"
                     id="supplierInput"
                     name="supplier_name"
                     data-preview-field="supplier_name"
                     value="<?= htmlspecialchars($record['supplier_name'], ENT_QUOTES, 'UTF-8', false) ?>"
                     data-record-id="<?= $record['id'] ?>"
                     data-action="processSupplierInput"
-                    <?= ($isHistorical || $isDecisionMade) ? 'readonly disabled style="background:#f9fafb;cursor:not-allowed;"' : '' ?>>
+                    <?= $supplierInputDisabled ? 'readonly disabled' : '' ?>>
                 <input type="hidden" id="supplierIdHidden" name="supplier_id" value="<?= $record['supplier_id'] ?? '' ?>">
             </div>
 
             <!-- Suggestions Chips -->
-            <div class="chips-row" id="supplier-suggestions" <?= $hideSuggestions ? 'style="display:none"' : '' ?>>
+            <div class="chips-row" id="supplier-suggestions" <?= $hideSuggestions ? 'hidden' : '' ?>>
                 <?php if (!empty($supplierMatch['suggestions'])): ?>
                     <?php foreach ($supplierMatch['suggestions'] as $sugg):
                         // Skip if this suggestion is already the selected & approved supplier
                         $isSelected = ($record['supplier_id'] == ($sugg['supplier_id'] ?? 0));
-                        $isApproved = ($record['status'] ?? '') === 'ready' || ($record['status'] ?? '') === 'issued'; // "Ready" or "Issued"
+                        $isApproved = in_array($recordStatusNormalized, ['ready', 'issued', 'approved', 'released', 'signed'], true);
 
                         if ($isSelected && $isApproved) continue;
                     ?>
                         <?php
                         // Determine confidence level for tooltip
                         $score = $sugg['confidence'] ?? 0;
-                        $tooltipText = 'ثقة عالية';
-                        if ($score < 70) $tooltipText = 'ثقة متوسطة';
-                        if ($score < 50) $tooltipText = 'ثقة منخفضة';
+                        $tooltipKey = 'index.suggestions.confidence.high';
+                        if ($score < 70) $tooltipKey = 'index.suggestions.confidence.medium';
+                        if ($score < 50) $tooltipKey = 'index.suggestions.confidence.low';
 
                         // Determine confidence level for CSS (high/medium/low)
                         $confidenceLevel = 'high';
@@ -214,26 +239,27 @@ $disabledTitle = !$isReady ? 'title="غير متاح قبل اكتمال بيا�
                             data-id="<?= $sugg['supplier_id'] ?? 0 ?>"
                             data-name="<?= htmlspecialchars($sugg['official_name'] ?? '') ?>"
                             data-confidence="<?= $confidenceLevel ?>"
-                            title="<?= $tooltipText ?>">
+                            title=""
+                            data-i18n-title="<?= htmlspecialchars($tooltipKey, ENT_QUOTES, 'UTF-8') ?>">
                             <span class="chip-name"><?= htmlspecialchars($sugg['official_name'] ?? '') ?></span>
                             <span class="chip-confidence"><?= $sugg['confidence'] ?? 0 ?>%</span>
                         </button>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <div style="font-size: 11px; color: #94a3b8; padding: 4px;">لا توجد اقتراحات</div>
+                    <div class="record-suggestions-empty" data-i18n="index.suggestions.empty">لا توجد اقتراحات</div>
                 <?php endif; ?>
             </div>
 
             <!-- Add Supplier Button (Hidden by default OR when status is ready) -->
-            <?php
-            $hideAddButton = $isHistorical || $isDecisionMade || ($record['status'] ?? 'pending') === 'ready';
-            ?>
-            <div id="addSupplierContainer" style="display:<?= $hideAddButton ? 'none' : 'none' ?>; margin-top: 8px;">
-                <button class="btn btn-sm btn-outline-primary"
+            <div id="addSupplierContainer" class="add-supplier-container" hidden>
+                <button class="btn btn-sm btn-outline-primary add-supplier-btn"
                     data-action="createSupplier"
-                    style="width: 100%; justify-content: center; gap: 8px; border-style: dashed;">
+                    data-authorize-resource="supplier"
+                    data-authorize-action="manage"
+                    data-authorize-mode="disable"
+                    data-authorize-denied-key="index.permissions.denied.add_supplier">
                     <span>➕</span>
-                    <span>إضافة "<span id="newSupplierName"></span>" وتعيينه كمورد لهذا الضمان</span>
+                    <span data-i18n="index.supplier.add_and_assign_prefix">إضافة "</span><span id="newSupplierName"></span><span data-i18n="index.supplier.add_and_assign_suffix">" وتعيينه كمورد لهذا الضمان</span>
                 </button>
             </div>
 
@@ -252,7 +278,7 @@ $disabledTitle = !$isReady ? 'title="غير متاح قبل اكتمال بيا�
     <!-- Info Grid -->
     <div class="info-grid">
         <div class="info-item">
-            <div class="info-label">رقم الضمان</div>
+            <div class="info-label" data-i18n="index.fields.guarantee_number">رقم الضمان</div>
             <div class="info-value" data-preview-field="guarantee_number"><?= htmlspecialchars($record['guarantee_number'] ?? 'N/A') ?></div>
         </div>
         <div class="info-item">
@@ -260,30 +286,42 @@ $disabledTitle = !$isReady ? 'title="غير متاح قبل اكتمال بيا�
                 <?php
                 // 🔥 Read from raw_data to determine correct label
                 $relatedTo = $guarantee->rawData['related_to'] ?? 'contract';
-                echo $relatedTo === 'purchase_order' ? 'رقم أمر الشراء' : 'رقم العقد';
+                $contractLabelKey = $relatedTo === 'purchase_order'
+                    ? 'index.fields.purchase_order_number'
+                    : 'index.fields.contract_number';
                 ?>
+                <span data-i18n="<?= htmlspecialchars($contractLabelKey, ENT_QUOTES, 'UTF-8') ?>"></span>
             </div>
             <div class="info-value" data-preview-field="contract_number"><?= htmlspecialchars($record['contract_number']) ?></div>
         </div>
         <div class="info-item">
-            <div class="info-label">المبلغ</div>
+            <div class="info-label" data-i18n="index.fields.amount">المبلغ</div>
             <div class="info-value highlight" data-preview-field="amount">
                 <?= number_format($record['amount'], 2, '.', ',') ?> ر.س
             </div>
         </div>
         <div class="info-item">
-            <div class="info-label">تاريخ الانتهاء</div>
+            <div class="info-label" data-i18n="index.fields.expiry_date">تاريخ الانتهاء</div>
             <div class="info-value" data-preview-field="expiry_date"><?= htmlspecialchars($record['expiry_date']) ?></div>
         </div>
         <?php if (!empty($record['type'])): ?>
             <div class="info-item">
-                <div class="info-label">النوع</div>
+                <div class="info-label" data-i18n="index.fields.type">النوع</div>
                 <div class="info-value" data-preview-field="type"><?= htmlspecialchars($record['type']) ?></div>
             </div>
         <?php endif; ?>
         <div class="info-item">
-            <div class="info-label">البنك</div>
-            <div class="info-value" data-preview-field="bank_name"><?= htmlspecialchars($record['bank_name'] ?? 'غير محدد') ?></div>
+            <div class="info-label" data-i18n="index.fields.bank">البنك</div>
+            <?php
+            $bankNameValue = trim((string)($record['bank_name'] ?? ''));
+            ?>
+            <div class="info-value" data-preview-field="bank_name">
+                <?php if ($bankNameValue !== ''): ?>
+                    <?= htmlspecialchars($bankNameValue) ?>
+                <?php else: ?>
+                    <span data-i18n="index.fields.undefined">غير محدد</span>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 </div>

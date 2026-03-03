@@ -93,7 +93,8 @@
         const resource = element.getAttribute('data-authorize-resource');
         const action = element.getAttribute('data-authorize-action');
         const mode = (element.getAttribute('data-authorize-mode') || 'hide').toLowerCase();
-        const deniedText = element.getAttribute('data-authorize-denied-text') || 'غير مسموح';
+        const deniedKey = element.getAttribute('data-authorize-denied-key') || '';
+        const deniedText = resolveDeniedText(deniedKey, element.getAttribute('data-authorize-denied-text') || '');
 
         const allowed = can(resource, action, { permission: permission || null });
 
@@ -123,6 +124,17 @@
 
         element.hidden = true;
         element.classList.add('wbgl-hidden-by-policy');
+    }
+
+    function resolveDeniedText(deniedKey, fallbackText) {
+        const fallback = fallbackText || 'policy.denied.default';
+        if (!window.WBGLI18n || typeof window.WBGLI18n.t !== 'function') {
+            return fallback;
+        }
+        if (deniedKey) {
+            return window.WBGLI18n.t(deniedKey, fallback);
+        }
+        return window.WBGLI18n.t('policy.denied.default', fallback);
     }
 
     function applyDomGuards(root) {

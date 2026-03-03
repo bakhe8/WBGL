@@ -59,6 +59,7 @@ try {
         case 'submit':
             $guaranteeId = Input::int($input, 'guarantee_id', 0) ?? 0;
             $reason = Input::string($input, 'reason', '');
+            wbgl_api_require_guarantee_visibility((int)$guaranteeId);
             $id = UndoRequestService::submit($guaranteeId, $reason, $user);
             echo json_encode([
                 'success' => true,

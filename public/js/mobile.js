@@ -50,10 +50,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (isSidebarOpen || isTimelineOpen) {
             overlay.classList.add('active');
-            document.body.style.overflow = 'hidden'; // Prevent background scrolling
+            document.body.classList.add('mobile-no-scroll');
         } else {
             overlay.classList.remove('active');
-            document.body.style.overflow = '';
+            document.body.classList.remove('mobile-no-scroll');
         }
     }
 

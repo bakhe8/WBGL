@@ -81,12 +81,45 @@
   /* Arabic Presentation Forms-B */
 }
 
-.letter-preview {
+.letter-preview[data-guarantee-id] {
   font-family: 'Cairo', 'Segoe UI', sans-serif;
   line-height: 23pt;
-  background: #f3f4f6;
+  background: var(--preview-canvas-bg, var(--letter-toolbar-bg));
   padding: 20px;
   direction: rtl;
+  color: var(--letter-text-primary);
+}
+
+/* Unified print button style (supports legacy + current snapshots). */
+.letter-preview .wbgl-unified-print-btn,
+.letter-preview .btn-print-overlay,
+.letter-preview .print-icon-btn {
+  position: absolute !important;
+  top: 20px !important;
+  left: 20px !important;
+  width: 36px !important;
+  height: 36px !important;
+  border: 1px solid var(--letter-border) !important;
+  background: var(--letter-paper-bg) !important;
+  border-radius: 50% !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 18px !important;
+  box-shadow: 0 2px 4px var(--letter-shadow-soft) !important;
+  transition: all 0.2s ease !important;
+  z-index: 100 !important;
+  color: var(--letter-text-secondary) !important;
+}
+
+.letter-preview .wbgl-unified-print-btn:hover,
+.letter-preview .btn-print-overlay:hover,
+.letter-preview .print-icon-btn:hover {
+  transform: scale(1.05) !important;
+  box-shadow: 0 4px 6px var(--letter-shadow-medium) !important;
+  color: var(--letter-text-primary) !important;
+  border-color: var(--letter-divider) !important;
 }
 
 .letter-preview .letter-paper * {
@@ -99,10 +132,10 @@
 }
 
 .letter-preview .subject {
-  background: #f0f1f5;
+  background: var(--letter-canvas-bg);
   padding: 0 10px;
   border-radius: 6px;
-  border: 1px solid #c8c9d1;
+  border: 1px solid var(--letter-guide-line);
   margin: 5px 0;
   display: flex;
   align-items: flex-start;
@@ -129,7 +162,7 @@
   left: 50px;
   transform: rotate(-25deg);
   font-size: 48pt;
-  color: rgba(159, 166, 178, 0.15);
+  color: var(--letter-guide-shadow);
   font-weight: 900;
   pointer-events: none;
   user-select: none;
@@ -143,12 +176,12 @@
     visibility: hidden;
   }
 
-  .letter-preview,
-  .letter-preview * {
+  .letter-preview[data-guarantee-id],
+  .letter-preview[data-guarantee-id] * {
     visibility: visible;
   }
 
-  .letter-preview {
+  .letter-preview[data-guarantee-id] {
     position: absolute;
     left: 0;
     top: 0;
@@ -156,14 +189,14 @@
     padding: 0;
   }
 
-  .letter-preview .letter-paper {
+  .letter-preview[data-guarantee-id] .letter-paper {
     box-shadow: none;
     margin: 0;
     page-break-after: always;
   }
 
   /* Hide watermark when printing */
-  .letter-preview .watermark {
+  .letter-preview[data-guarantee-id] .watermark {
     display: none !important;
   }
 }
@@ -181,14 +214,15 @@
   line-height: 23pt;
   /* REMOVED: font-weight: 800 - المهند has no weights, useless here */
   box-sizing: border-box;
-  background: #ffffff url("/assets/External-Form.svg") top center/contain no-repeat;
+  background: var(--letter-paper-bg) url("/assets/External-Form.svg") top center/contain no-repeat;
   width: 210mm;
   min-height: 297mm;
   padding: 2.2in 1in 1in 1in;
   margin: 0 auto;
   position: relative;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 6px -1px var(--letter-shadow-medium);
   font-feature-settings: "anum";
+  color: var(--letter-text-primary);
   /* NO text-stroke here - applied selectively below */
 }
 
@@ -208,10 +242,10 @@
 
 /* Map preview-subject to subject style */
 .letter-preview .preview-subject {
-  background: #f0f1f5;
+  background: var(--letter-canvas-bg);
   padding: 0 10px;
   border-radius: 6px;
-  border: 1px solid #c8c9d1;
+  border: 1px solid var(--letter-guide-line);
   margin: 5px 0;
   display: flex;
   align-items: flex-start;
@@ -398,3 +432,4 @@
   margin: 0 !important;
   padding: 0 !important;
 }
+

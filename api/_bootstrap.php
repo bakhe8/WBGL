@@ -12,7 +12,10 @@ use App\Support\ApiTokenService;
 use App\Support\CsrfGuard;
 use App\Support\Guard;
 use App\Support\Settings;
+use App\Services\ActionabilityPolicyService;
+use App\Services\GuaranteeVisibilityService;
 use App\Services\AuditTrailService;
+use App\Services\UiSurfacePolicyService;
 
 if (!function_exists('wbgl_api_json_headers')) {
     function wbgl_api_json_headers(): void
@@ -42,6 +45,36 @@ if (!function_exists('wbgl_api_request_id')) {
     }
 }
 
+if (!function_exists('wbgl_api_envelope')) {
+    /**
+     * Emit a unified WBGL API envelope and terminate execution.
+     *
+     * @param mixed $data
+     */
+    function wbgl_api_envelope(int $statusCode, bool $success, $data = null, ?string $error = null): void
+    {
+        wbgl_api_json_headers();
+        http_response_code($statusCode);
+        echo json_encode([
+            'success' => $success,
+            'data' => $data,
+            'error' => $error,
+            'request_id' => wbgl_api_request_id(),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
+if (!function_exists('wbgl_api_success')) {
+    /**
+     * @param mixed $data
+     */
+    function wbgl_api_success($data = null, int $statusCode = 200): void
+    {
+        wbgl_api_envelope($statusCode, true, $data, null);
+    }
+}
+
 if (!function_exists('wbgl_api_fail')) {
     function wbgl_api_fail(int $statusCode, string $message): void
     {
@@ -63,14 +96,7 @@ if (!function_exists('wbgl_api_fail')) {
             );
         }
 
-        wbgl_api_json_headers();
-        http_response_code($statusCode);
-        echo json_encode([
-            'success' => false,
-            'error' => $message,
-            'request_id' => $requestId,
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        wbgl_api_envelope($statusCode, false, null, $message);
     }
 }
 
@@ -97,6 +123,113 @@ if (!function_exists('wbgl_api_require_permission')) {
         if (!Guard::has($permissionSlug)) {
             wbgl_api_fail(403, 'Permission Denied');
         }
+    }
+}
+
+if (!function_exists('wbgl_api_require_guarantee_visibility')) {
+    function wbgl_api_require_guarantee_visibility(int $guaranteeId): void
+    {
+        wbgl_api_require_login();
+
+        if ($guaranteeId <= 0) {
+            wbgl_api_fail(400, 'guarantee_id is required');
+        }
+
+        if (!GuaranteeVisibilityService::canAccessGuarantee($guaranteeId)) {
+            wbgl_api_fail(403, 'Permission Denied');
+        }
+    }
+}
+
+if (!function_exists('wbgl_api_policy_for_guarantee')) {
+    /**
+     * Build canonical visibility/actionability/executability decision
+     * using minimal fields from guarantee_decisions only.
+     *
+     * @return array{visible:bool,actionable:bool,executable:bool,reasons:array<int,string>}
+     */
+    function wbgl_api_policy_for_guarantee(\PDO $db, int $guaranteeId): array
+    {
+        if ($guaranteeId <= 0) {
+            return [
+                'visible' => false,
+                'actionable' => false,
+                'executable' => false,
+                'reasons' => ['INVALID_GUARANTEE_ID'],
+            ];
+        }
+
+        $visible = GuaranteeVisibilityService::canAccessGuarantee($guaranteeId);
+        if (!$visible) {
+            return [
+                'visible' => false,
+                'actionable' => false,
+                'executable' => false,
+                'reasons' => ['NOT_VISIBLE'],
+            ];
+        }
+
+        $stmt = $db->prepare('
+            SELECT status, workflow_step, is_locked, active_action
+            FROM guarantee_decisions
+            WHERE guarantee_id = ?
+            LIMIT 1
+        ');
+        $stmt->execute([$guaranteeId]);
+        $decisionRow = $stmt->fetch(\PDO::FETCH_ASSOC) ?: [
+            'status' => 'pending',
+            'workflow_step' => null,
+            'is_locked' => false,
+            'active_action' => null,
+        ];
+
+        return ActionabilityPolicyService::evaluate($decisionRow, true)->toArray();
+    }
+}
+
+if (!function_exists('wbgl_api_policy_surface_for_guarantee')) {
+    /**
+     * Build canonical policy + surface grants envelope for guarantee-targeted APIs.
+     *
+     * @return array{
+     *   policy:array{visible:bool,actionable:bool,executable:bool,reasons:array<int,string>},
+     *   surface:array{
+     *     can_view_record:bool,
+     *     can_view_identity:bool,
+     *     can_view_timeline:bool,
+     *     can_view_notes:bool,
+     *     can_create_notes:bool,
+     *     can_view_attachments:bool,
+     *     can_upload_attachments:bool,
+     *     can_execute_actions:bool,
+     *     can_view_preview:bool
+     *   }
+     * }
+     */
+    function wbgl_api_policy_surface_for_guarantee(
+        \PDO $db,
+        int $guaranteeId,
+        ?string $recordStatus = null
+    ): array {
+        $policy = wbgl_api_policy_for_guarantee($db, $guaranteeId);
+        $status = trim((string)$recordStatus);
+
+        if ($status === '') {
+            $stmt = $db->prepare('SELECT status FROM guarantee_decisions WHERE guarantee_id = ? LIMIT 1');
+            $stmt->execute([$guaranteeId]);
+            $status = (string)($stmt->fetchColumn() ?: 'pending');
+        }
+
+        $surface = UiSurfacePolicyService::forGuarantee(
+            $policy,
+            Guard::permissions(),
+            $status
+        );
+
+        return [
+            'policy' => $policy,
+            'surface' => $surface,
+        ];
     }
 }
 

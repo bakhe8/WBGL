@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/../_bootstrap.php';
 
+use App\Support\PermissionCapabilityCatalog;
 use App\Support\Database;
 
 header('Content-Type: application/json; charset=utf-8');
@@ -27,13 +28,54 @@ try {
 
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Fetch all roles for the dropdown selection
-    $stmtRoles = $db->query("SELECT id, name FROM roles ORDER BY id ASC");
+    // Fetch all roles with metadata
+    $stmtRoles = $db->query("
+        SELECT r.id, r.name, r.slug, r.description, COUNT(DISTINCT u.id) AS users_count
+        FROM roles r
+        LEFT JOIN users u ON u.role_id = r.id
+        GROUP BY r.id, r.name, r.slug, r.description
+        ORDER BY r.id ASC
+    ");
     $roles = $stmtRoles->fetchAll(PDO::FETCH_ASSOC);
 
     // Fetch all available permissions for the override UI
-    $stmtPerms = $db->query("SELECT id, name, slug FROM permissions ORDER BY id ASC");
+    $stmtPerms = $db->query("SELECT id, name, slug, description FROM permissions ORDER BY id ASC");
     $permissions = $stmtPerms->fetchAll(PDO::FETCH_ASSOC);
+    $catalog = PermissionCapabilityCatalog::all();
+    $permissions = array_map(static function (array $row) use ($catalog): array {
+        $slug = (string)($row['slug'] ?? '');
+        $name = trim((string)($row['name'] ?? ''));
+        if ($name === '' || preg_match('/^[\?\s]+$/u', $name) === 1) {
+            $row['name'] = $slug !== '' ? $slug : 'unknown_permission';
+        }
+        $row['meta'] = $catalog[$slug] ?? null;
+        return $row;
+    }, $permissions);
+
+    // Fetch role->permission mapping
+    $stmtRolePerms = $db->query("
+        SELECT role_id, permission_id
+        FROM role_permissions
+        ORDER BY role_id ASC, permission_id ASC
+    ");
+    $rolePermRows = $stmtRolePerms->fetchAll(PDO::FETCH_ASSOC);
+    $rolePermissions = [];
+    foreach ($rolePermRows as $rp) {
+        $roleId = (int)$rp['role_id'];
+        if (!isset($rolePermissions[$roleId])) {
+            $rolePermissions[$roleId] = [];
+        }
+        $rolePermissions[$roleId][] = (int)$rp['permission_id'];
+    }
+
+    $roles = array_map(static function (array $role) use ($rolePermissions): array {
+        $roleId = (int)($role['id'] ?? 0);
+        $permissionIds = $rolePermissions[$roleId] ?? [];
+        $role['users_count'] = (int)($role['users_count'] ?? 0);
+        $role['permission_ids'] = $permissionIds;
+        $role['permissions_count'] = count($permissionIds);
+        return $role;
+    }, $roles);
 
     // Fetch all user overrides
     $stmtOverrides = $db->query("
@@ -59,7 +101,8 @@ try {
         'users' => $users,
         'roles' => $roles,
         'permissions' => $permissions,
-        'overrides' => $userOverrides
+        'overrides' => $userOverrides,
+        'permission_catalog' => $catalog,
     ]);
 } catch (\Exception $e) {
     http_response_code(500);

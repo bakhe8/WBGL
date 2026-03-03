@@ -13,7 +13,7 @@
     }
 
     function getCsrfToken() {
-        const meta = document.querySelector('meta[name="csrf-token"]');
+        const meta = document.head.querySelector('[name="csrf-token"]');
         if (meta && meta.content) {
             return meta.content;
         }

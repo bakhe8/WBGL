@@ -5,7 +5,10 @@
  */
 
 require_once __DIR__ . '/../app/Support/autoload.php';
+use App\Support\AuthService;
 use App\Support\Database;
+use App\Support\DirectionResolver;
+use App\Support\LocaleResolver;
 use App\Support\Settings;
 use App\Support\ViewPolicy;
 
@@ -16,12 +19,62 @@ $driver = Database::currentDriver();
 $importedByAggregate = $driver === 'pgsql'
     ? "STRING_AGG(DISTINCT g.imported_by, ', ')"
     : 'GROUP_CONCAT(DISTINCT g.imported_by)';
+$settings = Settings::getInstance();
+$currentUser = AuthService::getCurrentUser();
+$localeInfo = LocaleResolver::resolve(
+    $currentUser,
+    $settings,
+    $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? null
+);
+$batchesLocaleCode = (string)($localeInfo['locale'] ?? 'ar');
+$directionInfo = DirectionResolver::resolve(
+    $batchesLocaleCode,
+    $currentUser?->preferredDirection ?? 'auto',
+    (string)$settings->get('DEFAULT_DIRECTION', 'auto')
+);
+$pageDirection = (string)($directionInfo['direction'] ?? ($batchesLocaleCode === 'ar' ? 'rtl' : 'ltr'));
+$batchesLocalePrimary = [];
+$batchesLocaleFallback = [];
+$batchesPrimaryPath = __DIR__ . '/../public/locales/' . $batchesLocaleCode . '/batches.json';
+$batchesFallbackPath = __DIR__ . '/../public/locales/ar/batches.json';
+if (is_file($batchesPrimaryPath)) {
+    $decodedLocale = json_decode((string)file_get_contents($batchesPrimaryPath), true);
+    if (is_array($decodedLocale)) {
+        $batchesLocalePrimary = $decodedLocale;
+    }
+}
+if (is_file($batchesFallbackPath)) {
+    $decodedLocale = json_decode((string)file_get_contents($batchesFallbackPath), true);
+    if (is_array($decodedLocale)) {
+        $batchesLocaleFallback = $decodedLocale;
+    }
+}
+$batchesTodoArPrefix = '__' . 'TODO_AR__';
+$batchesTodoEnPrefix = '__' . 'TODO_EN__';
+$batchesIsPlaceholder = static function ($value) use ($batchesTodoArPrefix, $batchesTodoEnPrefix): bool {
+    if (!is_string($value)) {
+        return false;
+    }
+    $trimmed = trim($value);
+    return str_starts_with($trimmed, $batchesTodoArPrefix) || str_starts_with($trimmed, $batchesTodoEnPrefix);
+};
+$batchesT = static function (string $key, ?string $fallback = null) use ($batchesLocalePrimary, $batchesLocaleFallback, $batchesIsPlaceholder): string {
+    $value = $batchesLocalePrimary[$key] ?? null;
+    if (!is_string($value) || $batchesIsPlaceholder($value)) {
+        $value = $batchesLocaleFallback[$key] ?? null;
+    }
+    if (!is_string($value) || $batchesIsPlaceholder($value)) {
+        $value = $fallback ?? $key;
+    }
+    return $value;
+};
+$batchesPrefixMarker = 'BATCH_';
 
 // Get all batches from occurrence ledger only (target contract).
 $batches = $db->query("
     SELECT 
         o.batch_identifier as import_source,
-        COALESCE(MAX(bm.batch_name), 'دفعة ' || SUBSTR(o.batch_identifier, 1, 25)) as batch_name,
+        COALESCE(MAX(bm.batch_name), '{$batchesPrefixMarker}' || SUBSTR(o.batch_identifier, 1, 25)) as batch_name,
         COALESCE(MAX(bm.status), 'active') as status,
         COALESCE(MAX(bm.batch_notes), '') as batch_notes,
         COUNT(DISTINCT o.guarantee_id) as guarantee_count,
@@ -35,7 +88,6 @@ $batches = $db->query("
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // Production Mode: Filter out test batches
-$settings = Settings::getInstance();
 if ($settings->isProductionMode()) {
     // Filter by import_source prefix AND by checking if batch has non-test guarantees
     $filteredBatches = [];
@@ -65,17 +117,24 @@ if ($settings->isProductionMode()) {
     }
     $batches = $filteredBatches;
 }
+foreach ($batches as &$batch) {
+    $batchName = (string)($batch['batch_name'] ?? '');
+    if (str_starts_with($batchName, $batchesPrefixMarker)) {
+        $batch['batch_name'] = $batchesT('batches.ui.txt_fb13a024') . ' ' . substr($batchName, strlen($batchesPrefixMarker));
+    }
+}
+unset($batch);
 
 // Separate active and completed
 $active = array_filter($batches, fn($b) => $b['status'] === 'active');
 $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
 ?>
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="<?= htmlspecialchars($batchesLocaleCode, ENT_QUOTES, 'UTF-8') ?>" dir="<?= htmlspecialchars($pageDirection, ENT_QUOTES, 'UTF-8') ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>الدفعات - نظام إدارة الضمانات</title>
+    <title data-i18n="batches.ui.txt_bb4a0e24">الدفعات - نظام إدارة الضمانات</title>
     
     <!-- Design System CSS -->
     <link rel="stylesheet" href="../public/css/design-system.css">
@@ -148,7 +207,7 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
         
         .batch-card.active {
             border-top: 4px solid var(--accent-success);
-            background: linear-gradient(180deg, var(--bg-card) 0%, #f0fdf4 100%);
+            background: linear-gradient(180deg, var(--bg-card) 0%, var(--accent-success-light) 100%);
         }
         
         .batch-card.completed {
@@ -175,6 +234,10 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
         .batch-type-icon {
             font-size: 1.2rem;
             opacity: 0.7;
+        }
+
+        .batch-type-icon-muted {
+            filter: grayscale(1);
         }
 
         .batch-info {
@@ -222,30 +285,34 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
             color: var(--accent-primary-hover);
             text-decoration: underline;
         }
+
+        .batches-back-link-wrap {
+            text-align: center;
+        }
     </style>
 </head>
-<body>
+<body data-i18n-namespaces="common,batches">
     
     <!-- Unified Header -->
     <?php include __DIR__ . '/../partials/unified-header.php'; ?>
     
     <div class="page-container">
         
-        <div class="page-title">الدفعات</div>
-        <p class="page-subtitle">إدارة مجموعات الضمانات للعمل الجماعي</p>
+        <div class="page-title" data-i18n="batches.ui.txt_8ea08ec4">الدفعات</div>
+        <p class="page-subtitle" data-i18n="batches.ui.txt_c31dea35">إدارة مجموعات الضمانات للعمل الجماعي</p>
         
         <!-- Active Batches -->
         <section class="mb-5">
             <div class="section-header">
-                <h2 class="section-title">دفعات مفتوحة</h2>
+                <h2 class="section-title" data-i18n="batches.ui.txt_c5f04e9f">دفعات مفتوحة</h2>
                 <span class="badge badge-success">
-                    <?= count($active) ?> دفعة
+                    <?= count($active) ?> <span data-i18n="batches.ui.txt_fb13a024">دفعة</span>
                 </span>
             </div>
             
             <?php if (empty($active)): ?>
                 <div class="empty-state">
-                    لا توجد دفعات مفتوحة حالياً
+                    <span data-i18n="batches.ui.txt_ea9517a5">لا توجد دفعات مفتوحة حالياً</span>
                 </div>
             <?php else: ?>
                 <div class="batch-grid">
@@ -266,11 +333,11 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
                             <div class="batch-info">
                                 <div class="batch-meta-item">
                                     <span class="icon-sm">📦</span>
-                                    <span><?= $batch['guarantee_count'] ?> ضمان</span>
+                                    <span><?= $batch['guarantee_count'] ?> <span data-i18n="batches.ui.txt_7e99567a">ضمان</span></span>
                                 </div>
                                 <div class="batch-meta-item">
                                     <span class="icon-sm">📅</span>
-                                    <span><?= date('Y-m-d H:i', strtotime($batch['created_at'])) ?></span>
+                                    <span><?= date('Y-m-d' . ' ' . 'H:i', strtotime($batch['created_at'])) ?></span>
                                 </div>
                                 <?php if ($batch['batch_notes']): ?>
                                 <p class="batch-notes">
@@ -282,7 +349,7 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
                         </div>
                         <a href="/views/batch-detail.php?import_source=<?= urlencode($batch['import_source']) ?>" 
                            class="btn btn-primary btn-sm w-full">
-                            فتح الدفعة
+                            <span data-i18n="batches.ui.txt_80e2ef88">فتح الدفعة</span>
                         </a>
                     </div>
                     <?php endforeach; ?>
@@ -293,15 +360,15 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
         <!-- Completed Batches -->
         <section>
             <div class="section-header">
-                <h2 class="section-title">دفعات مغلقة</h2>
+                <h2 class="section-title" data-i18n="batches.ui.txt_9eb8616c">دفعات مغلقة</h2>
                 <span class="badge badge-neutral">
-                    <?= count($completed) ?> دفعة
+                    <?= count($completed) ?> <span data-i18n="batches.ui.txt_fb13a024">دفعة</span>
                 </span>
             </div>
             
             <?php if (empty($completed)): ?>
                 <div class="empty-state">
-                    لا توجد دفعات مغلقة
+                    <span data-i18n="batches.ui.txt_d93631de">لا توجد دفعات مغلقة</span>
                 </div>
             <?php else: ?>
                 <div class="batch-grid">
@@ -315,13 +382,13 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
                                 <h3 class="batch-card-title text-muted">
                                     <?= htmlspecialchars($batch['batch_name']) ?>
                                 </h3>
-                                <span class="batch-type-icon" style="filter: grayscale(1);">
+                                <span class="batch-type-icon batch-type-icon-muted">
                                     <?= $typeIcon ?>
                                 </span>
                             </div>
                             <div class="batch-info">
                                 <div class="batch-meta-item">
-                                    <span>📦 <?= $batch['guarantee_count'] ?> ضمان</span>
+                                    <span>📦 <?= $batch['guarantee_count'] ?> <span data-i18n="batches.ui.txt_7e99567a">ضمان</span></span>
                                 </div>
                                 <div class="batch-meta-item">
                                     <span>📅 <?= date('Y-m-d', strtotime($batch['created_at'])) ?></span>
@@ -330,7 +397,7 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
                         </div>
                         <a href="/views/batch-detail.php?import_source=<?= urlencode($batch['import_source']) ?>" 
                            class="btn btn-secondary btn-sm w-full">
-                            عرض التفاصيل
+                            <span data-i18n="batches.ui.txt_85b89ef7">عرض التفاصيل</span>
                         </a>
                     </div>
                     <?php endforeach; ?>
@@ -339,8 +406,8 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
         </section>
         
         <!-- Back to home -->
-        <div style="text-align: center;">
-            <a href="/index.php" class="back-link">← العودة للصفحة الرئيسية</a>
+        <div class="batches-back-link-wrap">
+            <a href="/index.php" class="back-link" data-i18n="batches.ui.txt_188a63a9">← العودة للصفحة الرئيسية</a>
         </div>
     </div>
 </body>

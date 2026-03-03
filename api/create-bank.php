@@ -15,7 +15,7 @@ use App\Support\Database;
 use App\Services\BankManagementService;
 
 header('Content-Type: application/json; charset=utf-8');
-wbgl_api_require_permission('manage_data');
+wbgl_api_require_permission('bank_manage');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

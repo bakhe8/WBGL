@@ -21,7 +21,11 @@ ini_set('display_errors', 0);
 register_shutdown_function(function() {
     $error = error_get_last();
     if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
-        file_put_contents(__DIR__ . '/../debug_import_error.txt', date('Y-m-d H:i:s') . " FATAL: " . json_encode($error));
+        $logsDir = __DIR__ . '/../storage/logs';
+        if (!is_dir($logsDir)) {
+            @mkdir($logsDir, 0755, true);
+        }
+        file_put_contents($logsDir . '/import_fatal.log', date('Y-m-d H:i:s') . " FATAL: " . json_encode($error) . PHP_EOL, FILE_APPEND);
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'Fatal Error', 'details' => $error]);
     }
@@ -138,7 +142,15 @@ try {
 
 } catch (\Throwable $e) {
     // Log exception to file since user cannot see JSON response easily
-    file_put_contents(__DIR__ . '/../debug_exception.txt', date('Y-m-d H:i:s') . " EXCEPTION: " . $e->getMessage() . "\nStack: " . $e->getTraceAsString() . "\n", FILE_APPEND);
+    $logsDir = __DIR__ . '/../storage/logs';
+    if (!is_dir($logsDir)) {
+        @mkdir($logsDir, 0755, true);
+    }
+    file_put_contents(
+        $logsDir . '/import_exceptions.log',
+        date('Y-m-d H:i:s') . " EXCEPTION: " . $e->getMessage() . "\nStack: " . $e->getTraceAsString() . "\n",
+        FILE_APPEND
+    );
     
     http_response_code(500);
     echo json_encode([

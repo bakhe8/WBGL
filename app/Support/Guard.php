@@ -15,6 +15,7 @@ class Guard
 {
     private static ?array $permissions = null;
     private static ?array $userOverrides = null;
+    private static ?array $knownPermissionSlugs = null;
 
     /**
      * Check if the current user has a specific permission
@@ -26,6 +27,41 @@ class Guard
     {
         $permissions = self::permissions();
         return in_array($permissionSlug, $permissions, true) || in_array('*', $permissions, true);
+    }
+
+    /**
+     * Legacy-safe permission check:
+     * if permission slug is not registered in DB yet, return default value.
+     */
+    public static function hasOrLegacy(string $permissionSlug, bool $legacyDefault = true): bool
+    {
+        if (!self::isRegistered($permissionSlug)) {
+            return $legacyDefault;
+        }
+        return self::has($permissionSlug);
+    }
+
+    public static function isRegistered(string $permissionSlug): bool
+    {
+        $slug = trim($permissionSlug);
+        if ($slug === '') {
+            return false;
+        }
+
+        if (self::$knownPermissionSlugs === null) {
+            try {
+                $db = Database::connect();
+                $rows = $db->query('SELECT slug FROM permissions')->fetchAll(PDO::FETCH_COLUMN);
+                self::$knownPermissionSlugs = array_values(array_unique(array_filter(array_map(
+                    static fn($v): string => trim((string)$v),
+                    is_array($rows) ? $rows : []
+                ))));
+            } catch (\Throwable) {
+                self::$knownPermissionSlugs = [];
+            }
+        }
+
+        return in_array($slug, self::$knownPermissionSlugs, true);
     }
 
     /**

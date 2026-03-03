@@ -14,7 +14,7 @@ use App\Support\Settings;
 use App\Models\Guarantee;
 
 header('Content-Type: application/json; charset=utf-8');
-wbgl_api_require_permission('manage_data');
+wbgl_api_require_permission('guarantee_save');
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -27,6 +27,8 @@ try {
     if (!$guaranteeId) {
         throw new \RuntimeException("معرف الضمان مطلوب");
     }
+
+    wbgl_api_require_guarantee_visibility((int)$guaranteeId);
 
     // Validate required fields
     $required = ['guarantee_number', 'supplier', 'bank', 'amount', 'contract_number'];

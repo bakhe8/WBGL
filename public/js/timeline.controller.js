@@ -21,6 +21,20 @@ if (!window.TimelineController) {
             this.init();
         }
 
+        t(key, params = null) {
+            if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
+                return window.WBGLI18n.t(key, key, params || undefined);
+            }
+
+            let output = key;
+            if (params && typeof params === 'object') {
+                Object.keys(params).forEach((token) => {
+                    output = output.replace(new RegExp(`{{\\s*${token}\\s*}}`, 'g'), String(params[token]));
+                });
+            }
+            return output;
+        }
+
         init() {
             // Use event delegation for reliability
             // This works even if timeline cards are added dynamically
@@ -31,7 +45,7 @@ if (!window.TimelineController) {
                 }
             });
 
-            BglLogger.debug('✅ Timeline Controller initialized');
+            BglLogger.debug('TL_INIT_OK');
         }
 
         normalizeEventId(rawId) {
@@ -61,7 +75,7 @@ if (!window.TimelineController) {
             const eventId = this.normalizeEventId(element.dataset.eventId);
             const snapshotData = element.dataset.snapshot;
             if (eventId === null) {
-                this.showError('تعذر تحديد الحدث التاريخي');
+                this.showError(this.t('timeline.error.event_id_unresolved'));
                 return;
             }
 
@@ -81,7 +95,7 @@ if (!window.TimelineController) {
 
                 // Use resolved before-state snapshot from timeline payload.
                 if (!snapshot || Object.keys(snapshot).length === 0) {
-                    this.showError('لا توجد بيانات تاريخية لهذا الحدث');
+                    this.showError(this.t('timeline.error.no_historical_data'));
                     return;
                 }
 
@@ -89,13 +103,13 @@ if (!window.TimelineController) {
                 document.dispatchEvent(new CustomEvent('guarantee:updated'));
 
             } catch (error) {
-                console.error('Error handling timeline click:', error);
-                this.showError('حدث خطأ في عرض الحالة التاريخية');
+                console.error('TL_CLICK_ERR', error);
+                this.showError(this.t('timeline.error.display_historical_state'));
             }
         }
 
         displayHistoricalState(snapshot, eventId) {
-            BglLogger.debug('📜 Displaying historical state:', snapshot);
+            BglLogger.debug('TL_SHOW_HISTORICAL_STATE', snapshot);
 
             // Parse snapshot if it's a string
             let snapshotData = snapshot;
@@ -103,15 +117,15 @@ if (!window.TimelineController) {
                 try {
                     snapshotData = JSON.parse(snapshot);
                 } catch (e) {
-                    console.error('Failed to parse snapshot:', e);
+                    console.error('TL_PARSE_SNAPSHOT_ERR', e);
                     return;
                 }
             }
 
             // Check if snapshot is empty
             if (!snapshotData || Object.keys(snapshotData).length === 0) { // Removed snapshotData._no_snapshot check
-                BglLogger.warn('⚠️ No snapshot data available after reconstruction attempt');
-                if (window.showToast) window.showToast('لا توجد بيانات تاريخية لهذا الحدث', 'error');
+                BglLogger.warn('TL_SNAPSHOT_EMPTY');
+                if (window.showToast) window.showToast(this.t('timeline.error.no_historical_data'), 'error');
                 return;
             }
 
@@ -139,7 +153,7 @@ if (!window.TimelineController) {
                 const letterSnapshotRaw = eventElement?.dataset.letterSnapshot;
 
                 if (letterSnapshotRaw && letterSnapshotRaw !== 'null' && !letterSnapshotRaw.trim().startsWith('{')) {
-                    BglLogger.debug('✨ Using HTML letter_snapshot (After State) for action event');
+                    BglLogger.debug('TL_USE_HTML_LETTER_SNAPSHOT');
 
                     // Replace preview section with pre-rendered HTML
                     const previewSection = document.getElementById('preview-section');
@@ -192,10 +206,49 @@ if (!window.TimelineController) {
             if (!htmlSnapshotUsed && window.recordsController?.previewVisible) {
                 window.recordsController.updatePreviewFromDOM();
             }
+
+            // Ensure legacy/current print button markup always renders the same shape/style.
+            this.normalizePreviewPrintButton();
+        }
+
+        normalizePreviewPrintButton() {
+            const previewSection = document.getElementById('preview-section');
+            if (!(previewSection instanceof HTMLElement)) {
+                return;
+            }
+
+            const selectorParts = ['button.print-icon-btn', 'button.btn-print-overlay', 'button.wbgl-unified-print-btn'];
+            const buttons = previewSection.querySelectorAll(selectorParts.join(','));
+            if (!buttons.length) {
+                return;
+            }
+
+            const printLabel = this.t('timeline.ui.print_letter');
+
+            buttons.forEach((btn) => {
+                btn.classList.remove('print-icon-btn', 'btn-print-overlay');
+                btn.classList.add('btn-print-overlay', 'wbgl-unified-print-btn');
+
+                if (!btn.onclick) {
+                    btn.onclick = function () {
+                        if (window.WBGLPrintAudit && window.WBGLPrintAudit.handleOverlayPrint) {
+                            return window.WBGLPrintAudit.handleOverlayPrint(this);
+                        }
+                        window.print();
+                        return false;
+                    };
+                }
+                if (!btn.getAttribute('title')) {
+                    btn.setAttribute('title', printLabel);
+                }
+                if (!btn.getAttribute('aria-label')) {
+                    btn.setAttribute('aria-label', printLabel);
+                }
+            });
         }
 
         updateFormFields(snapshot) {
-            BglLogger.debug('🔄 Updating fields with snapshot:', snapshot);
+            BglLogger.debug('TL_UPDATE_FIELDS_FROM_SNAPSHOT', snapshot);
 
             // Update supplier input (ID: supplierInput)
             // Always update to prevent "leakage" from previous events
@@ -204,14 +257,14 @@ if (!window.TimelineController) {
                 // Use official name OR raw name fallback
                 const nameToShow = snapshot.supplier_name || snapshot.raw_supplier_name || '';
                 supplierInput.value = nameToShow;
-                BglLogger.debug('✓ Updated supplier:', nameToShow || '(cleared)');
+                BglLogger.debug('TL_SUPPLIER_UPDATED', nameToShow || 'CLEARED');
             }
 
             // Update hidden supplier ID (ID: supplierIdHidden)
             const supplierIdHidden = document.getElementById('supplierIdHidden');
             if (supplierIdHidden) {
                 supplierIdHidden.value = snapshot.supplier_id || '';
-                BglLogger.debug('✓ Updated supplier ID:', snapshot.supplier_id || '(cleared)');
+                BglLogger.debug('TL_SUPPLIER_ID_UPDATED', snapshot.supplier_id || 'CLEARED');
             }
 
             // Bank is now in Info Grid - updated via label matching below
@@ -220,10 +273,15 @@ if (!window.TimelineController) {
             const bankSelect = document.getElementById('bankSelect');
             if (bankSelect) {
                 bankSelect.value = snapshot.bank_id || '';
-                BglLogger.debug('✓ Updated bank ID:', snapshot.bank_id || '(cleared)');
+                BglLogger.debug('TL_BANK_ID_UPDATED', snapshot.bank_id || 'CLEARED');
             }
 
             // Update info-value elements by matching labels
+            const amountLabel = this.t('timeline.fields.amount');
+            const expiryLabel = this.t('timeline.fields.expiry_date');
+            const issueDateLabel = this.t('timeline.fields.issue_date');
+            const bankLabel = this.t('timeline.fields.bank');
+            const invalidAmount = this.t('timeline.ui.invalid_amount_currency');
             document.querySelectorAll('.info-item').forEach(item => {
                 const label = item.querySelector('.info-label')?.textContent || '';
                 const valueEl = item.querySelector('.info-value');
@@ -231,7 +289,7 @@ if (!window.TimelineController) {
                 if (!valueEl) return;
 
                 // Amount - with NaN protection
-                if (label.includes('المبلغ') && snapshot.amount) {
+                if (label.includes(amountLabel) && snapshot.amount) {
                     let amountValue = snapshot.amount;
 
                     // Convert string to number safely
@@ -242,30 +300,30 @@ if (!window.TimelineController) {
                     // Validate number
                     if (!isNaN(amountValue) && isFinite(amountValue)) {
                         const formattedAmount = new Intl.NumberFormat('en-US').format(amountValue);
-                        valueEl.textContent = formattedAmount + ' ر.س';
-                        BglLogger.debug('✓ Updated amount:', formattedAmount);
+                        valueEl.textContent = formattedAmount + ' ' + this.t('timeline.currency.sar');
+                        BglLogger.debug('TL_AMOUNT_UPDATED', formattedAmount);
                     } else {
-                        BglLogger.warn('⚠️ Invalid amount value:', snapshot.amount);
-                        valueEl.textContent = 'قيمة غير صحيحة ر.س';
+                        BglLogger.warn('TL_INVALID_AMOUNT', snapshot.amount);
+                        valueEl.textContent = invalidAmount;
                     }
                 }
 
                 // Expiry date
-                if (label.includes('تاريخ الانتهاء') && snapshot.expiry_date) {
+                if (label.includes(expiryLabel) && snapshot.expiry_date) {
                     valueEl.textContent = snapshot.expiry_date;
-                    BglLogger.debug('✓ Updated expiry:', snapshot.expiry_date);
+                    BglLogger.debug('TL_EXPIRY_UPDATED', snapshot.expiry_date);
                 }
 
                 // Issue date
-                if (label.includes('تاريخ الإصدار') && snapshot.issue_date) {
+                if (label.includes(issueDateLabel) && snapshot.issue_date) {
                     valueEl.textContent = snapshot.issue_date;
-                    BglLogger.debug('✓ Updated issue date:', snapshot.issue_date);
+                    BglLogger.debug('TL_ISSUE_DATE_UPDATED', snapshot.issue_date);
                 }
 
                 // Bank name
-                if (label.includes('البنك') && snapshot.bank_name) {
+                if (label.includes(bankLabel) && snapshot.bank_name) {
                     valueEl.textContent = snapshot.bank_name;
-                    BglLogger.debug('✓ Updated bank:', snapshot.bank_name);
+                    BglLogger.debug('TL_BANK_UPDATED', snapshot.bank_name);
                 }
             });
 
@@ -273,7 +331,13 @@ if (!window.TimelineController) {
             const statusBadge = document.querySelector('.status-badge');
             if (statusBadge && snapshot.status) {
                 this.updateStatusBadge(statusBadge, snapshot.status);
-                BglLogger.debug('✓ Updated status:', snapshot.status);
+                BglLogger.debug('TL_STATUS_UPDATED', snapshot.status);
+            }
+
+            // Keep hidden decision status in sync with active snapshot/current state.
+            const decisionStatusInput = document.getElementById('decisionStatus');
+            if (decisionStatusInput && snapshot.status) {
+                decisionStatusInput.value = snapshot.status;
             }
 
             // 🔥 Update Hidden Event Context (Bridge to RecordsController)
@@ -283,7 +347,7 @@ if (!window.TimelineController) {
                 // Note: snapshot.event_subtype comes from backend createSnapshot or logEvent
                 const subtype = snapshot.event_subtype || '';
                 eventSubtypeInput.value = subtype;
-                BglLogger.debug('✓ Updated event context:', subtype || '(none)');
+                BglLogger.debug('TL_EVENT_CONTEXT_UPDATED', subtype || 'NONE');
             }
         }
 
@@ -295,11 +359,13 @@ if (!window.TimelineController) {
             badge.classList.add(`status-${status}`);
 
             const statusLabels = {
-                'pending': 'يحتاج قرار',
-                'approved': 'معتمد',
-                'extended': 'ممدد',
-                'released': 'مُفرج عنه',
-                'reduced': 'مخفض'
+                pending: this.t('timeline.status.pending'),
+                approved: this.t('timeline.status.approved'),
+                ready: this.t('timeline.status.ready'),
+                issued: this.t('timeline.status.issued'),
+                extended: this.t('timeline.status.extended'),
+                released: this.t('timeline.status.released'),
+                reduced: this.t('timeline.status.reduced'),
             };
 
             badge.textContent = statusLabels[status] || status;
@@ -308,21 +374,22 @@ if (!window.TimelineController) {
         showHistoricalBanner(eventElement = null) {
             const bannerContainer = document.getElementById('historical-banner-container');
             if (bannerContainer) {
-                bannerContainer.style.display = 'block';
+                bannerContainer.hidden = false;
+                bannerContainer.classList.remove('u-hidden');
 
                 if (eventElement) {
                     const hbTitle = document.getElementById('hb-title');
                     const hbSubtitle = document.getElementById('hb-subtitle');
 
                     if (hbTitle) {
-                        const eventLabel = eventElement.querySelector('.timeline-event-card span[style*="font-weight: 600"]')?.textContent.trim() || 'نسخة تاريخية';
-                        hbTitle.textContent = `مراجعة حدث: ${eventLabel}`;
+                        const eventLabel = eventElement.querySelector('.timeline-event-label')?.textContent.trim() || this.t('timeline.banner.historical_copy');
+                        hbTitle.textContent = this.t('timeline.banner.review_event', { event: eventLabel });
                     }
 
                     if (hbSubtitle) {
-                        const createdAt = eventElement.querySelector('span[style*="font-size: 11px"]')?.textContent.trim() || '';
-                        const actor = eventElement.querySelector('span[style*="font-weight: 500"]')?.textContent.trim() || 'النظام';
-                        hbSubtitle.textContent = `بواسطة ${actor} في ${createdAt}`;
+                        const createdAt = eventElement.querySelector('.timeline-event-meta span')?.textContent.trim() || '';
+                        const actor = eventElement.querySelector('.timeline-event-user')?.textContent.trim() || this.t('timeline.system_actor');
+                        hbSubtitle.textContent = this.t('timeline.banner.by_actor_at', { actor: actor, at: createdAt });
                     }
                 }
             }
@@ -363,7 +430,7 @@ if (!window.TimelineController) {
                     });
                 });
             } catch (e) {
-                BglLogger.warn('⚠️ Highlighting failed:', e);
+                BglLogger.warn('TL_HIGHLIGHT_FAIL', e);
             }
         }
 
@@ -377,7 +444,8 @@ if (!window.TimelineController) {
             // ✅ COMPLIANCE: Toggle Server-Side Element
             const bannerContainer = document.getElementById('historical-banner-container');
             if (bannerContainer) {
-                bannerContainer.style.display = 'none';
+                bannerContainer.hidden = true;
+                bannerContainer.classList.add('u-hidden');
             }
         }
 
@@ -386,14 +454,17 @@ if (!window.TimelineController) {
             const inputs = document.querySelectorAll('#supplierInput, #bankSelect');
             inputs.forEach(input => {
                 input.disabled = true;
-                input.style.opacity = '0.7';
-                input.style.cursor = 'not-allowed';
+                input.classList.add('timeline-readonly-input');
             });
+
+            if (window.recordsController && typeof window.recordsController.syncSuggestionVisibility === 'function') {
+                window.recordsController.syncSuggestionVisibility({ forceHide: true });
+            }
 
             // Hide action buttons (not just disable - prevent accidental interaction with history)
             const buttons = document.querySelectorAll('[data-action="extend"], [data-action="reduce"], [data-action="release"], [data-action="save-next"], [data-action="saveAndNext"]');
             buttons.forEach(btn => {
-                btn.style.display = 'none';
+                btn.classList.add('timeline-history-hidden');
             });
         }
 
@@ -402,19 +473,22 @@ if (!window.TimelineController) {
             const inputs = document.querySelectorAll('#supplierInput, #bankSelect');
             inputs.forEach(input => {
                 input.disabled = false;
-                input.style.opacity = '1';
-                input.style.cursor = '';
+                input.classList.remove('timeline-readonly-input');
             });
 
             // Show action buttons again
             const buttons = document.querySelectorAll('[data-action="extend"], [data-action="reduce"], [data-action="release"], [data-action="save-next"], [data-action="saveAndNext"]');
             buttons.forEach(btn => {
-                btn.style.display = '';
+                btn.classList.remove('timeline-history-hidden');
             });
+
+            if (window.recordsController && typeof window.recordsController.syncSuggestionVisibility === 'function') {
+                window.recordsController.syncSuggestionVisibility();
+            }
         }
 
         async loadCurrentState() {
-            BglLogger.debug('🔄 Loading current state from server');
+            BglLogger.debug('TL_LOAD_CURRENT_STATE');
 
             this.removeHistoricalBanner();
             this.clearHighlights();
@@ -434,7 +508,7 @@ if (!window.TimelineController) {
                 const data = await response.json();
 
                 if (!data.success) {
-                    throw new Error(data.error || 'Failed to load current state');
+                    throw new Error(data.error || 'LOAD_CURRENT_STATE_FAILED');
                 }
 
                 // ← NEW: إزالة event context بشكل صريح
@@ -453,6 +527,8 @@ if (!window.TimelineController) {
                 if (window.PreviewFormatter) {
                     window.PreviewFormatter.applyFormatting();
                 }
+
+                this.normalizePreviewPrintButton();
 
                 // Hide historical banner (this is Current State)
                 this.removeHistoricalBanner();
@@ -479,11 +555,11 @@ if (!window.TimelineController) {
                 // We only need to apply formatting, not rebuild the preview
                 // updatePreviewFromDOM() would hide preview if no activeAction exists (ADR-007)
 
-                BglLogger.debug('✅ Current state loaded from server');
+                BglLogger.debug('TL_LOAD_CURRENT_STATE_OK');
             } catch (error) {
-                console.error('Failed to load current state:', error);
+                console.error('TL_LOAD_CURRENT_STATE_ERR', error);
                 if (window.showToast) {
-                    window.showToast('فشل تحميل الحالة الحالية', 'error');
+                    window.showToast(this.t('timeline.error.load_current_state'), 'error');
                 }
             }
         }

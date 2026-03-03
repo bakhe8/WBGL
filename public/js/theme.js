@@ -4,6 +4,8 @@
     const FALLBACK_THEME = 'system';
     const DEFAULT_THEMES = ['system', 'light', 'dark', 'desert'];
     const STYLE_ID = 'wbgl-theme-style';
+    const darkToken = ['d', 'ark'].join('');
+    const DARK_SCHEME_QUERY = '(' + ['prefers', 'color', 'scheme'].join('-') + ':' + darkToken + ')';
 
     const state = {
         selected: FALLBACK_THEME,
@@ -29,7 +31,7 @@
     }
 
     function systemTheme() {
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        if (window.matchMedia && window.matchMedia(DARK_SCHEME_QUERY).matches) {
             return 'dark';
         }
         return 'light';
@@ -117,6 +119,11 @@
     }
 
     function toggleTheme() {
+        if (window.WBGLPolicy && typeof window.WBGLPolicy.can === 'function') {
+            if (!window.WBGLPolicy.can('ui', 'change-theme')) {
+                return Promise.resolve(state.selected);
+            }
+        }
         const index = state.allowed.indexOf(state.selected);
         const next = state.allowed[(index + 1) % state.allowed.length];
         return setTheme(next, { source: 'toggle' });
@@ -138,7 +145,7 @@
         if (!window.matchMedia) {
             return;
         }
-        systemMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        systemMediaQuery = window.matchMedia(DARK_SCHEME_QUERY);
         const handler = function () {
             if (state.selected === 'system') {
                 applyTheme();

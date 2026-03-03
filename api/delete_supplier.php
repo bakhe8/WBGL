@@ -5,7 +5,7 @@ use App\Support\Database;
 use App\Support\Input;
 
 header('Content-Type: application/json');
-wbgl_api_require_permission('manage_data');
+wbgl_api_require_permission('supplier_manage');
 
 try {
     $data = json_decode(file_get_contents('php://input'), true);

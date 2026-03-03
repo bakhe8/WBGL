@@ -52,6 +52,7 @@ $wbglViewPermission = ViewPolicy::requiredPermissionForView($wbglViewFile);
             'username' => $wbglUiUser->username,
             'full_name' => $wbglUiUser->fullName,
             'role_id' => $wbglUiUser->roleId,
+            'is_developer' => ViewPolicy::isCurrentUserDeveloper(),
             'permissions' => $wbglPermissions,
             'preferences' => [
                 'language' => $wbglLocale['locale'],

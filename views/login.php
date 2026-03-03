@@ -218,11 +218,6 @@ if (AuthService::isLoggedIn()) {
             <span data-i18n="nav.language">اللغة</span>
             <span id="wbgl-lang-current">AR</span>
         </button>
-        <button type="button" class="lang-toggle" data-wbgl-direction-toggle data-i18n-title="nav.direction">
-            <span>↔</span>
-            <span data-i18n="nav.direction">الاتجاه</span>
-            <span id="wbgl-direction-current">AUTO</span>
-        </button>
         <button type="button" class="lang-toggle" data-wbgl-theme-toggle data-i18n-title="nav.theme">
             <span>🎨</span>
             <span data-i18n="nav.theme">المظهر</span>
@@ -267,6 +262,13 @@ if (AuthService::isLoggedIn()) {
     <script src="/public/js/global-shortcuts.js"></script>
     <script src="/public/js/main.js"></script>
     <script>
+        const loginT = (key, fallback, params) => {
+            if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
+                return window.WBGLI18n.t(key, fallback, params);
+            }
+            return fallback || key;
+        };
+
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
 
@@ -310,19 +312,13 @@ if (AuthService::isLoggedIn()) {
                             source: 'login'
                         });
                     }
-                    if (result?.user?.preferences?.direction_override && window.WBGLDirection) {
-                        await window.WBGLDirection.setOverride(result.user.preferences.direction_override, {
-                            persist: false,
-                            source: 'login'
-                        });
-                    }
                     window.location.href = '/index.php';
                 } else {
-                    errorAlert.textContent = result?.message || result?.error || 'فشل تسجيل الدخول';
+                    errorAlert.textContent = result?.message || result?.error || loginT('auth.ui.txt_9930d1b1', 'auth.ui.txt_9930d1b1');
                     errorAlert.style.display = 'block';
                 }
             } catch (error) {
-                errorAlert.textContent = 'حدث خطأ في الاتصال بالخادم';
+                errorAlert.textContent = loginT('auth.ui.txt_7181b69d', 'auth.ui.txt_7181b69d');
                 errorAlert.style.display = 'block';
             } finally {
                 btn.disabled = false;
