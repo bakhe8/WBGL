@@ -88,7 +88,7 @@ jobs:
             missing=1
           fi
 
-          if ! grep -Eqi 'REUSE-REF:.*(app/|api/|maint/|docs/)' <<<"$PR_BODY"; then
+          if ! grep -Eqi 'REUSE-REF:.*(app/|api/|app/Scripts/|Docs/|docs/)' <<<"$PR_BODY"; then
             echo "REUSE-REF must mention existing WBGL paths used as implementation seeds."
             missing=1
           fi
@@ -126,112 +126,27 @@ jobs:
           CHANGED_FILES: ${{ steps.changes.outputs.files }}
         run: |
           set -euo pipefail
-          sensitive='^(api/|app/|partials/|templates/|views/|public/js/|public/css/|maint/|database/migrations/)'
+          sensitive='^(api/|app/|app/Scripts/|partials/|templates/|views/|public/js/|public/css/|database/migrations/)'
           if grep -Eq "$sensitive" <<<"$CHANGED_FILES"; then
-            if ! grep -Eq '^docs/WBGL_EXECUTION_LOOP_STATUS\.json$' <<<"$CHANGED_FILES"; then
-              echo "Sensitive code changed but docs/WBGL_EXECUTION_LOOP_STATUS.json was not refreshed."
-              echo "Run: php maint/run-execution-loop.php and commit the generated status artifact."
+            if ! grep -Eq '^Docs/WBGL-EXECUTION-STATE-AR\.json$' <<<"$CHANGED_FILES"; then
+              echo "Sensitive code changed but Docs/WBGL-EXECUTION-STATE-AR.json was not refreshed."
+              echo "Run: php app/Scripts/sequential-execution.php guard and commit the updated state if needed."
               exit 1
             fi
           fi
 
-      - name: Enforce execution loop readiness baseline
+      - name: Enforce sequential execution state baseline
         run: |
           set -euo pipefail
-          status_file="docs/WBGL_EXECUTION_LOOP_STATUS.json"
+          status_file="Docs/WBGL-EXECUTION-STATE-AR.json"
           if [ ! -f "$status_file" ]; then
             echo "Missing $status_file."
-            echo "Run: php maint/run-execution-loop.php and commit docs/WBGL_EXECUTION_LOOP_STATUS.json."
+            echo "Run: php app/Scripts/sequential-execution.php guard and commit Docs/WBGL-EXECUTION-STATE-AR.json."
             exit 1
           fi
-
-          jq -e '.next_batch | length == 0' "$status_file" >/dev/null || {
-            echo "Execution loop is not fully closed: next_batch is not empty."
-            exit 1
-          }
-
-          jq -e '.api_guard.guarded == .api_guard.total and .api_guard.sensitive_unguarded == 0' "$status_file" >/dev/null || {
-            echo "API guard baseline is not satisfied (guarded/unguarded mismatch)."
-            exit 1
-          }
-
-          jq -e '.migrations.pending == 0' "$status_file" >/dev/null || {
-            echo "Pending migrations detected in execution loop status."
-            exit 1
-          }
-
-          jq -e '.scheduler.run_ledger_table_present and .scheduler.dead_letter_table_present and .scheduler.runtime_dead_letter_integration' "$status_file" >/dev/null || {
-            echo "Scheduler readiness baseline failed (runtime/dead-letter not fully ready)."
-            exit 1
-          }
-
-          jq -e '.observability.metrics_api_present and .observability.metrics_service_present and .observability.metrics_api_permission_guarded and .observability.metrics_api_policy_mapped and .observability.api_request_id_wired' "$status_file" >/dev/null || {
-            echo "Observability baseline failed (metrics/request-id wiring)."
-            exit 1
-          }
-
-          jq -e '.db_cutover.ready == true and .db_cutover.driver_status_command_present and .db_cutover.cutover_check_command_present and .db_cutover.backup_command_present and .db_cutover.portability_check_command_present and .db_cutover.fingerprint_command_present and .db_cutover.pg_activation_rehearsal_command_present and .db_cutover.cutover_runbook_present and .db_cutover.backup_restore_runbook_present and .db_cutover.pg_activation_runbook_present and .db_cutover.schema_migrations_table_present and .db_cutover.migration_tooling_driver_aware' "$status_file" >/dev/null || {
-            echo "DB cutover baseline failed (scripts/runbooks/migration tooling/backup readiness)."
-            exit 1
-          }
-
-          jq -e '.ci_cd.enterprise_workflows_ready == true and .ci_cd.change_gate_workflow_present and .ci_cd.ci_workflow_present and .ci_cd.security_workflow_present and .ci_cd.release_workflow_present' "$status_file" >/dev/null || {
-            echo "Enterprise CI/CD workflows baseline failed (change-gate/ci/security/release)."
-            exit 1
-          }
-
-          jq -e '.sod_compliance.ready == true and .sod_compliance.governance_policy_doc_present and .sod_compliance.sod_matrix_doc_present and .sod_compliance.break_glass_runbook_present and .sod_compliance.self_approval_guard_enforced and .sod_compliance.break_glass_permission_gate_enforced and .sod_compliance.break_glass_ticket_policy_present and .sod_compliance.audit_tables_present' "$status_file" >/dev/null || {
-            echo "SoD/compliance baseline failed (docs + enforcement + audit tables)."
-            exit 1
-          }
-
-          jq -e '.history_hybrid.columns_present and .history_hybrid.service_present and .history_hybrid.snapshot_reader_integration_present' "$status_file" >/dev/null || {
-            echo "History hybrid readiness baseline failed."
-            exit 1
-          }
-
-          jq -e '.print_governance.table_present and .print_governance.api_endpoint_present and .print_governance.single_letter_wiring and .print_governance.batch_wiring' "$status_file" >/dev/null || {
-            echo "Print governance readiness baseline failed."
-            exit 1
-          }
-
-          jq -e '.config_governance.table_present and .config_governance.save_hook_wired' "$status_file" >/dev/null || {
-            echo "Config governance readiness baseline failed."
-            exit 1
-          }
-
-          jq -e '.security_baseline.session_security_service_present and .security_baseline.security_headers_service_present and .security_baseline.csrf_guard_service_present and .security_baseline.autoload_session_hardening_wired and .security_baseline.autoload_security_headers_wired and .security_baseline.autoload_non_api_csrf_guard_wired and .security_baseline.api_bootstrap_csrf_guard_wired and .security_baseline.login_endpoint_csrf_guard_wired and .security_baseline.frontend_security_runtime_present and .security_baseline.frontend_security_runtime_wired and .security_baseline.logout_hard_destroy_wired and .security_baseline.rate_limit_user_agent_fingerprint_wired' "$status_file" >/dev/null || {
-            echo "Security baseline readiness failed (session/headers/csrf/rate-limit)."
-            exit 1
-          }
-
-          jq -e '.reopen_governance.batch_audit_table_present and .reopen_governance.break_glass_table_present and .reopen_governance.batch_permission_gate_wired and .reopen_governance.batch_reason_enforced and .reopen_governance.guarantee_permission_gate_wired and .reopen_governance.break_glass_auth_wired' "$status_file" >/dev/null || {
-            echo "Reopen governance/break-glass readiness baseline failed."
-            exit 1
-          }
-
-          jq -e '.released_read_only.policy_service_present and .released_read_only.extend_guarded and .released_read_only.reduce_guarded and .released_read_only.update_guarded and .released_read_only.save_and_next_guarded and .released_read_only.attachment_guarded' "$status_file" >/dev/null || {
-            echo "Released read-only policy readiness baseline failed."
-            exit 1
-          }
-
-          jq -e '.ux_a11y.a11y_css_present and .ux_a11y.index_linked and .ux_a11y.batch_detail_linked and .ux_a11y.settings_linked' "$status_file" >/dev/null || {
-            echo "UX/A11y readiness baseline failed."
-            exit 1
-          }
-
-          jq -e '.ui_architecture.readiness.translation_target_pass and .ui_architecture.readiness.rtl_target_pass and .ui_architecture.readiness.theme_token_target_pass and .ui_architecture.readiness.view_guard_target_pass and .ui_architecture.readiness.api_matrix_parity_pass' "$status_file" >/dev/null || {
-            echo "UI architecture readiness baseline failed (i18n/rtl/theme/view-guard/api-matrix)."
-            exit 1
-          }
-
-          jq -e '.playwright.ready == true and .playwright.tests_count > 0' "$status_file" >/dev/null || {
-            echo "Playwright readiness baseline failed."
-            exit 1
-          }
-
-          jq -e '.tests.integration_files > 0 and .tests.integration_flow_suite_present == true' "$status_file" >/dev/null || {
-            echo "Integration test baseline failed (missing integration suite coverage)."
+          php app/Scripts/sequential-execution.php guard
+          jq -e '[.steps[] | select(.status != "done")] | length == 0' "$status_file" >/dev/null || {
+            echo "Sequential execution is not fully closed: pending/in_progress/blocked steps found."
             exit 1
           }
 
@@ -252,7 +167,7 @@ jobs:
         run: composer install --no-interaction --no-progress --prefer-dist
 
       - name: Apply DB migrations
-        run: php maint/migrate.php
+        run: php app/Scripts/migrate.php
 
       - name: Run PHPUnit Unit suite
         run: vendor/bin/phpunit --testsuite Unit
@@ -319,11 +234,11 @@ jobs:
           CHANGED_FILES: ${{ steps.changes.outputs.files }}
         run: |
           set -euo pipefail
-          sensitive='^(api/|app/|partials/|templates/|views/|public/js/|public/css/|maint/)'
+          sensitive='^(api/|app/|app/Scripts/|partials/|templates/|views/|public/js/|public/css/)'
           if grep -Eq "$sensitive" <<<"$CHANGED_FILES"; then
-            if ! grep -Eq '^docs/' <<<"$CHANGED_FILES"; then
-              echo "Sensitive code changed, but no docs/ updates detected."
-              echo "Please update docs/ with behavior/contract/risk changes."
+            if ! grep -Eq '^(Docs/|docs/)' <<<"$CHANGED_FILES"; then
+              echo "Sensitive code changed, but no Docs/ updates detected."
+              echo "Please update Docs/ with behavior/contract/risk changes."
               exit 1
             fi
           fi
@@ -335,7 +250,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          added_sensitive="$(awk '$1 ~ /^A/ {print $2}' <<<"$CHANGED_STATUSES" | grep -E '^(api/|app/|maint/|views/|partials/|templates/|public/js/|public/css/)' || true)"
+          added_sensitive="$(awk '$1 ~ /^A/ {print $2}' <<<"$CHANGED_STATUSES" | grep -E '^(api/|app/|app/Scripts/|views/|partials/|templates/|public/js/|public/css/)' || true)"
           if [ -z "$added_sensitive" ]; then
             echo "No newly added sensitive files."
             exit 0

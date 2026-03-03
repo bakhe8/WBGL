@@ -57,7 +57,7 @@ jobs:
         run: composer install --no-interaction --no-progress --prefer-dist
 
       - name: Apply migrations
-        run: php maint/migrate.php
+        run: php app/Scripts/migrate.php
 
       - name: Run Unit tests
         run: vendor/bin/phpunit --testsuite Unit
@@ -112,8 +112,11 @@ jobs:
       - name: Install PHP dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
 
-      - name: Run PostgreSQL activation rehearsal
-        run: php maint/pgsql-activation-rehearsal.php --apply-migrations
+      - name: Run migration rehearsal (dry-run + apply)
+        run: |
+          php app/Scripts/migrate.php --dry-run
+          php app/Scripts/migrate.php
+          php app/Scripts/migration-status.php
 
   e2e-smoke:
     runs-on: ubuntu-latest
@@ -163,7 +166,7 @@ jobs:
         run: composer install --no-interaction --no-progress --prefer-dist
 
       - name: Apply migrations
-        run: php maint/migrate.php
+        run: php app/Scripts/migrate.php
 
       - name: Setup Node
         uses: actions/setup-node@v4

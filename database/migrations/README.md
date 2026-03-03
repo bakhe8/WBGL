@@ -11,9 +11,9 @@
 ## التشغيل
 
 ```bash
-php maint/migration-status.php
-php maint/migrate.php --dry-run
-php maint/migrate.php
+php app/Scripts/migration-status.php
+php app/Scripts/migrate.php --dry-run
+php app/Scripts/migrate.php
 ```
 
 ## القواعد

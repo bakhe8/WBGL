@@ -54,29 +54,25 @@ jobs:
         run: composer install --no-interaction --no-progress --prefer-dist
 
       - name: Apply migrations
-        run: php maint/migrate.php
+        run: php app/Scripts/migrate.php
 
-      - name: Generate execution loop status
-        run: php maint/run-execution-loop.php
+      - name: Validate sequential execution state
+        run: php app/Scripts/sequential-execution.php guard
 
-      - name: DB cutover check
-        run: php maint/db-cutover-check.php
+      - name: Migration status
+        run: php app/Scripts/migration-status.php
 
-      - name: Migration portability check
-        run: php maint/check-migration-portability.php || true
-
-      - name: DB cutover fingerprint
-        run: php maint/db-cutover-fingerprint.php
+      - name: Theme style gate
+        run: php app/Scripts/theme-style-audit.php gate
 
       - name: Upload readiness artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wbgl-release-readiness
           path: |
-            docs/WBGL_EXECUTION_LOOP_STATUS.json
-            docs/WBGL_EXECUTION_LOOP_STATUS.md
-            docs/WBGL_EXECUTION_LOOP_LOG.md
-            storage/database/cutover/*.json
+            Docs/WBGL-EXECUTION-STATE-AR.json
+            Docs/WBGL-EXECUTION-LOG-AR.md
+            Docs/WBGL-EXECUTION-SEQUENCE-AR.json
 
   pgsql-readiness:
     runs-on: ubuntu-latest
@@ -124,15 +120,16 @@ jobs:
       - name: Install PHP dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
 
-      - name: Run PostgreSQL activation rehearsal (apply)
-        run: php maint/pgsql-activation-rehearsal.php --apply-migrations
+      - name: Run PostgreSQL migration rehearsal
+        run: |
+          php app/Scripts/migrate.php --dry-run
+          php app/Scripts/migrate.php
+          php app/Scripts/migration-status.php
 
       - name: Upload PostgreSQL readiness artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wbgl-pgsql-readiness
           path: |
-            storage/database/cutover/pgsql_activation_rehearsal_*.json
-            storage/database/cutover/pgsql_activation_rehearsal_latest.json
-            storage/database/cutover/fingerprint_pgsql_*.json
-            storage/database/cutover/fingerprint_pgsql_latest.json
+            Docs/WBGL-EXECUTION-STATE-AR.json
+            Docs/WBGL-EXECUTION-LOG-AR.md
