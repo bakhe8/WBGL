@@ -145,10 +145,24 @@ jobs:
             exit 1
           fi
           php app/Scripts/sequential-execution.php guard
-          jq -e '[.steps[] | select(.status != "done")] | length == 0' "$status_file" >/dev/null || {
-            echo "Sequential execution is not fully closed: pending/in_progress/blocked steps found."
+          pending_count="$(jq '[.steps[] | select(.status == "pending")] | length' "$status_file")"
+          in_progress_count="$(jq '[.steps[] | select(.status == "in_progress")] | length' "$status_file")"
+          blocked_count="$(jq '[.steps[] | select(.status == "blocked")] | length' "$status_file")"
+
+          if [ "$blocked_count" -ne 0 ]; then
+            echo "Sequential execution has blocked steps. Resolve or unblock before merge."
             exit 1
-          }
+          fi
+
+          if [ "$pending_count" -gt 0 ] && [ "$in_progress_count" -ne 1 ]; then
+            echo "Sequential execution must have exactly one in_progress step while pending steps exist."
+            exit 1
+          fi
+
+          if [ "$pending_count" -eq 0 ] && [ "$in_progress_count" -ne 0 ]; then
+            echo "Sequential execution cannot keep in_progress steps when no pending steps remain."
+            exit 1
+          fi
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2

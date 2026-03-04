@@ -1309,6 +1309,35 @@ php app/Scripts/sequential-execution.php guard
 
 ---
 
+### TASK F-030 (DONE) - تفعيل دورة v1.1 وضبط Change Gate للعمل المستمر
+- الهدف: بدء دورة تنفيذ جديدة دون كسر الحوكمة، عبر ترقية manifest إلى `v1.1.0` وتعديل شرط البوابة من `all-done only` إلى `active-loop`.
+- الملفات المستهدفة:
+  - `Docs/WBGL-EXECUTION-SEQUENCE-AR.json`
+  - `Docs/WBGL-EXECUTION-STATE-AR.json`
+  - `Docs/WBGL-EXECUTION-LOG-AR.md`
+  - `.github/workflows/change-gate.yml`
+- خطوات التنفيذ:
+  1. ترقية manifest إلى `1.1.0` وإضافة مراحل `P6..P8` (G-010..G-050).
+  2. تفعيل state تلقائيًا عبر `sequential-execution.php status` لتعيين أول خطوة جديدة `P6-01` كـ `in_progress`.
+  3. تحديث `change-gate` بحيث:
+     - يمنع وجود `blocked`.
+     - يفرض `exactly one in_progress` عند وجود `pending`.
+     - يسمح بحالة `all done` أو `active loop` بدل فرض `all done` فقط.
+  4. التحقق عبر:
+     - `php app/Scripts/sequential-execution.php status`
+     - `php app/Scripts/sequential-execution.php guard`
+- معيار القبول:
+  1. بدء دورة v1.1 فعليًا مع خطوة نشطة واضحة.
+  2. استمرار صرامة البوابة بدون تجميد التطوير.
+  3. guard يمر بنجاح.
+
+- ملخص التنفيذ:
+  1. تم إطلاق `v1.1.0` مع تفعيل `P6-01` كخطوة نشطة (`WIP`) وإضافة entry في execution log.
+  2. تم تحديث `change-gate` لدعم نمط التنفيذ المتسلسل المستمر بدل الإغلاق التام فقط.
+  3. الحالة النهائية: `status` يظهر `5/10 done` و`Active step: P6-01`، و`guard` أخضر.
+
+---
+
 ### ما تبقى من موجة A
 - لا يوجد. موجة A أُغلقت بالكامل (مع اعتماد Hybrid export pattern كقرار تنفيذي).
 
@@ -1519,6 +1548,81 @@ php vendor/bin/phpunit tests/Integration/EnterpriseApiFlowsTest.php --log-junit 
   1. تم إثبات أن `app/Services/AutoAcceptService.php` يتيم بالكامل (لا يوجد أي استدعاء حي) ويعتمد على `LearningLogRepository` غير موجود في المشروع.
   2. تم حذف `AutoAcceptService.php` كتنظيف آمن للـ dead code.
   3. تحقق ما بعد الحذف: `Unit` أخضر (`116/116`) و`EnterpriseApiFlowsTest` أخضر (`20/20`) بدون regressions.
+
+---
+
+## 3.1) المرحلة التالية v1.1 (مكتملة)
+
+### TASK G-010 (DONE) - فصل بناء `record-form` عن endpoint `get-record`
+- الهدف: تقليل تعقيد `api/get-record.php` عبر استخراج rendering/context assembly إلى خدمة/Presenter مع إبقاء نفس مخرجات HTML.
+- الملفات المستهدفة:
+  - `api/get-record.php`
+  - `app/Services/` (إضافة presenter/service)
+  - `tests/Integration/EnterpriseApiFlowsTest.php` (حالات smoke على الـ read path)
+- أوامر التحقق:
+```powershell
+php -l api/get-record.php
+php vendor/bin/phpunit --testsuite Unit
+php vendor/bin/phpunit tests/Integration/EnterpriseApiFlowsTest.php --log-junit storage/logs/phpunit-enterprise.xml
+```
+- معيار القبول:
+  1. لا تغيير وظيفي في HTML الناتج للمسار.
+  2. انخفاض ملموس في منطق orchestration داخل endpoint.
+  3. `Unit + Integration` خضراء بالكامل.
+
+- ملخص التنفيذ:
+  1. تمت إضافة خدمة جديدة `app/Services/GetRecordPresentationService.php` لتجميع hydration + matching + rendering لمسار `get-record`.
+  2. تم تقليص `api/get-record.php` ليعمل كـ adapter (parsing + policy gate + service call) بدون منطق العرض الداخلي الثقيل.
+  3. التحقق ناجح: `Unit` أخضر (`118/118`, `894 assertions`) و`EnterpriseApiFlowsTest` أخضر (`45/45`, `1033 assertions`, `errors=0`, `failures=0`).
+
+### TASK G-020 (DONE) - فصل timeline/history rendering عن endpoints الخاصة بها
+- الهدف: نقل منطق بناء snapshot/timeline من `api/get-timeline.php` و`api/get-history-snapshot.php` إلى خدمات متخصصة.
+- الملفات المستهدفة:
+  - `api/get-timeline.php`
+  - `api/get-history-snapshot.php`
+  - `app/Services/`
+
+- ملخص التنفيذ:
+  1. تمت إضافة `app/Services/TimelineReadPresentationService.php` لتجميع منطق قراءة/عرض timeline وhistory snapshot.
+  2. تم تحويل `api/get-timeline.php` و`api/get-history-snapshot.php` إلى adapters نحيفة تعتمد service واحدة مع إبقاء سلوك الوصول/الردود.
+  3. تم تحديث اختبارات wiring لتدعم النمط المستخرج، والتحقق ناجح: `Unit` أخضر (`118/118`, `896 assertions`) و`EnterpriseApiFlowsTest` أخضر (`45/45`, `1033 assertions`).
+
+### TASK G-030 (DONE) - توحيد transaction boundaries لعمليات lifecycle الحرجة
+- الهدف: تعريف حدود معاملات صريحة وموحدة لمسارات `extend/reduce/release/reopen/save-and-next`.
+- الملفات المستهدفة:
+  - `api/extend.php`
+  - `api/reduce.php`
+  - `api/release.php`
+  - `api/reopen.php`
+  - `api/save-and-next.php`
+
+- ملخص التنفيذ:
+  1. تمت إضافة `app/Support/TransactionBoundary.php` كغلاف موحد للمعاملات مع دعم الحالات المتداخلة (`inTransaction`).
+  2. تم تطبيق حدود المعاملة على المسارات الحرجة: `extend/reduce/release` + `SaveAndNextApplicationService` + `UndoRequestService` (مساري execute/direct reopen).
+  3. تمت إضافة حارس wiring جديد (`TransactionBoundaryWiringTest`) والتحقق ناجح: `Unit` أخضر (`120/120`, `912 assertions`) و`EnterpriseApiFlowsTest` أخضر (`45/45`, `1033 assertions`).
+
+### TASK G-040 (DONE) - إضافة فحص سلامة بيانات وتشغيله ضمن CI
+- الهدف: إضافة script لفحص invariants القاعدية الحرجة (status/snapshot/actionability) وربطه ضمن workflow.
+- الملفات المستهدفة:
+  - `app/Scripts/`
+  - `.github/workflows/ci.yml`
+
+- ملخص التنفيذ:
+  1. تمت إضافة `app/Scripts/data-integrity-check.php` لفحص invariants الحرجة (decision status/action domains, ready completeness, released lock, undo integrity).
+  2. تم ربط الفحص داخل CI (`.github/workflows/ci.yml`) بعد اختبارات التكامل لضمان gate تشغيلي قبل النجاح.
+  3. التحقق ناجح: `data-integrity-check` أخضر (`Fail violations: 0`) + `Unit` أخضر (`120/120`, `912 assertions`) + `EnterpriseApiFlowsTest` أخضر (`45/45`, `1033 assertions`).
+
+### TASK G-050 (DONE) - إغلاق التوثيق التشغيلي للمرحلة v1.1
+- الهدف: تحديث docs/state/log بالأدلة النهائية بعد إنهاء مهام G-010..G-040.
+- الملفات المستهدفة:
+  - `Docs/WBGL-EXECUTION-STATE-AR.json`
+  - `Docs/WBGL-EXECUTION-LOG-AR.md`
+  - `Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md`
+
+- ملخص التنفيذ:
+  1. تم إغلاق مسار v1.1 بالكامل في خطة التنفيذ مع تحويل جميع مهام G إلى `DONE`.
+  2. تم تحديث state/log عبر `sequential-execution` مع أدلة لكل خطوة (`P6-01`..`P7-02`) والانتقال للخطوة النهائية.
+  3. الحالة النهائية للمرحلة: جميع خطوات v1.1 مكتملة وقابلة للتحقق عبر `status/guard` قبل الدمج.
 
 ---
 

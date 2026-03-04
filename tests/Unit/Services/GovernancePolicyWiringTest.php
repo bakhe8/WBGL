@@ -193,6 +193,7 @@ final class GovernancePolicyWiringTest extends TestCase
     {
         $recordApi = $this->readFile('api/get-record.php');
         $timelineApi = $this->readFile('api/get-timeline.php');
+        $timelineReadService = $this->readFile('app/Services/TimelineReadPresentationService.php');
         $bootstrap = $this->readFile('api/_bootstrap.php');
 
         $this->assertStringContainsString('wbgl_api_policy_for_guarantee', $bootstrap);
@@ -201,7 +202,11 @@ final class GovernancePolicyWiringTest extends TestCase
         $this->assertStringContainsString('$stageFilter = isset($_GET[\'stage\'])', $timelineApi);
 
         $this->assertStringContainsString('wbgl_api_policy_for_guarantee($db, (int)$guaranteeId)', $recordApi);
-        $this->assertStringContainsString('wbgl_api_policy_for_guarantee($db, (int)$guaranteeId)', $timelineApi);
+        $this->assertTrue(
+            str_contains($timelineApi, 'wbgl_api_policy_for_guarantee($db, (int)$guaranteeId)')
+                || str_contains($timelineReadService, 'wbgl_api_policy_for_guarantee($this->db, (int)$guaranteeId)'),
+            'get-timeline policy wiring is missing'
+        );
 
         $this->assertStringContainsString('$stageFilter', $recordApi);
         $this->assertStringContainsString('$stageFilter', $timelineApi);

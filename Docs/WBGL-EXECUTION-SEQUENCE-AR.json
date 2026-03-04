@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "phases": [
     {
       "id": "P1",
@@ -102,6 +102,59 @@
           "coverage_ids": [
             "E-010",
             "E-020"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P6",
+      "title_ar": "إعادة ضبط حدود طبقة العرض",
+      "steps": [
+        {
+          "id": "P6-01",
+          "title_ar": "فصل بناء record HTML عن endpoint `get-record`",
+          "coverage_ids": [
+            "G-010"
+          ]
+        },
+        {
+          "id": "P6-02",
+          "title_ar": "فصل timeline/history rendering عن endpoints الخاصة بها",
+          "coverage_ids": [
+            "G-020"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P7",
+      "title_ar": "صحة البيانات والمعاملات",
+      "steps": [
+        {
+          "id": "P7-01",
+          "title_ar": "توحيد transaction boundaries لعمليات lifecycle الحرجة",
+          "coverage_ids": [
+            "G-030"
+          ]
+        },
+        {
+          "id": "P7-02",
+          "title_ar": "إضافة فحص سلامة بيانات وتشغيله ضمن CI",
+          "coverage_ids": [
+            "G-040"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P8",
+      "title_ar": "حوكمة التنفيذ v1.1",
+      "steps": [
+        {
+          "id": "P8-01",
+          "title_ar": "إغلاق الأدلة والتوثيق التشغيلي للمرحلة الجديدة",
+          "coverage_ids": [
+            "G-050"
           ]
         }
       ]

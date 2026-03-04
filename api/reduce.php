@@ -128,48 +128,48 @@ try {
     }
     // ================================================================
     
-    // --------------------------------------------------------------------
-    // STRICT TIMELINE DISCIPLINE: Snapshot -> Update -> Record
-    // --------------------------------------------------------------------
+    $mutation = \App\Support\TransactionBoundary::run($db, function () use ($db, $guaranteeRepo, $guaranteeId, $newAmount, $decidedBy): array {
+        // --------------------------------------------------------------------
+        // STRICT TIMELINE DISCIPLINE: Snapshot -> Update -> Record
+        // --------------------------------------------------------------------
+        $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
 
-    // 1. SNAPSHOT: Capture state BEFORE any modification
-    $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
+        $guarantee = $guaranteeRepo->find($guaranteeId);
+        if (!$guarantee) {
+            throw new \RuntimeException('Record not found');
+        }
 
-    // 2. UPDATE: Execute system changes
-    // 🆕 Directly update amount (no guarantee_actions)
-    $guarantee = $guaranteeRepo->find($guaranteeId);
-    $raw = $guarantee->rawData;
-    $previousAmount = $raw['amount'] ?? 0;
-    $raw['amount'] = (float)$newAmount;
-    
-    // Update raw_data through repository
-    $guaranteeRepo->updateRawData($guaranteeId, json_encode($raw));
+        $raw = $guarantee->rawData;
+        $previousAmount = $raw['amount'] ?? 0;
+        $raw['amount'] = (float)$newAmount;
+        $guaranteeRepo->updateRawData($guaranteeId, json_encode($raw));
 
-    // 3. NEW (Phase 3): Set Active Action
-    // Locked action setter removed per user request
+        $decisionUpdate = $db->prepare("
+            UPDATE guarantee_decisions
+            SET decision_source = 'manual',
+                decided_by = ?,
+                last_modified_by = ?,
+                last_modified_at = CURRENT_TIMESTAMP
+            WHERE guarantee_id = ?
+        ");
+        $decisionUpdate->execute([$decidedBy, $decidedBy, $guaranteeId]);
 
-    
-    // 3.1 Track manual decision source for user-triggered action
-    $decisionUpdate = $db->prepare("
-        UPDATE guarantee_decisions
-        SET decision_source = 'manual',
-            decided_by = ?,
-            last_modified_by = ?,
-            last_modified_at = CURRENT_TIMESTAMP
-        WHERE guarantee_id = ?
-    ");
-    $decisionUpdate->execute([$decidedBy, $decidedBy, $guaranteeId]);
+        \App\Services\TimelineRecorder::recordReductionEvent(
+            $guaranteeId,
+            $oldSnapshot,
+            (float)$newAmount,
+            (float)$previousAmount
+        );
 
-    // 4. RECORD: Strict Event Recording (UE-03 Reduce)
-    // 🆕 Record ONLY in guarantee_history (no guarantee_actions)
-    \App\Services\TimelineRecorder::recordReductionEvent(
-        $guaranteeId, 
-        $oldSnapshot, 
-        (float)$newAmount,
-        $previousAmount
-    );
+        return [
+            'guarantee' => $guarantee,
+            'raw' => $raw,
+        ];
+    });
 
-    // --------------------------------------------------------------------
+    /** @var \App\Models\Guarantee $guarantee */
+    $guarantee = $mutation['guarantee'];
+    $raw = is_array($mutation['raw'] ?? null) ? $mutation['raw'] : [];
 
     // Prepare record data for form
     $record = [

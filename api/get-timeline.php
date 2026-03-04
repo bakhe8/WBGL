@@ -5,11 +5,9 @@
  */
 
 require_once __DIR__ . '/_bootstrap.php';
-require_once __DIR__ . '/../app/Services/TimelineDisplayService.php';
 
 use App\Support\Database;
-use App\Services\TimelineDisplayService;
-use App\Services\UiSurfacePolicyService;
+use App\Services\TimelineReadPresentationService;
 
 header('Content-Type: text/html; charset=utf-8');
 wbgl_api_require_permission('timeline_view');
@@ -31,42 +29,20 @@ try {
     }
 
     $db = Database::connect();
-
-    $guaranteeId = \App\Services\NavigationService::getIdByIndex(
-        $db,
+    $timelineService = new TimelineReadPresentationService($db);
+    $result = $timelineService->renderTimelineByIndex(
         $index,
         $statusFilter,
         $searchTerm,
         $stageFilter
     );
 
-    $timeline = [];
-
-    if ($guaranteeId) {
-        $policy = wbgl_api_policy_for_guarantee($db, (int)$guaranteeId);
-        if (!$policy['visible']) {
-            wbgl_api_fail(403, 'Permission Denied');
-        }
-
-        $stmtDec = $db->prepare('SELECT status FROM guarantee_decisions WHERE guarantee_id = ? LIMIT 1');
-        $stmtDec->execute([(int)$guaranteeId]);
-        $decisionRow = $stmtDec->fetch(\PDO::FETCH_ASSOC) ?: [];
-
-        $surface = UiSurfacePolicyService::forGuarantee(
-            $policy,
-            \App\Support\Guard::permissions(),
-            (string)($decisionRow['status'] ?? 'pending')
-        );
-
-        if ($surface['can_view_timeline'] ?? false) {
-            $timeline = TimelineDisplayService::getEventsForDisplay($db, (int)$guaranteeId);
-        }
+    if ($result['forbidden']) {
+        wbgl_api_fail(403, 'Permission Denied');
     }
-    
-    // Use the comprehensive partial for rendering
-    include __DIR__ . '/../partials/timeline-section.php';
+    echo (string)($result['html'] ?? '');
 
 } catch (\Throwable $e) {
     http_response_code(500);
-    echo '<div style="color:red">Error loading timeline: ' . $e->getMessage() . '</div>';
+    echo '<div style="color:red">Error loading timeline: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') . '</div>';
 }

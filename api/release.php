@@ -72,51 +72,52 @@ try {
     }
     // ================================================================
     
-    // --------------------------------------------------------------------
-    // STRICT TIMELINE DISCIPLINE: Snapshot -> Update -> Record
-    // --------------------------------------------------------------------
+    $mutation = \App\Support\TransactionBoundary::run($db, function () use (
+        $db,
+        $decisionRepo,
+        $guaranteeId,
+        $decidedBy,
+        $reason
+    ): array {
+        // --------------------------------------------------------------------
+        // STRICT TIMELINE DISCIPLINE: Snapshot -> Update -> Record
+        // --------------------------------------------------------------------
+        $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
 
-    // 1. SNAPSHOT: Capture state BEFORE release
-    $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
+        $decision = $decisionRepo->findByGuarantee($guaranteeId);
+        if (!$decision || empty($decision->supplierId) || empty($decision->bankId)) {
+            throw new \RuntimeException('لا يمكن تنفيذ الإفراج - يجب اختيار المورد والبنك أولاً');
+        }
+        if ($decision->status === 'released') {
+            throw new \RuntimeException('تم إفراج هذا الضمان مسبقاً');
+        }
 
-    // 2. UPDATE: Execute system changes
-    // Validate that supplier and bank are selected
-    $decision = $decisionRepo->findByGuarantee($guaranteeId);
-    if (!$decision || empty($decision->supplierId) || empty($decision->bankId)) {
-        throw new \RuntimeException('لا يمكن تنفيذ الإفراج - يجب اختيار المورد والبنك أولاً');
-    }
-    
-    // Check if already released
-    if ($decision && $decision->status === 'released') {
-        throw new \RuntimeException('تم إفراج هذا الضمان مسبقاً');
-    }
-    
-    // Lock the guarantee (set status to 'released')
-    $decisionRepo->lock($guaranteeId, 'released');
-    $statusStmt = $db->prepare("
-        UPDATE guarantee_decisions
-        SET status = 'released',
-            decision_source = 'manual',
-            decided_by = ?,
-            last_modified_by = ?,
-            last_modified_at = CURRENT_TIMESTAMP
-        WHERE guarantee_id = ?
-    ");
-    $statusStmt->execute([$decidedBy, $decidedBy, $guaranteeId]);
+        $decisionRepo->lock($guaranteeId, 'released');
+        $statusStmt = $db->prepare("
+            UPDATE guarantee_decisions
+            SET status = 'released',
+                decision_source = 'manual',
+                decided_by = ?,
+                last_modified_by = ?,
+                last_modified_at = CURRENT_TIMESTAMP
+            WHERE guarantee_id = ?
+        ");
+        $statusStmt->execute([$decidedBy, $decidedBy, $guaranteeId]);
 
-    // Locked action setter re-enabled per user request to fix Batch Detail discrepancy
-    $actionStmt = $db->prepare("
-        UPDATE guarantee_decisions
-        SET active_action = 'release',
-            active_action_set_at = CURRENT_TIMESTAMP
-        WHERE guarantee_id = ?
-    ");
-    $actionStmt->execute([$guaranteeId]);
+        $actionStmt = $db->prepare("
+            UPDATE guarantee_decisions
+            SET active_action = 'release',
+                active_action_set_at = CURRENT_TIMESTAMP
+            WHERE guarantee_id = ?
+        ");
+        $actionStmt->execute([$guaranteeId]);
 
-    // 4. RECORD: Strict Event Recording (UE-04 Release)
-    \App\Services\TimelineRecorder::recordReleaseEvent($guaranteeId, $oldSnapshot, $reason);
+        \App\Services\TimelineRecorder::recordReleaseEvent($guaranteeId, $oldSnapshot, $reason);
 
-    // --------------------------------------------------------------------
+        return ['decision' => $decision];
+    });
+
+    $decision = $mutation['decision'];
     
     // Get updated guarantee info for display
     $guarantee = $guaranteeRepo->find($guaranteeId);

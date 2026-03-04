@@ -9,6 +9,7 @@ use App\Repositories\LearningRepository;
 use App\Services\Learning\AuthorityFactory;
 use App\Support\BankNormalizer;
 use App\Support\Logger;
+use App\Support\TransactionBoundary;
 use PDO;
 use RuntimeException;
 
@@ -60,59 +61,71 @@ class SaveAndNextApplicationService
             ], 'internal');
         }
 
-        $resolution = self::resolveDecisionInputs(
+        return TransactionBoundary::run($db, static function () use (
             $db,
             $currentGuarantee,
             $guaranteeId,
             $supplierId,
             $supplierName,
             $decidedBy,
+            $statusFilter,
             $policyContext,
             $surface
-        );
-        if (!($resolution['ok'] ?? false)) {
-            return $resolution;
-        }
-
-        $resolvedSupplierId = (int)($resolution['supplier_id'] ?? 0);
-        $resolvedBankId = (int)($resolution['bank_id'] ?? 0);
-        $decisionSource = (string)($resolution['decision_source'] ?? 'manual');
-        $wasAiMatch = (bool)($resolution['was_ai_match'] ?? false);
-        $autoCreatedSupplierName = $resolution['auto_created_supplier_name'] ?? null;
-        $now = (string)($resolution['now'] ?? date('Y-m-d H:i:s'));
-        $changes = is_array($resolution['changes'] ?? null) ? $resolution['changes'] : [];
-        $newSupplier = (string)($resolution['new_supplier'] ?? '');
-
-        self::persistDecisionAndRecord(
-            $db,
-            $currentGuarantee,
-            $guaranteeId,
-            $resolvedSupplierId,
-            $resolvedBankId,
-            $decisionSource,
-            $decidedBy,
-            $now,
-            $changes,
-            $newSupplier,
-            $wasAiMatch
-        );
-
-        $meta = [];
-        if ($autoCreatedSupplierName) {
-            $meta['created_supplier_name'] = $autoCreatedSupplierName;
-        }
-
-        return [
-            'ok' => true,
-            'payload' => self::buildPostSaveResponse(
+        ): array {
+            $resolution = self::resolveDecisionInputs(
                 $db,
+                $currentGuarantee,
                 $guaranteeId,
-                $statusFilter,
+                $supplierId,
+                $supplierName,
+                $decidedBy,
                 $policyContext,
-                $surface,
-                $meta
-            ),
-        ];
+                $surface
+            );
+            if (!($resolution['ok'] ?? false)) {
+                return $resolution;
+            }
+
+            $resolvedSupplierId = (int)($resolution['supplier_id'] ?? 0);
+            $resolvedBankId = (int)($resolution['bank_id'] ?? 0);
+            $decisionSource = (string)($resolution['decision_source'] ?? 'manual');
+            $wasAiMatch = (bool)($resolution['was_ai_match'] ?? false);
+            $autoCreatedSupplierName = $resolution['auto_created_supplier_name'] ?? null;
+            $now = (string)($resolution['now'] ?? date('Y-m-d H:i:s'));
+            $changes = is_array($resolution['changes'] ?? null) ? $resolution['changes'] : [];
+            $newSupplier = (string)($resolution['new_supplier'] ?? '');
+
+            self::persistDecisionAndRecord(
+                $db,
+                $currentGuarantee,
+                $guaranteeId,
+                $resolvedSupplierId,
+                $resolvedBankId,
+                $decisionSource,
+                $decidedBy,
+                $now,
+                $changes,
+                $newSupplier,
+                $wasAiMatch
+            );
+
+            $meta = [];
+            if ($autoCreatedSupplierName) {
+                $meta['created_supplier_name'] = $autoCreatedSupplierName;
+            }
+
+            return [
+                'ok' => true,
+                'payload' => self::buildPostSaveResponse(
+                    $db,
+                    $guaranteeId,
+                    $statusFilter,
+                    $policyContext,
+                    $surface,
+                    $meta
+                ),
+            ];
+        });
     }
 
     public static function resolveCurrentWorkflowStep(PDO $db, int $guaranteeId): string

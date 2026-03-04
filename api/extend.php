@@ -103,57 +103,59 @@ try {
     }
     // ================================================================
     
-    // --------------------------------------------------------------------
-    // STRICT TIMELINE DISCIPLINE: Snapshot -> Update -> Record
-    // --------------------------------------------------------------------
+    $mutation = \App\Support\TransactionBoundary::run($db, function () use ($db, $guaranteeRepo, $guaranteeId, $decidedBy): array {
+        // --------------------------------------------------------------------
+        // STRICT TIMELINE DISCIPLINE: Snapshot -> Update -> Record
+        // --------------------------------------------------------------------
+        $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
 
-    // 1. SNAPSHOT: Capture state BEFORE any modification
-    $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
-    
-    // 2. UPDATE: Execute system changes
-    // 🆕 Calculate new expiry date directly (always +1 year)
-    $guarantee = $guaranteeRepo->find($guaranteeId);
-    $raw = $guarantee->rawData;
-    $oldExpiry = $raw['expiry_date'] ?? '';
-    $newExpiry = date('Y-m-d', strtotime($oldExpiry . ' +1 year'));
-    
-    // Update source of truth (Raw Data)
-    $raw['expiry_date'] = $newExpiry;
-    
-    // Update raw_data through repository
-    $guaranteeRepo->updateRawData($guaranteeId, json_encode($raw));
+        $guarantee = $guaranteeRepo->find($guaranteeId);
+        if (!$guarantee) {
+            throw new \RuntimeException('Record not found');
+        }
 
-    // 3. NEW (Phase 3): Set Active Action
-    // Locked action setter re-enabled per user request to fix Batch Detail discrepancy
-    $actionStmt = $db->prepare("
-        UPDATE guarantee_decisions
-        SET active_action = 'extension',
-            active_action_set_at = CURRENT_TIMESTAMP
-        WHERE guarantee_id = ?
-    ");
-    $actionStmt->execute([$guaranteeId]);
+        $raw = $guarantee->rawData;
+        $oldExpiry = $raw['expiry_date'] ?? '';
+        $newExpiry = date('Y-m-d', strtotime($oldExpiry . ' +1 year'));
+        $raw['expiry_date'] = $newExpiry;
 
-    
-    // 3.1 Track manual decision source for user-triggered action
-    $decisionUpdate = $db->prepare("
-        UPDATE guarantee_decisions
-        SET decision_source = 'manual',
-            decided_by = ?,
-            last_modified_by = ?,
-            last_modified_at = CURRENT_TIMESTAMP
-        WHERE guarantee_id = ?
-    ");
-    $decisionUpdate->execute([$decidedBy, $decidedBy, $guaranteeId]);
+        $guaranteeRepo->updateRawData($guaranteeId, json_encode($raw));
 
-    // 4. RECORD: Strict Event Recording (UE-02 Extend)
-    // 🆕 Record ONLY in guarantee_history (no guarantee_actions)
-    \App\Services\TimelineRecorder::recordExtensionEvent(
-        $guaranteeId, 
-        $oldSnapshot, 
-        $newExpiry
-    );
+        $actionStmt = $db->prepare("
+            UPDATE guarantee_decisions
+            SET active_action = 'extension',
+                active_action_set_at = CURRENT_TIMESTAMP
+            WHERE guarantee_id = ?
+        ");
+        $actionStmt->execute([$guaranteeId]);
 
-    // --------------------------------------------------------------------
+        $decisionUpdate = $db->prepare("
+            UPDATE guarantee_decisions
+            SET decision_source = 'manual',
+                decided_by = ?,
+                last_modified_by = ?,
+                last_modified_at = CURRENT_TIMESTAMP
+            WHERE guarantee_id = ?
+        ");
+        $decisionUpdate->execute([$decidedBy, $decidedBy, $guaranteeId]);
+
+        \App\Services\TimelineRecorder::recordExtensionEvent(
+            $guaranteeId,
+            $oldSnapshot,
+            $newExpiry
+        );
+
+        return [
+            'guarantee' => $guarantee,
+            'raw' => $raw,
+            'new_expiry' => $newExpiry,
+        ];
+    });
+
+    /** @var \App\Models\Guarantee $guarantee */
+    $guarantee = $mutation['guarantee'];
+    $raw = is_array($mutation['raw'] ?? null) ? $mutation['raw'] : [];
+    $newExpiry = (string)($mutation['new_expiry'] ?? '');
     
     // Prepare record data
     $record = [

@@ -31,10 +31,15 @@ final class ReleaseCriticalFlowsWiringTest extends TestCase
     {
         $recorder = $this->readFile('app/Services/TimelineRecorder.php');
         $snapshotApi = $this->readFile('api/get-history-snapshot.php');
+        $timelineReadService = $this->readFile('app/Services/TimelineReadPresentationService.php');
         $recordsController = $this->readFile('public/js/records.controller.js');
 
         $this->assertStringContainsString('TimelineHybridLedger::buildHybridPayload', $recorder);
-        $this->assertStringContainsString('TimelineHybridLedger::resolveEventSnapshot', $snapshotApi);
+        $this->assertTrue(
+            str_contains($snapshotApi, 'TimelineHybridLedger::resolveEventSnapshot')
+                || str_contains($timelineReadService, 'TimelineHybridLedger::resolveEventSnapshot'),
+            'History time-machine snapshot wiring is missing'
+        );
         $this->assertStringContainsString('/api/get-history-snapshot.php', $recordsController);
     }
 

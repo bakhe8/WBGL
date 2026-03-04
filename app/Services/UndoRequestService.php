@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Support\Database;
+use App\Support\TransactionBoundary;
 use PDO;
 use RuntimeException;
 use Throwable;
@@ -120,21 +121,20 @@ class UndoRequestService
         }
         self::assertNotSelfAction((string)$request['requested_by'], $executor);
 
-        $db->beginTransaction();
         try {
-            self::applyReopen($db, (int)$request['guarantee_id'], $executor);
+            TransactionBoundary::run($db, static function () use ($db, $request, $executor, $requestId): void {
+                self::applyReopen($db, (int)$request['guarantee_id'], $executor);
 
-            $stmt = $db->prepare(
-                "UPDATE undo_requests
-                 SET status = 'executed',
-                     executed_by = ?,
-                     executed_at = CURRENT_TIMESTAMP,
-                     updated_at = CURRENT_TIMESTAMP
-                 WHERE id = ?"
-            );
-            $stmt->execute([$executor, $requestId]);
-
-            $db->commit();
+                $stmt = $db->prepare(
+                    "UPDATE undo_requests
+                     SET status = 'executed',
+                         executed_by = ?,
+                         executed_at = CURRENT_TIMESTAMP,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = ?"
+                );
+                $stmt->execute([$executor, $requestId]);
+            });
 
             self::notify(
                 'undo_request_executed',
@@ -149,9 +149,6 @@ class UndoRequestService
                 "undo_request_executed_{$requestId}"
             );
         } catch (Throwable $e) {
-            if ($db->inTransaction()) {
-                $db->rollBack();
-            }
             throw new RuntimeException($e->getMessage(), 0, $e);
         }
     }
@@ -159,7 +156,9 @@ class UndoRequestService
     public static function reopenDirect(int $guaranteeId, string $actor): void
     {
         $db = Database::connect();
-        self::applyReopen($db, $guaranteeId, $actor);
+        TransactionBoundary::run($db, static function () use ($db, $guaranteeId, $actor): void {
+            self::applyReopen($db, $guaranteeId, $actor);
+        });
     }
 
     public static function list(?string $status = null, int $limit = 100, ?int $guaranteeId = null): array

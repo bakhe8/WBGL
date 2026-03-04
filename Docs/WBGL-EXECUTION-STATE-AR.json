@@ -1,8 +1,8 @@
 {
     "manifest_file": "Docs/WBGL-EXECUTION-SEQUENCE-AR.json",
-    "manifest_version": "1.0.0",
+    "manifest_version": "1.1.0",
     "mode": "mandatory_sequential",
-    "updated_at": "2026-03-04T00:00:00Z",
+    "updated_at": "2026-03-04T01:19:44+00:00",
     "steps": {
         "P1-01": {
             "status": "done",
@@ -61,6 +61,78 @@
             "refs": [
                 "tests/Unit/ApiContractGuardWiringTest.php",
                 "api/_bootstrap.php"
+            ],
+            "note": null
+        },
+        "P6-01": {
+            "status": "done",
+            "started_at": "2026-03-04T01:02:45+00:00",
+            "completed_at": "2026-03-04T01:09:08+00:00",
+            "blocked_at": null,
+            "evidence": "تم فصل تجميع ورندر get-record إلى خدمة GetRecordPresentationService مع إبقاء السلوك الخارجي ثابتًا واختبارات Unit+Integration خضراء.",
+            "refs": [
+                "api/get-record.php",
+                "app/Services/GetRecordPresentationService.php",
+                "tests/Integration/EnterpriseApiFlowsTest.php",
+                "Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md"
+            ],
+            "note": null
+        },
+        "P6-02": {
+            "status": "done",
+            "started_at": "2026-03-04T01:09:08+00:00",
+            "completed_at": "2026-03-04T01:12:40+00:00",
+            "blocked_at": null,
+            "evidence": "تم نقل منطق timeline/history read rendering إلى TimelineReadPresentationService وتحويل endpoints إلى adapters نحيفة مع الحفاظ على السلوك واجتياز Unit+Integration.",
+            "refs": [
+                "api/get-timeline.php",
+                "api/get-history-snapshot.php",
+                "app/Services/TimelineReadPresentationService.php",
+                "Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md"
+            ],
+            "note": null
+        },
+        "P7-01": {
+            "status": "done",
+            "started_at": "2026-03-04T01:12:40+00:00",
+            "completed_at": "2026-03-04T01:16:58+00:00",
+            "blocked_at": null,
+            "evidence": "تم توحيد transaction boundaries عبر TransactionBoundary في مسارات lifecycle الحرجة مع حارس wiring واختبارات Unit+Integration خضراء.",
+            "refs": [
+                "app/Support/TransactionBoundary.php",
+                "api/extend.php",
+                "api/reduce.php",
+                "api/release.php",
+                "app/Services/SaveAndNextApplicationService.php",
+                "app/Services/UndoRequestService.php",
+                "tests/Unit/Services/TransactionBoundaryWiringTest.php",
+                "Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md"
+            ],
+            "note": null
+        },
+        "P7-02": {
+            "status": "done",
+            "started_at": "2026-03-04T01:16:58+00:00",
+            "completed_at": "2026-03-04T01:19:15+00:00",
+            "blocked_at": null,
+            "evidence": "تم إضافة data-integrity-check وربطه في CI بعد التكامل للتحقق من invariants القاعدية الحرجة مع نتائج خضراء.",
+            "refs": [
+                "app/Scripts/data-integrity-check.php",
+                ".github/workflows/ci.yml",
+                "Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md"
+            ],
+            "note": null
+        },
+        "P8-01": {
+            "status": "done",
+            "started_at": "2026-03-04T01:19:15+00:00",
+            "completed_at": "2026-03-04T01:19:44+00:00",
+            "blocked_at": null,
+            "evidence": "تم إغلاق توثيق v1.1 وتحديث الخطة/الحالة/السجل مع اكتمال جميع خطوات التسلسل بدون blocked steps.",
+            "refs": [
+                "Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md",
+                "Docs/WBGL-EXECUTION-STATE-AR.json",
+                "Docs/WBGL-EXECUTION-LOG-AR.md"
             ],
             "note": null
         }
