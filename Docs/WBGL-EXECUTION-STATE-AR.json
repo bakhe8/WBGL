@@ -1,8 +1,8 @@
 {
     "manifest_file": "Docs/WBGL-EXECUTION-SEQUENCE-AR.json",
-    "manifest_version": "1.1.0",
+    "manifest_version": "1.2.0",
     "mode": "mandatory_sequential",
-    "updated_at": "2026-03-04T01:19:44+00:00",
+    "updated_at": "2026-03-04T01:34:42+00:00",
     "steps": {
         "P1-01": {
             "status": "done",
@@ -134,6 +134,51 @@
                 "Docs/WBGL-EXECUTION-STATE-AR.json",
                 "Docs/WBGL-EXECUTION-LOG-AR.md"
             ],
+            "note": null
+        },
+        "P9-01": {
+            "status": "in_progress",
+            "started_at": "2026-03-04T01:34:42+00:00",
+            "completed_at": null,
+            "blocked_at": null,
+            "evidence": null,
+            "refs": [],
+            "note": null
+        },
+        "P9-02": {
+            "status": "pending",
+            "started_at": null,
+            "completed_at": null,
+            "blocked_at": null,
+            "evidence": null,
+            "refs": [],
+            "note": null
+        },
+        "P10-01": {
+            "status": "pending",
+            "started_at": null,
+            "completed_at": null,
+            "blocked_at": null,
+            "evidence": null,
+            "refs": [],
+            "note": null
+        },
+        "P11-01": {
+            "status": "pending",
+            "started_at": null,
+            "completed_at": null,
+            "blocked_at": null,
+            "evidence": null,
+            "refs": [],
+            "note": null
+        },
+        "P12-01": {
+            "status": "pending",
+            "started_at": null,
+            "completed_at": null,
+            "blocked_at": null,
+            "evidence": null,
+            "refs": [],
             "note": null
         }
     }

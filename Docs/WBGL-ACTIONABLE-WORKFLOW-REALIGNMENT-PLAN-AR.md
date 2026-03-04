@@ -1626,6 +1626,60 @@ php vendor/bin/phpunit tests/Integration/EnterpriseApiFlowsTest.php --log-junit 
 
 ---
 
+## 3.2) المرحلة التالية v1.2 (جارية)
+
+### TASK H-010 (IN_PROGRESS) - فصل منطق بيانات شاشة `statistics` إلى خدمة مخصصة
+- الهدف: تقليل تعقيد `views/statistics.php` عبر نقل استعلامات وتجميع بيانات اللوحة إلى `StatisticsDashboardService`.
+- الملفات المستهدفة:
+  - `views/statistics.php`
+  - `app/Services/StatisticsDashboardService.php` (جديد/توسعة)
+  - `tests/Unit/Services/` (اختبار wiring)
+- أوامر التحقق:
+```powershell
+php -l views/statistics.php
+php -l app/Services/StatisticsDashboardService.php
+php vendor/bin/phpunit --testsuite Unit
+php vendor/bin/phpunit tests/Integration/EnterpriseApiFlowsTest.php --log-junit storage/logs/phpunit-enterprise.xml
+```
+- معيار القبول:
+  1. لا تغيير وظيفي ظاهر في صفحة الإحصائيات.
+  2. انخفاض ملموس في حجم منطق SQL داخل `views/statistics.php`.
+  3. `Unit + Integration` خضراء بالكامل.
+
+- تقدم التنفيذ الحالي:
+  1. تم إنشاء `app/Services/StatisticsDashboardService.php`.
+  2. تم نقل كتلة `overview metrics` وحساب `efficiencyRatio` من `views/statistics.php` إلى الخدمة.
+  3. تمت إضافة اختبار wiring جديد (`StatisticsDashboardWiringTest`) والتحقق ناجح: `Unit` أخضر (`121/121`) و`EnterpriseApiFlowsTest` أخضر (`45/45`).
+
+### TASK H-020 (PENDING) - فصل منطق بيانات شاشة `settings` إلى خدمة قراءة/حوكمة
+- الهدف: نقل استعلامات الإعدادات والتدقيق من `views/settings.php` إلى خدمة واضحة الحدود.
+- الملفات المستهدفة:
+  - `views/settings.php`
+  - `app/Services/SettingsDashboardService.php` (جديد/توسعة)
+
+### TASK H-030 (PENDING) - تقرير دوري لانحراف الصلاحيات وربطه ضمن CI
+- الهدف: كشف drift في role-permission matrix وإخراج تقرير واضح قبل الدمج.
+- الملفات المستهدفة:
+  - `app/Scripts/permissions-drift-report.php`
+  - `.github/workflows/ci.yml`
+  - `Docs/` (artifact summary)
+
+### TASK H-040 (PENDING) - توسيع `data-integrity-check` وإضافة artifact تفصيلي
+- الهدف: توسيع invariants وفصل إخراج النتائج إلى JSON/Markdown قابل للتدقيق الإداري.
+- الملفات المستهدفة:
+  - `app/Scripts/data-integrity-check.php`
+  - `.github/workflows/ci.yml`
+  - `Docs/` (نتائج الفحص)
+
+### TASK H-050 (PENDING) - إغلاق التوثيق التشغيلي للمرحلة v1.2
+- الهدف: تحديث docs/state/log بالأدلة النهائية بعد إنهاء `H-010..H-040`.
+- الملفات المستهدفة:
+  - `Docs/WBGL-EXECUTION-STATE-AR.json`
+  - `Docs/WBGL-EXECUTION-LOG-AR.md`
+  - `Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md`
+
+---
+
 ## 4) ممنوعات التنفيذ (Hard No)
 1. نقل شامل مبكر للشجرة (`app/Domain`, `app/Application`...) قبل إنهاء مهام A وB.
 2. حذف `api/*.php` القديمة قبل وجود بديل متوافق ومختبر.

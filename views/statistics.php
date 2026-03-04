@@ -11,6 +11,7 @@ use App\Support\DirectionResolver;
 use App\Support\LocaleResolver;
 use App\Support\Settings;
 use App\Support\ViewPolicy;
+use App\Services\StatisticsDashboardService;
 
 ViewPolicy::guardView('statistics.php');
 
@@ -138,26 +139,16 @@ try {
     // ============================================
     // SECTION 1: GLOBAL METRICS (ASSET vs OCCURRENCE)
     // ============================================
-    // For subquery with JOIN, we need proper WHERE clause
-    $occurrencesQuery = $isProd 
-        ? "SELECT COUNT(*) FROM guarantee_occurrences o JOIN guarantees g ON o.guarantee_id = g.id WHERE g.is_test_data = 0"
-        : "SELECT COUNT(*) FROM guarantee_occurrences o JOIN guarantees g ON o.guarantee_id = g.id";
-    
-    $overview = $db->query("
-        SELECT 
-            (SELECT COUNT(*) FROM guarantees $whereD) as total_assets,
-            ($occurrencesQuery) as total_occurrences,
-            (SELECT COUNT(*) FROM guarantees WHERE {$statsJsonRawExpiryDateExpr} >= {$statsNowDateExpr} $andD) as active_assets,
-            (SELECT COUNT(*) FROM batch_metadata WHERE status='active') as active_batches,
-            (SELECT SUM(CAST({$statsJsonRawAmountExpr} AS REAL)) FROM guarantees $whereD) as total_amount,
-            (SELECT AVG(CAST({$statsJsonRawAmountExpr} AS REAL)) FROM guarantees $whereD) as avg_amount,
-            (SELECT MAX(CAST({$statsJsonRawAmountExpr} AS REAL)) FROM guarantees $whereD) as max_amount,
-            (SELECT MIN(CAST({$statsJsonRawAmountExpr} AS REAL)) FROM guarantees $whereD) as min_amount
-    ")->fetch(PDO::FETCH_ASSOC);
-
-    $efficiencyRatio = $overview['total_assets'] > 0 
-        ? round($overview['total_occurrences'] / $overview['total_assets'], 2) 
-        : 1;
+    $overview = StatisticsDashboardService::fetchOverview(
+        $db,
+        $isProd,
+        $whereD,
+        $andD,
+        $statsJsonRawExpiryDateExpr,
+        $statsNowDateExpr,
+        $statsJsonRawAmountExpr
+    );
+    $efficiencyRatio = StatisticsDashboardService::calculateEfficiencyRatio($overview);
 
     // ============================================
     // SECTION 2: BATCH OPERATIONS ANALYSIS

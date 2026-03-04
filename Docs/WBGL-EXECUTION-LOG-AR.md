@@ -109,6 +109,26 @@
   - Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md
 - الخطوة التالية: P8-01
 
+## 2026-03-04T01:34:42Z | P9-01 (START)
+- المرحلة: P9 — تفكيك شاشات العرض الثقيلة
+- المهمة: فصل منطق البيانات في statistics إلى خدمة لوحة مؤشرات
+- الربط المرجعي: H-010
+- الدليل: تم ترقية manifest إلى v1.2 وتفعيل الخطوة الأولى للدورة الجديدة كـ in-progress.
+- الملفات المرجعية:
+  - Docs/WBGL-EXECUTION-SEQUENCE-AR.json
+  - Docs/WBGL-EXECUTION-STATE-AR.json
+  - Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md
+
+## 2026-03-04T01:36:11Z | P9-01 (PROGRESS)
+- المرحلة: P9 — تفكيك شاشات العرض الثقيلة
+- المهمة: فصل منطق البيانات في statistics إلى خدمة لوحة مؤشرات
+- الربط المرجعي: H-010
+- الدليل: تم نقل كتلة overview metrics من view إلى StatisticsDashboardService مع بقاء الاختبارات خضراء.
+- الملفات المرجعية:
+  - views/statistics.php
+  - app/Services/StatisticsDashboardService.php
+  - tests/Unit/Services/StatisticsDashboardWiringTest.php
+
 ## 2026-03-04T01:19:44+00:00 | P8-01
 - المرحلة: P8 — حوكمة التنفيذ v1.1
 - المهمة: إغلاق الأدلة والتوثيق التشغيلي للمرحلة الجديدة
