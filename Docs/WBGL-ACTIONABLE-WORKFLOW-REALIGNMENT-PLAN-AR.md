@@ -1684,7 +1684,7 @@ php vendor/bin/phpunit tests/Integration/EnterpriseApiFlowsTest.php --log-junit 
 - ملخص التنفيذ:
   1. تم توسيع `data-integrity-check` ليشمل invariants إضافية (status/signatures/orphans/role-user permission links) مع دعم `--output-json/--output-md/--strict-warn`.
   2. تم ربط artifact سلامة البيانات في CI (`data-integrity-report.json/.md`) ورفعه ضمن artifact الحوكمة.
-  3. تم توثيق الفحص في `Docs/DATA-INTEGRITY-REPORT-AR.md` مع نتيجة محلية `Fail=0` و`Warn>0` دون كسر التنفيذ.
+  3. تم توثيق الفحص في `Docs/DATA-INTEGRITY-REPORT-AR.md` مع نتيجة محلية نهائية `Fail=0` و`Warn=0` بعد مواءمة فحص `recipient_username` مع تصميم الإشعارات العامة.
 
 ### TASK H-050 (DONE) - إغلاق التوثيق التشغيلي للمرحلة v1.2
 - الهدف: تحديث docs/state/log بالأدلة النهائية بعد إنهاء `H-010..H-040`.

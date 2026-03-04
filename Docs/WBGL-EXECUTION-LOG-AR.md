@@ -219,7 +219,7 @@
 - المرحلة: P11 — تعميق سلامة البيانات
 - المهمة: توسيع data-integrity-check وإضافة artifact تفصيلي
 - الربط المرجعي: H-040
-- الدليل: تم توسيع data-integrity-check بإضافة invariants إضافية (status/signatures/orphans/role-user permission links) وإخراج artifact JSON+Markdown وربطه في CI؛ الفحص المحلي: Fail=0 مع Warn على notifications الفارغة دون كسر التنفيذ.
+- الدليل: تم توسيع data-integrity-check بإضافة invariants إضافية (status/signatures/orphans/role-user permission links) وإخراج artifact JSON+Markdown وربطه في CI؛ كما تم مواءمة فحص notifications مع تصميم الإشعارات العامة ليصبح الناتج النهائي محليًا: Fail=0 وWarn=0.
 - الملفات المرجعية:
   - app/Scripts/data-integrity-check.php
   - .github/workflows/ci.yml

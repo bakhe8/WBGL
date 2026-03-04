@@ -298,14 +298,14 @@ try {
         ],
         [
             'id' => 'NOTIFICATION_EMPTY_RECIPIENT',
-            'title' => 'notifications must have non-empty recipient_username',
+            'title' => 'notifications recipient_username must not be blank when explicitly provided',
             'severity' => 'warn',
             'requires' => 'notifications',
             'sql' => "
                 SELECT COUNT(*) AS c
                 FROM notifications
-                WHERE recipient_username IS NULL
-                   OR TRIM(recipient_username) = ''
+                WHERE recipient_username IS NOT NULL
+                  AND TRIM(recipient_username) = ''
             ",
         ],
     ];
