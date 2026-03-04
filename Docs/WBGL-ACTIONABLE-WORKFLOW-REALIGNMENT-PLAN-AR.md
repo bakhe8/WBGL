@@ -1698,6 +1698,70 @@ php vendor/bin/phpunit tests/Integration/EnterpriseApiFlowsTest.php --log-junit 
   2. تم تحديث خطة التنفيذ والسجل التشغيلي لتثبيت نتائج v1.2 ومخرجات الحوكمة (permissions drift + data integrity artifacts).
   3. الحالة النهائية للدورة v1.2: مكتملة وظيفيًا وهندسيًا مع `Unit + Integration + guard` خضراء.
 
+## 3.3) المرحلة التالية v1.3 (مكتملة)
+
+### TASK I-010 (DONE) - مواءمة المهاجرات التشغيلية المتأخرة مع PostgreSQL
+- الهدف: إزالة أي بقايا صياغة/دلالات SQLite من مهاجرات الجداول المتأخرة وتوحيدها لصيغة PostgreSQL الصريحة.
+- الملفات المستهدفة:
+  - `database/migrations/20260226_000004_create_notifications_table.sql`
+  - `database/migrations/20260226_000007_create_print_events_table.sql`
+  - `database/migrations/20260226_000010_create_scheduler_dead_letters_table.sql`
+  - (عند الحاجة) `app/Support/MigrationSqlAdapter.php` أو ما يكافئه
+- أوامر التحقق:
+```powershell
+php app/Scripts/migrate.php --dry-run
+php app/Scripts/migration-status.php
+php vendor/bin/phpunit --testsuite Unit
+php vendor/bin/phpunit tests/Integration/EnterpriseApiFlowsTest.php --log-junit storage/logs/phpunit-enterprise.xml
+php app/Scripts/sequential-execution.php guard
+```
+- معيار القبول:
+  1. عدم وجود عبارات DDL متأخرة متحيزة لـ SQLite في مسار PostgreSQL.
+  2. نجاح dry-run/apply/rehearsal بدون تدخل يدوي.
+  3. `Unit + Integration + guard` خضراء بالكامل.
+
+- ملخص التنفيذ:
+  1. تم تحويل المهاجرات المستهدفة (`notifications/print_events/scheduler_dead_letters`) إلى صيغة PostgreSQL صريحة (`BIGSERIAL`, `TIMESTAMP`) بدل صياغة `AUTOINCREMENT`.
+  2. تمت إضافة اختبار حارس `PostgresLateMigrationsWiringTest` لمنع عودة الصياغة المتحيزة لـ SQLite في هذه المهاجرات.
+  3. التحقق ناجح: `migrate --dry-run` + `migration-status` + `Unit + Integration + guard` جميعها خضراء.
+
+### TASK I-020 (DONE) - تقوية اختبارات حوكمة الصلاحيات
+- الهدف: توسيع اختبارات wiring/contract لمسارات الصلاحيات الحرجة مع ربط مباشر بتقرير الانحراف.
+- الملفات المستهدفة:
+  - `tests/Unit/` (حزمة حوكمة)
+  - `app/Scripts/permissions-drift-report.php`
+  - `Docs/PERMISSIONS-DRIFT-REPORT-AR.md`
+
+- ملخص التنفيذ:
+  1. تم توسيع `permissions-drift-report` بإخراج `critical_endpoint_contract` وفشل صريح عند أي mismatch في عقد الصلاحيات لمسارات حرجة.
+  2. تمت إضافة اختبار `PermissionCriticalEndpointContractTest` لاكتشاف أي drift في `ApiPolicyMatrix` مبكرًا.
+  3. تم تحديث توثيق `PERMISSIONS-DRIFT-REPORT-AR.md` ليشمل سياسة الحكم الجديدة وعقد المسارات الحرجة.
+
+### TASK I-030 (DONE) - تحسين وضوح تقارير الحوكمة في CI
+- الهدف: رفع جودة artifact التقارير (integrity/drift) وربط strict mode اختياري واضح في التشغيل.
+- الملفات المستهدفة:
+  - `.github/workflows/ci.yml`
+  - `app/Scripts/data-integrity-check.php`
+  - `app/Scripts/permissions-drift-report.php`
+  - `Docs/` (إرشادات التشغيل)
+
+- ملخص التنفيذ:
+  1. تم توحيد تشغيل تقارير الحوكمة في CI ضمن خطوة واحدة مع strict mode اختياري عبر `WBGL_GOVERNANCE_STRICT`.
+  2. تم إضافة مولد `governance-summary.md` وتجميعه ضمن artifact الموحد `wbgl-governance-artifacts`.
+  3. تمت إضافة توثيق `GOVERNANCE-CI-MODE-AR.md` واختبار wiring لضمان ثبات السلوك.
+
+### TASK I-040 (DONE) - إغلاق دورة v1.3
+- الهدف: تثبيت نتائج `I-010..I-030` في state/log/plan مع دليل تحقق نهائي.
+- الملفات المستهدفة:
+  - `Docs/WBGL-EXECUTION-STATE-AR.json`
+  - `Docs/WBGL-EXECUTION-LOG-AR.md`
+  - `Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md`
+
+- ملخص التنفيذ:
+  1. تم إغلاق خطوات `P13-01 .. P15-01` بأدلة قابلة للتتبع داخل state/log.
+  2. تم تثبيت مخرجات الحوكمة النهائية (`permissions drift`, `data integrity`, `governance summary`) كـ artifacts تشغيلية قياسية.
+  3. الحالة النهائية للدورة v1.3: مكتملة هندسيًا وتشغيليًا مع `Unit + Integration + guard` خضراء.
+
 ---
 
 ## 4) ممنوعات التنفيذ (Hard No)

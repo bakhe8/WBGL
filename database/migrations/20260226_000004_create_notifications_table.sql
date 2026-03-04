@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id BIGSERIAL PRIMARY KEY,
     recipient_username TEXT NULL,
     type TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -7,9 +7,9 @@ CREATE TABLE IF NOT EXISTS notifications (
     data_json TEXT NULL,
     dedupe_key TEXT NULL UNIQUE,
     is_read INTEGER NOT NULL DEFAULT 0,
-    read_at TEXT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    read_at TIMESTAMP NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications (recipient_username);

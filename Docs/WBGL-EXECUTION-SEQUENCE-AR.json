@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "phases": [
     {
       "id": "P1",
@@ -214,6 +214,58 @@
           "title_ar": "إغلاق التوثيق التشغيلي وإثبات الاستقرار",
           "coverage_ids": [
             "H-050"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P13",
+      "title_ar": "مواءمة المهاجرات مع PostgreSQL بشكل صارم",
+      "steps": [
+        {
+          "id": "P13-01",
+          "title_ar": "تنظيف/توحيد مigrations الجداول التشغيلية المتأخرة على صيغة PostgreSQL",
+          "coverage_ids": [
+            "I-010"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P14",
+      "title_ar": "تقوية اختبارات حوكمة الصلاحيات",
+      "steps": [
+        {
+          "id": "P14-01",
+          "title_ar": "إضافة Contract/Wiring tests لمسارات الصلاحيات الحرجة وربطها مع drift reports",
+          "coverage_ids": [
+            "I-020"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P15",
+      "title_ar": "تحسين الاعتمادية التشغيلية",
+      "steps": [
+        {
+          "id": "P15-01",
+          "title_ar": "تعزيز فحوصات integrity/drift بـ strict mode اختياري وتقارير CI أوضح",
+          "coverage_ids": [
+            "I-030"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P16",
+      "title_ar": "إغلاق دورة v1.3",
+      "steps": [
+        {
+          "id": "P16-01",
+          "title_ar": "إغلاق توثيق وتشغيل دورة v1.3 بالأدلة النهائية",
+          "coverage_ids": [
+            "I-040"
           ]
         }
       ]

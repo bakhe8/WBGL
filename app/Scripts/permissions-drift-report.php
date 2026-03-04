@@ -40,6 +40,24 @@ function wbgl_fetch_int(PDO $db, string $sql): int
 }
 
 /**
+ * @return array<string,string>
+ */
+function wbgl_critical_endpoint_contracts(): array
+{
+    return [
+        'api/save-and-next.php' => 'guarantee_save',
+        'api/update-guarantee.php' => 'guarantee_save',
+        'api/extend.php' => 'guarantee_extend',
+        'api/reduce.php' => 'guarantee_reduce',
+        'api/release.php' => 'guarantee_release',
+        'api/undo-requests.php' => 'manage_data',
+        'api/settings.php' => 'manage_users',
+        'api/users/list.php' => 'manage_users',
+        'api/roles/create.php' => 'manage_roles',
+    ];
+}
+
+/**
  * @param array<string,mixed> $report
  */
 function wbgl_render_markdown(array $report): string
@@ -68,6 +86,7 @@ function wbgl_render_markdown(array $report): string
     $md[] = '| Duplicate permission slugs | ' . (int)($counts['duplicate_slugs'] ?? 0) . ' |';
     $md[] = '| Orphan role_permissions rows | ' . (int)($counts['orphan_role_permissions'] ?? 0) . ' |';
     $md[] = '| Roles without permissions | ' . (int)($counts['roles_without_permissions'] ?? 0) . ' |';
+    $md[] = '| Critical endpoint contract mismatches | ' . (int)($counts['critical_contract_mismatches'] ?? 0) . ' |';
     $md[] = '';
 
     $missingInDb = is_array($details['missing_in_db'] ?? null) ? $details['missing_in_db'] : [];
@@ -75,6 +94,7 @@ function wbgl_render_markdown(array $report): string
     $duplicateSlugs = is_array($details['duplicate_slugs'] ?? null) ? $details['duplicate_slugs'] : [];
     $rolesWithoutPermissions = is_array($details['roles_without_permissions'] ?? null) ? $details['roles_without_permissions'] : [];
     $roleMatrix = is_array($details['role_permission_matrix'] ?? null) ? $details['role_permission_matrix'] : [];
+    $criticalContracts = is_array($details['critical_endpoint_contract'] ?? null) ? $details['critical_endpoint_contract'] : [];
 
     $md[] = '## Missing In DB';
     $md[] = '';
@@ -131,6 +151,23 @@ function wbgl_render_markdown(array $report): string
         foreach ($roleMatrix as $role => $permissions) {
             $permissions = is_array($permissions) ? $permissions : [];
             $md[] = '- **' . (string)$role . '**: ' . ($permissions === [] ? '_none_' : '`' . implode('`, `', $permissions) . '`');
+        }
+    }
+    $md[] = '';
+
+    $md[] = '## Critical Endpoint Contract';
+    $md[] = '';
+    if ($criticalContracts === []) {
+        $md[] = '- No critical contract rows.';
+    } else {
+        $md[] = '| Endpoint | Expected | Configured | Status |';
+        $md[] = '|---|---|---|---|';
+        foreach ($criticalContracts as $row) {
+            $endpoint = (string)($row['endpoint'] ?? '');
+            $expected = (string)($row['expected_permission'] ?? '');
+            $configured = (string)($row['configured_permission'] ?? '');
+            $statusLabel = strtoupper((string)($row['status'] ?? 'unknown'));
+            $md[] = '| `' . $endpoint . '` | `' . $expected . '` | `' . $configured . '` | `' . $statusLabel . '` |';
         }
     }
     $md[] = '';
@@ -233,7 +270,8 @@ try {
             $expected[$slug] = true;
         }
     }
-    foreach (ApiPolicyMatrix::all() as $policy) {
+    $apiPolicyMatrix = ApiPolicyMatrix::all();
+    foreach ($apiPolicyMatrix as $policy) {
         $slug = trim((string)($policy['permission'] ?? ''));
         if ($slug !== '') {
             $expected[$slug] = true;
@@ -247,6 +285,22 @@ try {
     sort($missingInDb);
     sort($unknownInCode);
 
+    $criticalContractRows = [];
+    $criticalContractMismatches = 0;
+    foreach (wbgl_critical_endpoint_contracts() as $endpoint => $expectedPermission) {
+        $configuredPermission = trim((string)($apiPolicyMatrix[$endpoint]['permission'] ?? ''));
+        $statusRow = ($configuredPermission === $expectedPermission) ? 'ok' : 'mismatch';
+        if ($statusRow === 'mismatch') {
+            $criticalContractMismatches++;
+        }
+        $criticalContractRows[] = [
+            'endpoint' => $endpoint,
+            'expected_permission' => $expectedPermission,
+            'configured_permission' => $configuredPermission,
+            'status' => $statusRow,
+        ];
+    }
+
     $failures = [];
     $warnings = [];
 
@@ -258,6 +312,9 @@ try {
     }
     if ($orphanRolePermissions > 0) {
         $failures[] = 'Orphan rows exist in role_permissions.';
+    }
+    if ($criticalContractMismatches > 0) {
+        $failures[] = 'Critical endpoint permission contract drift detected in ApiPolicyMatrix.';
     }
 
     if ($unknownInCode !== []) {
@@ -286,6 +343,7 @@ try {
             'duplicate_slugs' => count($duplicateSlugs),
             'orphan_role_permissions' => $orphanRolePermissions,
             'roles_without_permissions' => count($rolesWithoutPermissions),
+            'critical_contract_mismatches' => $criticalContractMismatches,
         ],
         'failures' => $failures,
         'warnings' => $warnings,
@@ -295,6 +353,7 @@ try {
             'duplicate_slugs' => $duplicateSlugs,
             'roles_without_permissions' => $rolesWithoutPermissions,
             'role_permission_matrix' => $rolePermissionMatrix,
+            'critical_endpoint_contract' => $criticalContractRows,
         ],
     ];
 
@@ -322,6 +381,7 @@ try {
     echo 'Duplicate slugs: ' . count($duplicateSlugs) . PHP_EOL;
     echo 'Orphan role_permissions: ' . $orphanRolePermissions . PHP_EOL;
     echo 'Roles without permissions: ' . count($rolesWithoutPermissions) . PHP_EOL;
+    echo 'Critical contract mismatches: ' . $criticalContractMismatches . PHP_EOL;
     echo 'Status: ' . strtoupper($status) . PHP_EOL;
     echo 'JSON report: ' . $outputJson . PHP_EOL;
     echo 'Markdown report: ' . $outputMd . PHP_EOL;

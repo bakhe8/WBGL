@@ -25,8 +25,10 @@ final class PermissionsDriftReportWiringTest extends TestCase
         $this->assertStringContainsString('ApiPolicyMatrix::all()', $script);
         $this->assertStringContainsString('--output-json', $script);
         $this->assertStringContainsString('--output-md', $script);
+        $this->assertStringContainsString('wbgl_critical_endpoint_contracts', $script);
+        $this->assertStringContainsString('critical_endpoint_contract', $script);
 
-        $this->assertStringContainsString('Run permissions drift report', $ci);
+        $this->assertStringContainsString('Run governance reports (strict mode optional)', $ci);
         $this->assertStringContainsString('app/Scripts/permissions-drift-report.php', $ci);
         $this->assertStringContainsString('Upload governance artifacts', $ci);
         $this->assertStringContainsString('wbgl-governance-artifacts', $ci);

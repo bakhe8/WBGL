@@ -239,3 +239,57 @@
   - .github/workflows/ci.yml
 - الحالة: جميع الخطوات مكتملة.
 
+## 2026-03-04T02:12:21+00:00 | P13-01
+- المرحلة: P13 — مواءمة المهاجرات مع PostgreSQL بشكل صارم
+- المهمة: تنظيف/توحيد مigrations الجداول التشغيلية المتأخرة على صيغة PostgreSQL
+- الربط المرجعي: I-010
+- الدليل: تم توحيد المهاجرات التشغيلية المتأخرة المستهدفة على صيغة PostgreSQL الصريحة (BIGSERIAL/TIMESTAMP) مع إضافة حارس Unit يمنع عودة AUTOINCREMENT؛ والتحقق نجح (dry-run/status/unit/integration/guard).
+- الملفات المرجعية:
+  - database/migrations/20260226_000004_create_notifications_table.sql
+  - database/migrations/20260226_000007_create_print_events_table.sql
+  - database/migrations/20260226_000010_create_scheduler_dead_letters_table.sql
+  - tests/Unit/PostgresLateMigrationsWiringTest.php
+  - storage/logs/phpunit-enterprise.xml
+- الخطوة التالية: P14-01
+
+## 2026-03-04T02:14:33+00:00 | P14-01
+- المرحلة: P14 — تقوية اختبارات حوكمة الصلاحيات
+- المهمة: إضافة Contract/Wiring tests لمسارات الصلاحيات الحرجة وربطها مع drift reports
+- الربط المرجعي: I-020
+- الدليل: تم تقوية عقد الصلاحيات الحرجة بإضافة اختبار ثابت للمسارات الحساسة وتوسيع permissions-drift-report ليُخرج critical_endpoint_contract ويُفشل عند mismatch؛ النتائج خضراء (Unit+Integration+guard) مع mismatches=0.
+- الملفات المرجعية:
+  - app/Scripts/permissions-drift-report.php
+  - tests/Unit/PermissionCriticalEndpointContractTest.php
+  - tests/Unit/PermissionsDriftReportWiringTest.php
+  - Docs/PERMISSIONS-DRIFT-REPORT-AR.md
+  - storage/logs/permissions-drift-report.json
+- الخطوة التالية: P15-01
+
+## 2026-03-04T02:17:02+00:00 | P15-01
+- المرحلة: P15 — تحسين الاعتمادية التشغيلية
+- المهمة: تعزيز فحوصات integrity/drift بـ strict mode اختياري وتقارير CI أوضح
+- الربط المرجعي: I-030
+- الدليل: تم تحسين وضوح تقارير الحوكمة عبر تشغيل موحد في CI مع strict mode اختياري (WBGL_GOVERNANCE_STRICT)، وإضافة governance-summary.md كملخص artifact؛ جميع الفحوصات خضراء والتقارير PASS.
+- الملفات المرجعية:
+  - .github/workflows/ci.yml
+  - app/Scripts/governance-summary.php
+  - Docs/GOVERNANCE-CI-MODE-AR.md
+  - storage/logs/governance-summary.md
+  - storage/logs/permissions-drift-report.json
+  - storage/logs/data-integrity-report.json
+- الخطوة التالية: P16-01
+
+## 2026-03-04T02:17:46+00:00 | P16-01
+- المرحلة: P16 — إغلاق دورة v1.3
+- المهمة: إغلاق توثيق وتشغيل دورة v1.3 بالأدلة النهائية
+- الربط المرجعي: I-040
+- الدليل: تم إغلاق دورة v1.3 بالكامل بعد تنفيذ I-010..I-030 وتثبيت الأدلة في plan/state/log؛ كما تم اعتماد نموذج حوكمة CI المحسن (strict optional + governance summary) مع تحقق نهائي أخضر.
+- الملفات المرجعية:
+  - Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md
+  - Docs/WBGL-EXECUTION-STATE-AR.json
+  - Docs/WBGL-EXECUTION-LOG-AR.md
+  - .github/workflows/ci.yml
+  - Docs/GOVERNANCE-CI-MODE-AR.md
+  - storage/logs/governance-summary.md
+- الحالة: جميع الخطوات مكتملة.
+

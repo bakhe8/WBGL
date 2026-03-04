@@ -20,6 +20,7 @@ jobs:
       WBGL_DB_USER: wbgl_user
       WBGL_DB_PASS: ${{ secrets.WBGL_CI_DB_PASSWORD }}
       WBGL_DB_SSLMODE: disable
+      WBGL_GOVERNANCE_STRICT: ${{ vars.WBGL_GOVERNANCE_STRICT }}
     services:
       postgres:
         image: postgres:16
@@ -68,11 +69,19 @@ jobs:
       - name: Run Integration tests
         run: vendor/bin/phpunit --testsuite Integration
 
-      - name: Run data integrity checker
-        run: php app/Scripts/data-integrity-check.php --output-json=storage/logs/data-integrity-report.json --output-md=storage/logs/data-integrity-report.md
-
-      - name: Run permissions drift report
-        run: php app/Scripts/permissions-drift-report.php --output-json=storage/logs/permissions-drift-report.json --output-md=storage/logs/permissions-drift-report.md
+      - name: Run governance reports (strict mode optional)
+        run: |
+          set -euo pipefail
+          STRICT_MODE="${WBGL_GOVERNANCE_STRICT:-0}"
+          echo "WBGL_GOVERNANCE_STRICT=${STRICT_MODE}"
+          if [ "${STRICT_MODE}" = "1" ]; then
+            php app/Scripts/data-integrity-check.php --strict-warn --output-json=storage/logs/data-integrity-report.json --output-md=storage/logs/data-integrity-report.md
+            php app/Scripts/permissions-drift-report.php --strict --output-json=storage/logs/permissions-drift-report.json --output-md=storage/logs/permissions-drift-report.md
+          else
+            php app/Scripts/data-integrity-check.php --output-json=storage/logs/data-integrity-report.json --output-md=storage/logs/data-integrity-report.md
+            php app/Scripts/permissions-drift-report.php --output-json=storage/logs/permissions-drift-report.json --output-md=storage/logs/permissions-drift-report.md
+          fi
+          php app/Scripts/governance-summary.php --drift=storage/logs/permissions-drift-report.json --integrity=storage/logs/data-integrity-report.json --output-md=storage/logs/governance-summary.md
 
       - name: Upload governance artifacts
         if: always()
@@ -85,6 +94,7 @@ jobs:
             storage/logs/data-integrity-report.md
             storage/logs/permissions-drift-report.json
             storage/logs/permissions-drift-report.md
+            storage/logs/governance-summary.md
           if-no-files-found: warn
 
   pgsql-rehearsal:

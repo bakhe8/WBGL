@@ -26,7 +26,7 @@ final class DataIntegrityReportWiringTest extends TestCase
         $this->assertStringContainsString('DECISION_STATUS_DOMAIN', $script);
         $this->assertStringContainsString('ROLE_PERMISSION_ORPHANS', $script);
 
-        $this->assertStringContainsString('Run data integrity checker', $ci);
+        $this->assertStringContainsString('Run governance reports (strict mode optional)', $ci);
         $this->assertStringContainsString('data-integrity-report.json', $ci);
         $this->assertStringContainsString('data-integrity-report.md', $ci);
         $this->assertStringContainsString('wbgl-governance-artifacts', $ci);

@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS print_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id BIGSERIAL PRIMARY KEY,
     guarantee_id INTEGER NULL,
     batch_identifier TEXT NULL,
     event_type TEXT NOT NULL,
@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS print_events (
     source_page TEXT NULL,
     initiated_by TEXT NOT NULL,
     payload_json TEXT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (guarantee_id) REFERENCES guarantees (id) ON DELETE SET NULL
 );
 

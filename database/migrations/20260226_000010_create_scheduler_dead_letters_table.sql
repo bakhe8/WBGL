@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS scheduler_dead_letters (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id BIGSERIAL PRIMARY KEY,
     job_name TEXT NOT NULL,
     run_token TEXT NOT NULL,
     last_run_id INTEGER NULL,
@@ -12,9 +12,9 @@ CREATE TABLE IF NOT EXISTS scheduler_dead_letters (
     status TEXT NOT NULL DEFAULT 'open',
     resolution_note TEXT NULL,
     resolved_by TEXT NULL,
-    resolved_at TEXT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NULL
+    resolved_at TIMESTAMP NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_scheduler_dead_letters_job_name ON scheduler_dead_letters (job_name);

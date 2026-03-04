@@ -24,9 +24,21 @@ php app/Scripts/permissions-drift-report.php --output-json=storage/logs/permissi
   - صلاحيات متوقعة مفقودة في قاعدة البيانات.
   - Slugs مكررة في جدول `permissions`.
   - صفوف يتيمة في `role_permissions`.
+  - انحراف في عقد صلاحيات المسارات الحرجة (Critical Endpoint Contract) داخل `ApiPolicyMatrix`.
 - `WARN` عند وجود:
   - صلاحيات في DB غير مرجعية في الكود.
   - أدوار بدون أي صلاحيات.
+
+## عقد المسارات الحرجة
+التقرير يتضمن قسمًا صريحًا باسم `critical_endpoint_contract` للتحقق من ثبات صلاحيات مسارات تشغيل حرجة مثل:
+- `api/save-and-next.php`
+- `api/update-guarantee.php`
+- `api/extend.php`
+- `api/reduce.php`
+- `api/release.php`
+- `api/settings.php`
+- `api/users/list.php`
+- `api/roles/create.php`
 
 ## الربط مع CI
 تم ربط التقرير داخل `.github/workflows/ci.yml` ضمن مهمة `php-tests` مع رفع Artifact باسم:
