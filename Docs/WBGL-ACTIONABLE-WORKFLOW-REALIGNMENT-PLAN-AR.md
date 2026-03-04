@@ -1650,7 +1650,8 @@ php vendor/bin/phpunit tests/Integration/EnterpriseApiFlowsTest.php --log-junit 
   1. تم إنشاء `app/Services/StatisticsDashboardService.php`.
   2. تم نقل كتلة `overview metrics` وحساب `efficiencyRatio` من `views/statistics.php` إلى الخدمة.
   3. تم نقل كتلة `batch + suppliers/banks` إلى الخدمة (`fetchBatchAndSupplierBlocks`) مع إبقاء السلوك كما هو.
-  4. تمت إضافة/تحديث اختبار wiring (`StatisticsDashboardWiringTest`) والتحقق ناجح: `Unit` أخضر (`121/121`, `922 assertions`) و`EnterpriseApiFlowsTest` أخضر (`45/45`, `1033 assertions`).
+  4. تم نقل كتلة `time/performance` إلى الخدمة (`fetchTimePerformanceBlocks`) مع الإبقاء على حسابات العرض نفسها داخل الصفحة.
+  5. تمت إضافة/تحديث اختبار wiring (`StatisticsDashboardWiringTest`) والتحقق ناجح: `Unit` أخضر (`121/121`, `924 assertions`) و`EnterpriseApiFlowsTest` أخضر (`45/45`, `1033 assertions`).
 
 ### TASK H-020 (PENDING) - فصل منطق بيانات شاشة `settings` إلى خدمة قراءة/حوكمة
 - الهدف: نقل استعلامات الإعدادات والتدقيق من `views/settings.php` إلى خدمة واضحة الحدود.

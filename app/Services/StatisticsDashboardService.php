@@ -243,6 +243,81 @@ final class StatisticsDashboardService
     }
 
     /**
+     * Fetch time/performance query blocks used in statistics dashboard.
+     *
+     * @return array<string,mixed>
+     */
+    public static function fetchTimePerformanceBlocks(
+        PDO $db,
+        string $whereG,
+        string $andG,
+        string $whereD,
+        string $statsDurationHoursExpr,
+        string $statsMinus7DateExpr,
+        string $statsMinus14DateExpr
+    ): array {
+        $timing = self::fetchRow($db, "
+            SELECT
+                AVG(CAST({$statsDurationHoursExpr} AS REAL)) as avg_hours,
+                MIN(CAST({$statsDurationHoursExpr} AS REAL)) as min_hours,
+                MAX(CAST({$statsDurationHoursExpr} AS REAL)) as max_hours
+            FROM guarantee_decisions d
+            JOIN guarantees g ON d.guarantee_id = g.id
+            WHERE d.decided_at IS NOT NULL {$andG}
+        ", ['avg_hours' => 0, 'min_hours' => 0, 'max_hours' => 0]);
+
+        $peakHour = self::fetchRow($db, "
+            SELECT to_char(CAST(h.created_at AS timestamp), 'HH24') as hour, COUNT(*) as count
+            FROM guarantee_history h
+            JOIN guarantees g ON h.guarantee_id = g.id
+            {$whereG}
+            GROUP BY hour
+            ORDER BY count DESC
+            LIMIT 1
+        ", ['hour' => 'N/A', 'count' => 0]);
+
+        $qualityMetrics = self::fetchRow($db, "
+            SELECT
+                COUNT(DISTINCT g.id) as total,
+                COUNT(DISTINCT CASE WHEN h.id IS NULL THEN g.id END) as ftr,
+                COUNT(DISTINCT CASE WHEN (SELECT COUNT(*) FROM guarantee_history h2
+                                          WHERE h2.guarantee_id = g.id AND h2.event_type = 'modified') >= 3
+                              THEN g.id END) as complex
+            FROM guarantees g
+            LEFT JOIN guarantee_history h ON g.id = h.guarantee_id AND h.event_type = 'modified'
+            {$whereG}
+        ", ['total' => 0, 'ftr' => 0, 'complex' => 0]);
+
+        $busiestDay = self::fetchRow($db, "
+            SELECT
+                CAST(EXTRACT(DOW FROM CAST(h.created_at AS timestamp)) AS INTEGER) as weekday_num,
+                COUNT(*) as count
+            FROM guarantee_history h
+            JOIN guarantees g ON h.guarantee_id = g.id
+            {$whereG}
+            GROUP BY weekday_num
+            ORDER BY count DESC
+            LIMIT 1
+        ", ['weekday_num' => -1, 'count' => 0]);
+
+        $weeklyTrend = self::fetchRow($db, "
+            SELECT
+                COUNT(CASE WHEN imported_at >= {$statsMinus7DateExpr} THEN 1 END) as this_week,
+                COUNT(CASE WHEN imported_at >= {$statsMinus14DateExpr} AND imported_at < {$statsMinus7DateExpr} THEN 1 END) as last_week
+            FROM guarantees
+            {$whereD}
+        ", ['this_week' => 0, 'last_week' => 0]);
+
+        return [
+            'timing' => $timing,
+            'peakHour' => $peakHour,
+            'qualityMetrics' => $qualityMetrics,
+            'busiestDay' => $busiestDay,
+            'weeklyTrend' => $weeklyTrend,
+        ];
+    }
+
+    /**
      * @return array<int,array<string,mixed>>
      */
     private static function fetchAll(PDO $db, string $sql): array
