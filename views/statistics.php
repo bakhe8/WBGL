@@ -208,87 +208,26 @@ try {
     // ============================================
     // SECTION 4: EXPIRATION & ACTIONS (RECONSTRUCTED)
     // ============================================
-    
-    // 4A: Expiration Pressure (Filtered to Unlocked Only)
-    $expiration = $db->query("
-        SELECT 
-            COUNT(CASE WHEN {$statsJsonRawExpiryDateExpr} BETWEEN {$statsNowDateExpr} AND {$statsPlus30DateExpr} THEN 1 END) as next_30,
-            COUNT(CASE WHEN {$statsJsonRawExpiryDateExpr} BETWEEN {$statsNowDateExpr} AND {$statsPlus90DateExpr} THEN 1 END) as next_90
-        FROM guarantees g
-        LEFT JOIN guarantee_decisions d ON g.id = d.guarantee_id
-        WHERE (d.is_locked IS NULL OR d.is_locked = FALSE)
-        $andG
-    ")->fetch(PDO::FETCH_ASSOC);
-
-    // Peak Month
-    $peakMonth = $db->query("
-        SELECT {$statsMonthExpiryExpr} as month, COUNT(*) as count
-        FROM guarantees
-        WHERE {$statsJsonRawExpiryDateExpr} >= {$statsNowDateExpr}
-        $andD
-        GROUP BY month
-        ORDER BY count DESC
-        LIMIT 1
-    ")->fetch(PDO::FETCH_ASSOC);
-    
-    // Expiration next 12 months
-    $expirationByMonth = $db->query("
-        SELECT {$statsMonthExpiryExpr} as month, COUNT(*) as count
-        FROM guarantees
-        WHERE {$statsJsonRawExpiryDateExpr} BETWEEN {$statsNowDateExpr} AND {$statsPlusYearDateExpr}
-        $andD
-        GROUP BY month
-        ORDER BY month ASC
-    ")->fetchAll(PDO::FETCH_ASSOC);
-
-    // 4C: Actions
-    $actions = $db->query("
-        SELECT
-            COUNT(CASE WHEN h.event_subtype = 'extension' THEN 1 END) as extensions,
-            COUNT(CASE WHEN h.event_subtype = 'reduction' THEN 1 END) as reductions,
-            COUNT(CASE WHEN h.event_type = 'released' THEN 1 END) as releases,
-            COUNT(CASE WHEN h.event_type = 'released' AND h.created_at >= {$statsMinus7DateExpr} THEN 1 END) as recent_releases
-        FROM guarantee_history h
-        JOIN guarantees g ON h.guarantee_id = g.id
-        $whereG
-    ")->fetch(PDO::FETCH_ASSOC);
-
-    $multipleExtensions = $db->query("
-        SELECT COUNT(*) FROM (
-            SELECT h.guarantee_id
-            FROM guarantee_history h
-            JOIN guarantees g ON h.guarantee_id = g.id
-            WHERE h.event_subtype = 'extension' $andG
-            GROUP BY h.guarantee_id
-            HAVING COUNT(*) > 1
-        )
-    ")->fetchColumn();
-
-    $extensionProbability = $db->query("
-        SELECT 
-            s.official_name,
-            ROUND((CAST(COUNT(CASE WHEN h.event_subtype = 'extension' THEN 1 END) AS REAL) / 
-                  CAST(COUNT(DISTINCT d.guarantee_id) AS REAL) * 100)::numeric, 0) as probability
-        FROM suppliers s
-        JOIN guarantee_decisions d ON s.id = d.supplier_id
-        JOIN guarantees g ON d.guarantee_id = g.id
-        LEFT JOIN guarantee_history h ON d.guarantee_id = h.guarantee_id AND h.event_subtype = 'extension'
-        $whereG
-        GROUP BY s.id
-        HAVING COUNT(DISTINCT d.guarantee_id) >= 3
-        ORDER BY probability DESC
-        LIMIT 5
-    ")->fetchAll(PDO::FETCH_ASSOC);
-    
-    $topEventTypes = $db->query("
-        SELECT h.event_type, COUNT(*) as count
-        FROM guarantee_history h
-        JOIN guarantees g ON h.guarantee_id = g.id
-        $whereG
-        GROUP BY h.event_type
-        ORDER BY count DESC
-        LIMIT 5
-    ")->fetchAll(PDO::FETCH_ASSOC);
+    $expirationAction = StatisticsDashboardService::fetchExpirationActionBlocks(
+        $db,
+        $whereG,
+        $andG,
+        $andD,
+        $statsJsonRawExpiryDateExpr,
+        $statsNowDateExpr,
+        $statsPlus30DateExpr,
+        $statsPlus90DateExpr,
+        $statsPlusYearDateExpr,
+        $statsMonthExpiryExpr,
+        $statsMinus7DateExpr
+    );
+    $expiration = is_array($expirationAction['expiration'] ?? null) ? $expirationAction['expiration'] : ['next_30' => 0, 'next_90' => 0];
+    $peakMonth = is_array($expirationAction['peakMonth'] ?? null) ? $expirationAction['peakMonth'] : ['month' => 'N/A', 'count' => 0];
+    $expirationByMonth = is_array($expirationAction['expirationByMonth'] ?? null) ? $expirationAction['expirationByMonth'] : [];
+    $actions = is_array($expirationAction['actions'] ?? null) ? $expirationAction['actions'] : ['extensions' => 0, 'reductions' => 0, 'releases' => 0, 'recent_releases' => 0];
+    $multipleExtensions = (int)($expirationAction['multipleExtensions'] ?? 0);
+    $extensionProbability = is_array($expirationAction['extensionProbability'] ?? null) ? $expirationAction['extensionProbability'] : [];
+    $topEventTypes = is_array($expirationAction['topEventTypes'] ?? null) ? $expirationAction['topEventTypes'] : [];
 
 
     // ============================================

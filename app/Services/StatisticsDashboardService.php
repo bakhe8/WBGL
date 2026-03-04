@@ -318,6 +318,112 @@ final class StatisticsDashboardService
     }
 
     /**
+     * Fetch expiration pressure and action history blocks.
+     *
+     * @return array<string,mixed>
+     */
+    public static function fetchExpirationActionBlocks(
+        PDO $db,
+        string $whereG,
+        string $andG,
+        string $andD,
+        string $statsJsonRawExpiryDateExpr,
+        string $statsNowDateExpr,
+        string $statsPlus30DateExpr,
+        string $statsPlus90DateExpr,
+        string $statsPlusYearDateExpr,
+        string $statsMonthExpiryExpr,
+        string $statsMinus7DateExpr
+    ): array {
+        $expiration = self::fetchRow($db, "
+            SELECT
+                COUNT(CASE WHEN {$statsJsonRawExpiryDateExpr} BETWEEN {$statsNowDateExpr} AND {$statsPlus30DateExpr} THEN 1 END) as next_30,
+                COUNT(CASE WHEN {$statsJsonRawExpiryDateExpr} BETWEEN {$statsNowDateExpr} AND {$statsPlus90DateExpr} THEN 1 END) as next_90
+            FROM guarantees g
+            LEFT JOIN guarantee_decisions d ON g.id = d.guarantee_id
+            WHERE (d.is_locked IS NULL OR d.is_locked = FALSE)
+            {$andG}
+        ", ['next_30' => 0, 'next_90' => 0]);
+
+        $peakMonth = self::fetchRow($db, "
+            SELECT {$statsMonthExpiryExpr} as month, COUNT(*) as count
+            FROM guarantees
+            WHERE {$statsJsonRawExpiryDateExpr} >= {$statsNowDateExpr}
+            {$andD}
+            GROUP BY month
+            ORDER BY count DESC
+            LIMIT 1
+        ", ['month' => 'N/A', 'count' => 0]);
+
+        $expirationByMonth = self::fetchAll($db, "
+            SELECT {$statsMonthExpiryExpr} as month, COUNT(*) as count
+            FROM guarantees
+            WHERE {$statsJsonRawExpiryDateExpr} BETWEEN {$statsNowDateExpr} AND {$statsPlusYearDateExpr}
+            {$andD}
+            GROUP BY month
+            ORDER BY month ASC
+        ");
+
+        $actions = self::fetchRow($db, "
+            SELECT
+                COUNT(CASE WHEN h.event_subtype = 'extension' THEN 1 END) as extensions,
+                COUNT(CASE WHEN h.event_subtype = 'reduction' THEN 1 END) as reductions,
+                COUNT(CASE WHEN h.event_type = 'released' THEN 1 END) as releases,
+                COUNT(CASE WHEN h.event_type = 'released' AND h.created_at >= {$statsMinus7DateExpr} THEN 1 END) as recent_releases
+            FROM guarantee_history h
+            JOIN guarantees g ON h.guarantee_id = g.id
+            {$whereG}
+        ", ['extensions' => 0, 'reductions' => 0, 'releases' => 0, 'recent_releases' => 0]);
+
+        $multipleExtensions = self::fetchColumnInt($db, "
+            SELECT COUNT(*) FROM (
+                SELECT h.guarantee_id
+                FROM guarantee_history h
+                JOIN guarantees g ON h.guarantee_id = g.id
+                WHERE h.event_subtype = 'extension' {$andG}
+                GROUP BY h.guarantee_id
+                HAVING COUNT(*) > 1
+            )
+        ");
+
+        $extensionProbability = self::fetchAll($db, "
+            SELECT
+                s.official_name,
+                ROUND((CAST(COUNT(CASE WHEN h.event_subtype = 'extension' THEN 1 END) AS REAL) /
+                      CAST(COUNT(DISTINCT d.guarantee_id) AS REAL) * 100)::numeric, 0) as probability
+            FROM suppliers s
+            JOIN guarantee_decisions d ON s.id = d.supplier_id
+            JOIN guarantees g ON d.guarantee_id = g.id
+            LEFT JOIN guarantee_history h ON d.guarantee_id = h.guarantee_id AND h.event_subtype = 'extension'
+            {$whereG}
+            GROUP BY s.id
+            HAVING COUNT(DISTINCT d.guarantee_id) >= 3
+            ORDER BY probability DESC
+            LIMIT 5
+        ");
+
+        $topEventTypes = self::fetchAll($db, "
+            SELECT h.event_type, COUNT(*) as count
+            FROM guarantee_history h
+            JOIN guarantees g ON h.guarantee_id = g.id
+            {$whereG}
+            GROUP BY h.event_type
+            ORDER BY count DESC
+            LIMIT 5
+        ");
+
+        return [
+            'expiration' => $expiration,
+            'peakMonth' => $peakMonth,
+            'expirationByMonth' => $expirationByMonth,
+            'actions' => $actions,
+            'multipleExtensions' => $multipleExtensions,
+            'extensionProbability' => $extensionProbability,
+            'topEventTypes' => $topEventTypes,
+        ];
+    }
+
+    /**
      * @return array<int,array<string,mixed>>
      */
     private static function fetchAll(PDO $db, string $sql): array
