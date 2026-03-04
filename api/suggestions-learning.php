@@ -19,8 +19,7 @@ wbgl_api_require_login();
 $rawInput = $_GET['raw'] ?? '';
 
 if (empty($rawInput)) {
-    echo json_encode(['success' => false, 'error' => 'raw parameter required']);
-    exit;
+    wbgl_api_compat_fail(400, 'raw parameter required');
 }
 
 try {

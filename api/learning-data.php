@@ -3,7 +3,6 @@ require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 
-header('Content-Type: application/json');
 wbgl_api_require_login();
 
 try {
@@ -33,13 +32,11 @@ try {
     $confirmations = $fetchAggregated($db, 'confirm');
     $rejections = $fetchAggregated($db, 'reject');
 
-    echo json_encode([
-        'success' => true,
+    wbgl_api_compat_success([
         'confirmations' => $confirmations,
         'rejections' => $rejections
     ]);
 
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

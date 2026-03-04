@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 use App\Support\ApiTokenService;
 use App\Support\Database;
+use App\Services\NotificationService;
 use PHPUnit\Framework\TestCase;
 
 final class EnterpriseApiFlowsTest extends TestCase
@@ -35,6 +36,20 @@ final class EnterpriseApiFlowsTest extends TestCase
     private static array $fixtureGuaranteeIds = [];
     /** @var string[] */
     private static array $batchImportSources = [];
+    /** @var int[] */
+    private static array $notificationIds = [];
+    /** @var int[] */
+    private static array $createdRoleIds = [];
+    /** @var int[] */
+    private static array $createdUserIds = [];
+    /** @var int[] */
+    private static array $createdBankIds = [];
+    /** @var int[] */
+    private static array $createdSupplierIds = [];
+    /** @var int[] */
+    private static array $learningConfirmationIds = [];
+    /** @var int[] */
+    private static array $matchingOverrideIds = [];
 
     public static function setUpBeforeClass(): void
     {
@@ -132,6 +147,63 @@ final class EnterpriseApiFlowsTest extends TestCase
                 $stmt->execute($sources);
             }
 
+            if (!empty(self::$notificationIds)) {
+                $ids = array_values(array_unique(self::$notificationIds));
+                $in = implode(',', array_fill(0, count($ids), '?'));
+                $stmt = self::$db->prepare("DELETE FROM notifications WHERE id IN ({$in})");
+                $stmt->execute($ids);
+            }
+
+            if (!empty(self::$createdRoleIds)) {
+                $roleIds = array_values(array_unique(self::$createdRoleIds));
+                $in = implode(',', array_fill(0, count($roleIds), '?'));
+
+                $stmt = self::$db->prepare("DELETE FROM role_permissions WHERE role_id IN ({$in})");
+                $stmt->execute($roleIds);
+
+                $stmt = self::$db->prepare("DELETE FROM roles WHERE id IN ({$in})");
+                $stmt->execute($roleIds);
+            }
+
+            if (!empty(self::$createdUserIds)) {
+                $userIds = array_values(array_unique(self::$createdUserIds));
+                $in = implode(',', array_fill(0, count($userIds), '?'));
+
+                $stmt = self::$db->prepare("DELETE FROM user_permissions WHERE user_id IN ({$in})");
+                $stmt->execute($userIds);
+
+                $stmt = self::$db->prepare("DELETE FROM users WHERE id IN ({$in})");
+                $stmt->execute($userIds);
+            }
+
+            if (!empty(self::$createdBankIds)) {
+                $bankIds = array_values(array_unique(self::$createdBankIds));
+                $in = implode(',', array_fill(0, count($bankIds), '?'));
+                $stmt = self::$db->prepare("DELETE FROM banks WHERE id IN ({$in})");
+                $stmt->execute($bankIds);
+            }
+
+            if (!empty(self::$createdSupplierIds)) {
+                $supplierIds = array_values(array_unique(self::$createdSupplierIds));
+                $in = implode(',', array_fill(0, count($supplierIds), '?'));
+                $stmt = self::$db->prepare("DELETE FROM suppliers WHERE id IN ({$in})");
+                $stmt->execute($supplierIds);
+            }
+
+            if (!empty(self::$learningConfirmationIds)) {
+                $learningIds = array_values(array_unique(self::$learningConfirmationIds));
+                $in = implode(',', array_fill(0, count($learningIds), '?'));
+                $stmt = self::$db->prepare("DELETE FROM learning_confirmations WHERE id IN ({$in})");
+                $stmt->execute($learningIds);
+            }
+
+            if (!empty(self::$matchingOverrideIds)) {
+                $overrideIds = array_values(array_unique(self::$matchingOverrideIds));
+                $in = implode(',', array_fill(0, count($overrideIds), '?'));
+                $stmt = self::$db->prepare("DELETE FROM supplier_overrides WHERE id IN ({$in})");
+                $stmt->execute($overrideIds);
+            }
+
             self::$db->exec("DELETE FROM api_access_tokens WHERE token_name LIKE 'integration-%'");
 
             if (self::$approverUserId > 0) {
@@ -166,6 +238,13 @@ final class EnterpriseApiFlowsTest extends TestCase
         $guestPayload = json_decode($guest['body'], true);
         $this->assertIsArray($guestPayload);
         $this->assertSame(false, $guestPayload['success'] ?? null);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
 
         $authed = self::request('GET', '/api/me.php', [
             'Accept: application/json',
@@ -175,7 +254,1747 @@ final class EnterpriseApiFlowsTest extends TestCase
         $authedPayload = json_decode($authed['body'], true);
         $this->assertIsArray($authedPayload);
         $this->assertTrue((bool)($authedPayload['success'] ?? false), $authed['body']);
+        $this->assertNull($authedPayload['error'] ?? null, $authed['body']);
+        $this->assertNotSame('', trim((string)($authedPayload['request_id'] ?? '')), $authed['body']);
+        $this->assertIsArray($authedPayload['data'] ?? null, $authed['body']);
+        $this->assertSame(
+            (int)($authedPayload['user']['id'] ?? 0),
+            (int)($authedPayload['data']['user']['id'] ?? 0),
+            $authed['body']
+        );
         $this->assertSame(self::$adminUserId, (int)($authedPayload['user']['id'] ?? 0));
+    }
+
+    public function testLoginAndLogoutUseCompatEnvelope(): void
+    {
+        $csrfInvalid = self::request('POST', '/api/login.php', [
+            'Accept: application/json',
+        ], [
+            'username' => self::$operatorUsername,
+            'password' => 'integration-pass',
+        ]);
+        $this->assertSame(419, $csrfInvalid['status'], $csrfInvalid['body']);
+        $csrfInvalidPayload = json_decode($csrfInvalid['body'], true);
+        $this->assertIsArray($csrfInvalidPayload);
+        $this->assertSame(false, $csrfInvalidPayload['success'] ?? null, $csrfInvalid['body']);
+        $this->assertSame(
+            'رمز الطلب غير صالح. يرجى تحديث الصفحة ثم المحاولة.',
+            (string)($csrfInvalidPayload['message'] ?? ''),
+            $csrfInvalid['body']
+        );
+        $this->assertSame('validation', (string)($csrfInvalidPayload['error_type'] ?? ''), $csrfInvalid['body']);
+        $this->assertNull($csrfInvalidPayload['data'] ?? null, $csrfInvalid['body']);
+        $this->assertNotSame('', trim((string)($csrfInvalidPayload['request_id'] ?? '')), $csrfInvalid['body']);
+
+        $validation = self::request('POST', '/api/login.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $validation['status'], $validation['body']);
+        $validationPayload = json_decode($validation['body'], true);
+        $this->assertIsArray($validationPayload);
+        $this->assertSame(false, $validationPayload['success'] ?? null, $validation['body']);
+        $this->assertSame('يرجى إدخال اسم المستخدم وكلمة المرور', (string)($validationPayload['message'] ?? ''), $validation['body']);
+        $this->assertSame('validation', (string)($validationPayload['error_type'] ?? ''), $validation['body']);
+        $this->assertNull($validationPayload['data'] ?? null, $validation['body']);
+        $this->assertNotSame('', trim((string)($validationPayload['request_id'] ?? '')), $validation['body']);
+
+        $issuedTokenName = 'integration-login-flow-' . bin2hex(random_bytes(4));
+        $login = self::request('POST', '/api/login.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'username' => self::$operatorUsername,
+            'password' => 'integration-pass',
+            'issue_token' => true,
+            'token_name' => $issuedTokenName,
+        ]);
+        $this->assertSame(200, $login['status'], $login['body']);
+        $loginPayload = json_decode($login['body'], true);
+        $this->assertIsArray($loginPayload);
+        $this->assertTrue((bool)($loginPayload['success'] ?? false), $login['body']);
+        $this->assertNull($loginPayload['error'] ?? null, $login['body']);
+        $this->assertNull($loginPayload['error_type'] ?? null, $login['body']);
+        $this->assertSame('تم تسجيل الدخول بنجاح', (string)($loginPayload['message'] ?? ''), $login['body']);
+        $this->assertNotSame('', trim((string)($loginPayload['request_id'] ?? '')), $login['body']);
+        $this->assertIsArray($loginPayload['data'] ?? null, $login['body']);
+        $this->assertSame(
+            (string)($loginPayload['message'] ?? ''),
+            (string)($loginPayload['data']['message'] ?? ''),
+            $login['body']
+        );
+        $this->assertIsArray($loginPayload['user'] ?? null, $login['body']);
+        $this->assertSame(self::$operatorUserId, (int)($loginPayload['user']['id'] ?? 0), $login['body']);
+        $this->assertSame(
+            (string)($loginPayload['access_token'] ?? ''),
+            (string)($loginPayload['data']['access_token'] ?? ''),
+            $login['body']
+        );
+        $this->assertNotSame('', trim((string)($loginPayload['access_token'] ?? '')), $login['body']);
+
+        $logoutIssued = ApiTokenService::issueToken(
+            self::$adminUserId,
+            'integration-logout-flow-' . bin2hex(random_bytes(4)),
+            2,
+            ['*']
+        );
+        $logoutToken = (string)($logoutIssued['token'] ?? '');
+        $this->assertNotSame('', $logoutToken);
+
+        $logout = self::request('GET', '/api/logout.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . $logoutToken,
+        ]);
+        $this->assertSame(200, $logout['status'], $logout['body']);
+        $logoutPayload = json_decode($logout['body'], true);
+        $this->assertIsArray($logoutPayload);
+        $this->assertTrue((bool)($logoutPayload['success'] ?? false), $logout['body']);
+        $this->assertNull($logoutPayload['error'] ?? null, $logout['body']);
+        $this->assertNull($logoutPayload['error_type'] ?? null, $logout['body']);
+        $this->assertSame('تم تسجيل الخروج بنجاح', (string)($logoutPayload['message'] ?? ''), $logout['body']);
+        $this->assertNotSame('', trim((string)($logoutPayload['request_id'] ?? '')), $logout['body']);
+        $this->assertIsArray($logoutPayload['data'] ?? null, $logout['body']);
+        $this->assertSame(
+            (string)($logoutPayload['message'] ?? ''),
+            (string)($logoutPayload['data']['message'] ?? ''),
+            $logout['body']
+        );
+
+        $revokedTokenAccess = self::request('GET', '/api/me.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . $logoutToken,
+        ]);
+        $this->assertSame(401, $revokedTokenAccess['status'], $revokedTokenAccess['body']);
+        $revokedPayload = json_decode($revokedTokenAccess['body'], true);
+        $this->assertIsArray($revokedPayload);
+        $this->assertSame(false, $revokedPayload['success'] ?? null, $revokedTokenAccess['body']);
+        $this->assertSame('Unauthorized', (string)($revokedPayload['error'] ?? ''), $revokedTokenAccess['body']);
+    }
+
+    public function testRolesCrudUsesCompatEnvelopeAndPermissionBoundaries(): void
+    {
+        $guest = self::request('GET', '/api/roles/create.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+
+        $operatorDenied = self::request('GET', '/api/roles/create.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$operatorToken,
+        ]);
+        $this->assertSame(403, $operatorDenied['status'], $operatorDenied['body']);
+        $operatorDeniedPayload = json_decode($operatorDenied['body'], true);
+        $this->assertIsArray($operatorDeniedPayload);
+        $this->assertSame(false, $operatorDeniedPayload['success'] ?? null, $operatorDenied['body']);
+        $this->assertSame('Permission Denied', (string)($operatorDeniedPayload['error'] ?? ''), $operatorDenied['body']);
+        $this->assertTrue(
+            !isset($operatorDeniedPayload['error_type']) || (string)($operatorDeniedPayload['error_type'] ?? '') === 'permission',
+            $operatorDenied['body']
+        );
+
+        $slug = 'integration_role_' . bin2hex(random_bytes(4));
+        $create = self::request('POST', '/api/roles/create.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'name' => 'Integration Role',
+            'slug' => $slug,
+            'description' => 'Created by EnterpriseApiFlowsTest',
+            'permission_ids' => [],
+        ]);
+        $this->assertSame(200, $create['status'], $create['body']);
+        $createPayload = json_decode($create['body'], true);
+        $this->assertIsArray($createPayload);
+        $this->assertTrue((bool)($createPayload['success'] ?? false), $create['body']);
+        $this->assertNull($createPayload['error'] ?? null, $create['body']);
+        $this->assertNull($createPayload['error_type'] ?? null, $create['body']);
+        $this->assertNotSame('', trim((string)($createPayload['request_id'] ?? '')), $create['body']);
+        $this->assertIsArray($createPayload['role'] ?? null, $create['body']);
+        $this->assertIsArray($createPayload['data'] ?? null, $create['body']);
+        $this->assertSame(
+            (int)($createPayload['role']['id'] ?? 0),
+            (int)($createPayload['data']['role']['id'] ?? 0),
+            $create['body']
+        );
+        $roleId = (int)($createPayload['role']['id'] ?? 0);
+        $this->assertGreaterThan(0, $roleId, $create['body']);
+        self::$createdRoleIds[] = $roleId;
+
+        $updatedSlug = $slug . '_u';
+        $update = self::request('POST', '/api/roles/update.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'role_id' => $roleId,
+            'name' => 'Integration Role Updated',
+            'slug' => $updatedSlug,
+            'description' => 'Updated by EnterpriseApiFlowsTest',
+            'permission_ids' => [],
+        ]);
+        $this->assertSame(200, $update['status'], $update['body']);
+        $updatePayload = json_decode($update['body'], true);
+        $this->assertIsArray($updatePayload);
+        $this->assertTrue((bool)($updatePayload['success'] ?? false), $update['body']);
+        $this->assertNull($updatePayload['error'] ?? null, $update['body']);
+        $this->assertNull($updatePayload['error_type'] ?? null, $update['body']);
+        $this->assertSame($roleId, (int)($updatePayload['role']['id'] ?? 0), $update['body']);
+        $this->assertSame($updatedSlug, (string)($updatePayload['role']['slug'] ?? ''), $update['body']);
+
+        $delete = self::request('POST', '/api/roles/delete.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'role_id' => $roleId,
+        ]);
+        $this->assertSame(200, $delete['status'], $delete['body']);
+        $deletePayload = json_decode($delete['body'], true);
+        $this->assertIsArray($deletePayload);
+        $this->assertTrue((bool)($deletePayload['success'] ?? false), $delete['body']);
+        $this->assertNull($deletePayload['error'] ?? null, $delete['body']);
+        $this->assertNull($deletePayload['error_type'] ?? null, $delete['body']);
+        $this->assertNotSame('', trim((string)($deletePayload['request_id'] ?? '')), $delete['body']);
+
+        self::$createdRoleIds = array_values(array_filter(
+            self::$createdRoleIds,
+            static fn(int $id): bool => $id !== $roleId
+        ));
+    }
+
+    public function testUsersCrudUsesCompatEnvelopeAndPermissionBoundaries(): void
+    {
+        $guest = self::request('GET', '/api/users/create.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $operatorDenied = self::request('GET', '/api/users/create.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$operatorToken,
+        ]);
+        $this->assertSame(403, $operatorDenied['status'], $operatorDenied['body']);
+        $operatorDeniedPayload = json_decode($operatorDenied['body'], true);
+        $this->assertIsArray($operatorDeniedPayload);
+        $this->assertSame(false, $operatorDeniedPayload['success'] ?? null, $operatorDenied['body']);
+        $this->assertSame('Permission Denied', (string)($operatorDeniedPayload['error'] ?? ''), $operatorDenied['body']);
+        $this->assertTrue(
+            !isset($operatorDeniedPayload['error_type']) || (string)($operatorDeniedPayload['error_type'] ?? '') === 'permission',
+            $operatorDenied['body']
+        );
+        $this->assertNull($operatorDeniedPayload['data'] ?? null, $operatorDenied['body']);
+        $this->assertNotSame('', trim((string)($operatorDeniedPayload['request_id'] ?? '')), $operatorDenied['body']);
+
+        $username = 'integration_user_' . bin2hex(random_bytes(4));
+        $roleId = self::resolveRoleId('data_entry');
+        $create = self::request('POST', '/api/users/create.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'full_name' => 'Integration User',
+            'username' => $username,
+            'email' => $username . '@local.test',
+            'role_id' => $roleId,
+            'password' => 'Integration#Pass2026',
+            'preferred_language' => 'ar',
+            'preferred_theme' => 'system',
+            'preferred_direction' => 'auto',
+        ]);
+        $this->assertSame(200, $create['status'], $create['body']);
+        $createPayload = json_decode($create['body'], true);
+        $this->assertIsArray($createPayload);
+        $this->assertTrue((bool)($createPayload['success'] ?? false), $create['body']);
+        $this->assertNull($createPayload['error'] ?? null, $create['body']);
+        $this->assertNull($createPayload['error_type'] ?? null, $create['body']);
+        $this->assertNotSame('', trim((string)($createPayload['request_id'] ?? '')), $create['body']);
+        $this->assertIsArray($createPayload['data'] ?? null, $create['body']);
+        $this->assertSame(
+            (string)($createPayload['message'] ?? ''),
+            (string)($createPayload['data']['message'] ?? ''),
+            $create['body']
+        );
+
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+        $stmt = self::$db->prepare('SELECT id FROM users WHERE username = ? LIMIT 1');
+        $stmt->execute([$username]);
+        $createdUserId = (int)($stmt->fetchColumn() ?: 0);
+        $this->assertGreaterThan(0, $createdUserId, $create['body']);
+        self::$createdUserIds[] = $createdUserId;
+
+        $updatedUsername = $username . '_u';
+        $update = self::request('POST', '/api/users/update.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'user_id' => $createdUserId,
+            'full_name' => 'Integration User Updated',
+            'username' => $updatedUsername,
+            'email' => $updatedUsername . '@local.test',
+            'role_id' => $roleId,
+            'preferred_language' => 'en',
+            'preferred_theme' => 'light',
+            'preferred_direction' => 'ltr',
+        ]);
+        $this->assertSame(200, $update['status'], $update['body']);
+        $updatePayload = json_decode($update['body'], true);
+        $this->assertIsArray($updatePayload);
+        $this->assertTrue((bool)($updatePayload['success'] ?? false), $update['body']);
+        $this->assertNull($updatePayload['error'] ?? null, $update['body']);
+        $this->assertNull($updatePayload['error_type'] ?? null, $update['body']);
+        $this->assertNotSame('', trim((string)($updatePayload['request_id'] ?? '')), $update['body']);
+        $this->assertIsArray($updatePayload['data'] ?? null, $update['body']);
+        $this->assertSame(
+            (string)($updatePayload['message'] ?? ''),
+            (string)($updatePayload['data']['message'] ?? ''),
+            $update['body']
+        );
+
+        $delete = self::request('POST', '/api/users/delete.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'user_id' => $createdUserId,
+        ]);
+        $this->assertSame(200, $delete['status'], $delete['body']);
+        $deletePayload = json_decode($delete['body'], true);
+        $this->assertIsArray($deletePayload);
+        $this->assertTrue((bool)($deletePayload['success'] ?? false), $delete['body']);
+        $this->assertNull($deletePayload['error'] ?? null, $delete['body']);
+        $this->assertNull($deletePayload['error_type'] ?? null, $delete['body']);
+        $this->assertNotSame('', trim((string)($deletePayload['request_id'] ?? '')), $delete['body']);
+        $this->assertIsArray($deletePayload['data'] ?? null, $delete['body']);
+        $this->assertSame(
+            (string)($deletePayload['message'] ?? ''),
+            (string)($deletePayload['data']['message'] ?? ''),
+            $delete['body']
+        );
+
+        self::$createdUserIds = array_values(array_filter(
+            self::$createdUserIds,
+            static fn(int $id): bool => $id !== $createdUserId
+        ));
+    }
+
+    public function testBankAndSupplierCrudUsesCompatEnvelopeAndPermissionBoundaries(): void
+    {
+        $bankForbidden = self::request('GET', '/api/create-bank.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $bankForbidden['status'], $bankForbidden['body']);
+        $bankForbiddenPayload = json_decode($bankForbidden['body'], true);
+        $this->assertIsArray($bankForbiddenPayload);
+        $this->assertSame(false, $bankForbiddenPayload['success'] ?? null, $bankForbidden['body']);
+        $this->assertSame('Unauthorized', (string)($bankForbiddenPayload['error'] ?? ''), $bankForbidden['body']);
+        $this->assertTrue(
+            !isset($bankForbiddenPayload['error_type']) || (string)($bankForbiddenPayload['error_type'] ?? '') === 'permission',
+            $bankForbidden['body']
+        );
+
+        $supplierForbidden = self::request('GET', '/api/create-supplier.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $supplierForbidden['status'], $supplierForbidden['body']);
+        $supplierForbiddenPayload = json_decode($supplierForbidden['body'], true);
+        $this->assertIsArray($supplierForbiddenPayload);
+        $this->assertSame(false, $supplierForbiddenPayload['success'] ?? null, $supplierForbidden['body']);
+        $this->assertSame('Unauthorized', (string)($supplierForbiddenPayload['error'] ?? ''), $supplierForbidden['body']);
+        $this->assertTrue(
+            !isset($supplierForbiddenPayload['error_type']) || (string)($supplierForbiddenPayload['error_type'] ?? '') === 'permission',
+            $supplierForbidden['body']
+        );
+
+        $bankSuffix = strtoupper(bin2hex(random_bytes(3)));
+        $bankCreate = self::request('POST', '/api/create-bank.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'arabic_name' => 'بنك تكاملي ' . $bankSuffix,
+            'english_name' => 'Integration Bank ' . $bankSuffix,
+            'short_name' => 'IB' . $bankSuffix,
+            'aliases' => ['INT BANK ' . $bankSuffix],
+            'department' => 'Integration',
+            'address_line1' => 'Integration Street',
+            'contact_email' => 'bank-' . strtolower($bankSuffix) . '@local.test',
+        ]);
+        $this->assertSame(200, $bankCreate['status'], $bankCreate['body']);
+        $bankCreatePayload = json_decode($bankCreate['body'], true);
+        $this->assertIsArray($bankCreatePayload);
+        $this->assertTrue((bool)($bankCreatePayload['success'] ?? false), $bankCreate['body']);
+        $this->assertNull($bankCreatePayload['error'] ?? null, $bankCreate['body']);
+        $this->assertNull($bankCreatePayload['error_type'] ?? null, $bankCreate['body']);
+        $this->assertNotSame('', trim((string)($bankCreatePayload['request_id'] ?? '')), $bankCreate['body']);
+        $this->assertIsArray($bankCreatePayload['data'] ?? null, $bankCreate['body']);
+        $bankId = (int)($bankCreatePayload['bank_id'] ?? 0);
+        $this->assertGreaterThan(0, $bankId, $bankCreate['body']);
+        $this->assertSame($bankId, (int)($bankCreatePayload['data']['bank_id'] ?? 0), $bankCreate['body']);
+        self::$createdBankIds[] = $bankId;
+
+        $bankUpdate = self::request('POST', '/api/update_bank.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'id' => $bankId,
+            'arabic_name' => 'بنك تكاملي محدث ' . $bankSuffix,
+            'english_name' => 'Integration Bank Updated ' . $bankSuffix,
+            'short_name' => 'IB' . $bankSuffix,
+            'department' => 'Integration Updated',
+            'address_line1' => 'Integration Avenue',
+            'contact_email' => 'bank-updated-' . strtolower($bankSuffix) . '@local.test',
+        ]);
+        $this->assertSame(200, $bankUpdate['status'], $bankUpdate['body']);
+        $bankUpdatePayload = json_decode($bankUpdate['body'], true);
+        $this->assertIsArray($bankUpdatePayload);
+        $this->assertTrue((bool)($bankUpdatePayload['success'] ?? false), $bankUpdate['body']);
+        $this->assertNull($bankUpdatePayload['error'] ?? null, $bankUpdate['body']);
+        $this->assertNull($bankUpdatePayload['error_type'] ?? null, $bankUpdate['body']);
+        $this->assertNotSame('', trim((string)($bankUpdatePayload['request_id'] ?? '')), $bankUpdate['body']);
+        $this->assertIsArray($bankUpdatePayload['data'] ?? null, $bankUpdate['body']);
+        $this->assertSame(
+            (bool)($bankUpdatePayload['updated'] ?? false),
+            (bool)($bankUpdatePayload['data']['updated'] ?? false),
+            $bankUpdate['body']
+        );
+
+        $bankDelete = self::request('POST', '/api/delete_bank.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'id' => $bankId,
+        ]);
+        $this->assertSame(200, $bankDelete['status'], $bankDelete['body']);
+        $bankDeletePayload = json_decode($bankDelete['body'], true);
+        $this->assertIsArray($bankDeletePayload);
+        $this->assertTrue((bool)($bankDeletePayload['success'] ?? false), $bankDelete['body']);
+        $this->assertNull($bankDeletePayload['error'] ?? null, $bankDelete['body']);
+        $this->assertNull($bankDeletePayload['error_type'] ?? null, $bankDelete['body']);
+        $this->assertNotSame('', trim((string)($bankDeletePayload['request_id'] ?? '')), $bankDelete['body']);
+        self::$createdBankIds = array_values(array_filter(
+            self::$createdBankIds,
+            static fn(int $id): bool => $id !== $bankId
+        ));
+
+        $supplierSuffix = strtoupper(bin2hex(random_bytes(3)));
+        $supplierCreate = self::request('POST', '/api/create-supplier.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'official_name' => 'Integration Supplier ' . $supplierSuffix,
+            'english_name' => 'Integration Supplier ' . $supplierSuffix,
+            'is_confirmed' => 1,
+        ]);
+        $this->assertSame(200, $supplierCreate['status'], $supplierCreate['body']);
+        $supplierCreatePayload = json_decode($supplierCreate['body'], true);
+        $this->assertIsArray($supplierCreatePayload);
+        $this->assertTrue((bool)($supplierCreatePayload['success'] ?? false), $supplierCreate['body']);
+        $this->assertNull($supplierCreatePayload['error'] ?? null, $supplierCreate['body']);
+        $this->assertNull($supplierCreatePayload['error_type'] ?? null, $supplierCreate['body']);
+        $this->assertNotSame('', trim((string)($supplierCreatePayload['request_id'] ?? '')), $supplierCreate['body']);
+        $this->assertIsArray($supplierCreatePayload['data'] ?? null, $supplierCreate['body']);
+        $supplierId = (int)($supplierCreatePayload['supplier_id'] ?? 0);
+        $this->assertGreaterThan(0, $supplierId, $supplierCreate['body']);
+        $this->assertSame($supplierId, (int)($supplierCreatePayload['data']['supplier_id'] ?? 0), $supplierCreate['body']);
+        self::$createdSupplierIds[] = $supplierId;
+
+        $supplierUpdate = self::request('POST', '/api/update_supplier.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'id' => $supplierId,
+            'official_name' => 'Integration Supplier Updated ' . $supplierSuffix,
+            'english_name' => 'Integration Supplier Updated ' . $supplierSuffix,
+            'is_confirmed' => 1,
+        ]);
+        $this->assertSame(200, $supplierUpdate['status'], $supplierUpdate['body']);
+        $supplierUpdatePayload = json_decode($supplierUpdate['body'], true);
+        $this->assertIsArray($supplierUpdatePayload);
+        $this->assertTrue((bool)($supplierUpdatePayload['success'] ?? false), $supplierUpdate['body']);
+        $this->assertNull($supplierUpdatePayload['error'] ?? null, $supplierUpdate['body']);
+        $this->assertNull($supplierUpdatePayload['error_type'] ?? null, $supplierUpdate['body']);
+        $this->assertNotSame('', trim((string)($supplierUpdatePayload['request_id'] ?? '')), $supplierUpdate['body']);
+        $this->assertIsArray($supplierUpdatePayload['data'] ?? null, $supplierUpdate['body']);
+        $this->assertSame(
+            (bool)($supplierUpdatePayload['updated'] ?? false),
+            (bool)($supplierUpdatePayload['data']['updated'] ?? false),
+            $supplierUpdate['body']
+        );
+
+        $supplierDelete = self::request('POST', '/api/delete_supplier.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'id' => $supplierId,
+        ]);
+        $this->assertSame(200, $supplierDelete['status'], $supplierDelete['body']);
+        $supplierDeletePayload = json_decode($supplierDelete['body'], true);
+        $this->assertIsArray($supplierDeletePayload);
+        $this->assertTrue((bool)($supplierDeletePayload['success'] ?? false), $supplierDelete['body']);
+        $this->assertNull($supplierDeletePayload['error'] ?? null, $supplierDelete['body']);
+        $this->assertNull($supplierDeletePayload['error_type'] ?? null, $supplierDelete['body']);
+        $this->assertNotSame('', trim((string)($supplierDeletePayload['request_id'] ?? '')), $supplierDelete['body']);
+        self::$createdSupplierIds = array_values(array_filter(
+            self::$createdSupplierIds,
+            static fn(int $id): bool => $id !== $supplierId
+        ));
+    }
+
+    public function testCreateGuaranteeAndConvertToRealUseCompatEnvelope(): void
+    {
+        $convertGuest = self::request('GET', '/api/convert-to-real.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $convertGuest['status'], $convertGuest['body']);
+        $convertGuestPayload = json_decode($convertGuest['body'], true);
+        $this->assertIsArray($convertGuestPayload);
+        $this->assertSame(false, $convertGuestPayload['success'] ?? null, $convertGuest['body']);
+        $this->assertSame('Unauthorized', (string)($convertGuestPayload['error'] ?? ''), $convertGuest['body']);
+        $this->assertTrue(
+            !isset($convertGuestPayload['error_type']) || (string)($convertGuestPayload['error_type'] ?? '') === 'permission',
+            $convertGuest['body']
+        );
+        $this->assertNull($convertGuestPayload['data'] ?? null, $convertGuest['body']);
+        $this->assertNotSame('', trim((string)($convertGuestPayload['request_id'] ?? '')), $convertGuest['body']);
+
+        $unique = strtoupper(bin2hex(random_bytes(4)));
+        $guaranteeNumber = 'INT-G-' . $unique;
+        $create = self::request('POST', '/api/create-guarantee.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'guarantee_number' => $guaranteeNumber,
+            'supplier' => 'Integration Supplier ' . $unique,
+            'bank' => 'Integration Bank ' . $unique,
+            'amount' => '12345.67',
+            'contract_number' => 'INT-CN-' . $unique,
+            'expiry_date' => date('Y-m-d', strtotime('+120 days')),
+            'issue_date' => date('Y-m-d', strtotime('-10 days')),
+            'type' => 'Initial',
+            'comment' => 'integration create guarantee flow',
+            'related_to' => 'contract',
+        ]);
+        $this->assertSame(200, $create['status'], $create['body']);
+        $createPayload = json_decode($create['body'], true);
+        $this->assertIsArray($createPayload);
+        $this->assertTrue((bool)($createPayload['success'] ?? false), $create['body']);
+        $this->assertNull($createPayload['error'] ?? null, $create['body']);
+        $this->assertNull($createPayload['error_type'] ?? null, $create['body']);
+        $this->assertNotSame('', trim((string)($createPayload['request_id'] ?? '')), $create['body']);
+        $this->assertIsArray($createPayload['data'] ?? null, $create['body']);
+        $guaranteeId = (int)($createPayload['id'] ?? 0);
+        $this->assertGreaterThan(0, $guaranteeId, $create['body']);
+        $this->assertSame($guaranteeId, (int)($createPayload['data']['id'] ?? 0), $create['body']);
+        $this->assertSame(
+            (string)($createPayload['message'] ?? ''),
+            (string)($createPayload['data']['message'] ?? ''),
+            $create['body']
+        );
+        self::$fixtureGuaranteeIds[] = $guaranteeId;
+
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $markStmt = self::$db->prepare('UPDATE guarantees SET is_test_data = 1, test_batch_id = ?, test_note = ? WHERE id = ?');
+        $markStmt->execute(['integration_convert_batch', 'integration convert flow', $guaranteeId]);
+
+        $missing = self::request('POST', '/api/convert-to-real.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $missing['status'], $missing['body']);
+        $missingPayload = json_decode($missing['body'], true);
+        $this->assertIsArray($missingPayload);
+        $this->assertSame(false, $missingPayload['success'] ?? null, $missing['body']);
+        $this->assertSame('Missing guarantee_id', (string)($missingPayload['error'] ?? ''), $missing['body']);
+        $this->assertSame('validation', (string)($missingPayload['error_type'] ?? ''), $missing['body']);
+        $this->assertNull($missingPayload['data'] ?? null, $missing['body']);
+        $this->assertNotSame('', trim((string)($missingPayload['request_id'] ?? '')), $missing['body']);
+
+        $convert = self::request('POST', '/api/convert-to-real.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'guarantee_id' => $guaranteeId,
+        ]);
+        $this->assertSame(200, $convert['status'], $convert['body']);
+        $convertPayload = json_decode($convert['body'], true);
+        $this->assertIsArray($convertPayload);
+        $this->assertTrue((bool)($convertPayload['success'] ?? false), $convert['body']);
+        $this->assertNull($convertPayload['error'] ?? null, $convert['body']);
+        $this->assertNull($convertPayload['error_type'] ?? null, $convert['body']);
+        $this->assertNotSame('', trim((string)($convertPayload['request_id'] ?? '')), $convert['body']);
+        $this->assertIsArray($convertPayload['data'] ?? null, $convert['body']);
+        $this->assertSame(
+            (string)($convertPayload['message'] ?? ''),
+            (string)($convertPayload['data']['message'] ?? ''),
+            $convert['body']
+        );
+
+        $verifyStmt = self::$db->prepare('SELECT is_test_data, test_batch_id, test_note FROM guarantees WHERE id = ? LIMIT 1');
+        $verifyStmt->execute([$guaranteeId]);
+        $verify = $verifyStmt->fetch(PDO::FETCH_ASSOC);
+        $this->assertIsArray($verify);
+        $this->assertSame(0, (int)($verify['is_test_data'] ?? 1), json_encode($verify, JSON_UNESCAPED_UNICODE));
+        $this->assertNull($verify['test_batch_id'] ?? null, json_encode($verify, JSON_UNESCAPED_UNICODE));
+        $this->assertNull($verify['test_note'] ?? null, json_encode($verify, JSON_UNESCAPED_UNICODE));
+    }
+
+    public function testCommitBatchDraftUsesCompatEnvelopeAndPermissionBoundaries(): void
+    {
+        $forbidden = self::request('GET', '/api/commit-batch-draft.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $forbidden['status'], $forbidden['body']);
+        $forbiddenPayload = json_decode($forbidden['body'], true);
+        $this->assertIsArray($forbiddenPayload);
+        $this->assertSame(false, $forbiddenPayload['success'] ?? null, $forbidden['body']);
+        $this->assertSame('Unauthorized', (string)($forbiddenPayload['error'] ?? ''), $forbidden['body']);
+        $this->assertTrue(
+            !isset($forbiddenPayload['error_type']) || (string)($forbiddenPayload['error_type'] ?? '') === 'permission',
+            $forbidden['body']
+        );
+        $this->assertNull($forbiddenPayload['data'] ?? null, $forbidden['body']);
+        $this->assertNotSame('', trim((string)($forbiddenPayload['request_id'] ?? '')), $forbidden['body']);
+
+        $invalid = self::request('POST', '/api/commit-batch-draft.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'guarantees' => [],
+        ]);
+        $this->assertSame(400, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertSame('بيانات غير مكتملة', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
+
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $fixture = self::createLifecycleFixture();
+        $draftId = (int)$fixture['guarantee_id'];
+        $newGuaranteeNumber = 'INT-COMMIT-' . strtoupper(bin2hex(random_bytes(4)));
+        $newExpiry = date('Y-m-d', strtotime('+150 days'));
+
+        $commit = self::request('POST', '/api/commit-batch-draft.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'draft_id' => $draftId,
+            'guarantees' => [[
+                'guarantee_number' => $newGuaranteeNumber,
+                'supplier' => 'Integration Draft Supplier',
+                'bank' => 'Integration Draft Bank',
+                'amount' => '5555.90',
+                'contract_number' => 'INT-COMMIT-CN-' . strtoupper(bin2hex(random_bytes(3))),
+                'expiry_date' => $newExpiry,
+                'type' => 'INITIAL',
+                'comment' => 'integration commit batch draft flow',
+            ]],
+        ]);
+        $this->assertSame(200, $commit['status'], $commit['body']);
+        $commitPayload = json_decode($commit['body'], true);
+        $this->assertIsArray($commitPayload);
+        $this->assertTrue((bool)($commitPayload['success'] ?? false), $commit['body']);
+        $this->assertNull($commitPayload['error'] ?? null, $commit['body']);
+        $this->assertNull($commitPayload['error_type'] ?? null, $commit['body']);
+        $this->assertNotSame('', trim((string)($commitPayload['request_id'] ?? '')), $commit['body']);
+        $this->assertIsArray($commitPayload['data'] ?? null, $commit['body']);
+        $this->assertSame(
+            (string)($commitPayload['message'] ?? ''),
+            (string)($commitPayload['data']['message'] ?? ''),
+            $commit['body']
+        );
+        $this->assertSame($draftId, (int)($commitPayload['redirect_id'] ?? 0), $commit['body']);
+        $this->assertSame($draftId, (int)($commitPayload['data']['redirect_id'] ?? 0), $commit['body']);
+
+        $rowStmt = self::$db->prepare('SELECT guarantee_number, raw_data FROM guarantees WHERE id = ? LIMIT 1');
+        $rowStmt->execute([$draftId]);
+        $row = $rowStmt->fetch(PDO::FETCH_ASSOC);
+        $this->assertIsArray($row);
+        $this->assertSame($newGuaranteeNumber, (string)($row['guarantee_number'] ?? ''), json_encode($row, JSON_UNESCAPED_UNICODE));
+        $raw = json_decode((string)($row['raw_data'] ?? '{}'), true);
+        $this->assertIsArray($raw);
+        $this->assertSame($newGuaranteeNumber, (string)($raw['bg_number'] ?? ''), json_encode($raw, JSON_UNESCAPED_UNICODE));
+        $this->assertSame($newExpiry, (string)($raw['expiry_date'] ?? ''), json_encode($raw, JSON_UNESCAPED_UNICODE));
+    }
+
+    public function testMergeSuppliersUsesCompatEnvelope(): void
+    {
+        $guest = self::request('GET', '/api/merge-suppliers.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $invalid = self::request('POST', '/api/merge-suppliers.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertSame('Ids and Target IDs are required', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
+
+        $suffix = strtoupper(bin2hex(random_bytes(4)));
+        $sourceCreate = self::request('POST', '/api/create-supplier.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'official_name' => 'Integration Merge Source ' . $suffix,
+            'english_name' => 'Integration Merge Source ' . $suffix,
+            'is_confirmed' => 1,
+        ]);
+        $this->assertSame(200, $sourceCreate['status'], $sourceCreate['body']);
+        $sourcePayload = json_decode($sourceCreate['body'], true);
+        $this->assertIsArray($sourcePayload);
+        $sourceId = (int)($sourcePayload['supplier_id'] ?? 0);
+        $this->assertGreaterThan(0, $sourceId, $sourceCreate['body']);
+        self::$createdSupplierIds[] = $sourceId;
+
+        $targetCreate = self::request('POST', '/api/create-supplier.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'official_name' => 'Integration Merge Target ' . $suffix,
+            'english_name' => 'Integration Merge Target ' . $suffix,
+            'is_confirmed' => 1,
+        ]);
+        $this->assertSame(200, $targetCreate['status'], $targetCreate['body']);
+        $targetPayload = json_decode($targetCreate['body'], true);
+        $this->assertIsArray($targetPayload);
+        $targetId = (int)($targetPayload['supplier_id'] ?? 0);
+        $this->assertGreaterThan(0, $targetId, $targetCreate['body']);
+        self::$createdSupplierIds[] = $targetId;
+
+        $merge = self::request('POST', '/api/merge-suppliers.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'source_id' => $sourceId,
+            'target_id' => $targetId,
+        ]);
+        $this->assertSame(200, $merge['status'], $merge['body']);
+        $mergePayload = json_decode($merge['body'], true);
+        $this->assertIsArray($mergePayload);
+        $this->assertTrue((bool)($mergePayload['success'] ?? false), $merge['body']);
+        $this->assertNull($mergePayload['error'] ?? null, $merge['body']);
+        $this->assertNull($mergePayload['error_type'] ?? null, $merge['body']);
+        $this->assertNotSame('', trim((string)($mergePayload['request_id'] ?? '')), $merge['body']);
+        $this->assertIsArray($mergePayload['data'] ?? null, $merge['body']);
+        $this->assertTrue((bool)($mergePayload['data']['success'] ?? false), $merge['body']);
+
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+        $sourceExistsStmt = self::$db->prepare('SELECT id FROM suppliers WHERE id = ? LIMIT 1');
+        $sourceExistsStmt->execute([$sourceId]);
+        $this->assertFalse((bool)$sourceExistsStmt->fetchColumn(), 'source supplier should be deleted after merge');
+
+        $targetExistsStmt = self::$db->prepare('SELECT id FROM suppliers WHERE id = ? LIMIT 1');
+        $targetExistsStmt->execute([$targetId]);
+        $this->assertSame($targetId, (int)($targetExistsStmt->fetchColumn() ?: 0), 'target supplier should remain after merge');
+
+        self::$createdSupplierIds = array_values(array_filter(
+            self::$createdSupplierIds,
+            static fn(int $id): bool => $id !== $sourceId
+        ));
+    }
+
+    public function testLearningDataAndActionUseCompatEnvelope(): void
+    {
+        $guest = self::request('GET', '/api/learning-data.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $list = self::request('GET', '/api/learning-data.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(200, $list['status'], $list['body']);
+        $listPayload = json_decode($list['body'], true);
+        $this->assertIsArray($listPayload);
+        $this->assertTrue((bool)($listPayload['success'] ?? false), $list['body']);
+        $this->assertNull($listPayload['error'] ?? null, $list['body']);
+        $this->assertNull($listPayload['error_type'] ?? null, $list['body']);
+        $this->assertNotSame('', trim((string)($listPayload['request_id'] ?? '')), $list['body']);
+        $this->assertIsArray($listPayload['data'] ?? null, $list['body']);
+        $this->assertIsArray($listPayload['confirmations'] ?? null, $list['body']);
+        $this->assertIsArray($listPayload['rejections'] ?? null, $list['body']);
+        $this->assertSame(
+            count($listPayload['confirmations'] ?? []),
+            count($listPayload['data']['confirmations'] ?? []),
+            $list['body']
+        );
+
+        $methodDenied = self::request('GET', '/api/learning-action.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(405, $methodDenied['status'], $methodDenied['body']);
+        $methodDeniedPayload = json_decode($methodDenied['body'], true);
+        $this->assertIsArray($methodDeniedPayload);
+        $this->assertSame(false, $methodDeniedPayload['success'] ?? null, $methodDenied['body']);
+        $this->assertSame('Method not allowed', (string)($methodDeniedPayload['error'] ?? ''), $methodDenied['body']);
+        $this->assertSame('validation', (string)($methodDeniedPayload['error_type'] ?? ''), $methodDenied['body']);
+        $this->assertNull($methodDeniedPayload['data'] ?? null, $methodDenied['body']);
+        $this->assertNotSame('', trim((string)($methodDeniedPayload['request_id'] ?? '')), $methodDenied['body']);
+
+        $invalid = self::request('POST', '/api/learning-action.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertSame('Missing parameters', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
+
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $supplierId = (int)(self::$db->query('SELECT id FROM suppliers ORDER BY id ASC LIMIT 1')->fetchColumn() ?: 0);
+        $this->assertGreaterThan(0, $supplierId, 'Learning fixture requires at least one supplier');
+
+        $rawName = 'Integration Learning ' . strtoupper(bin2hex(random_bytes(4)));
+        $insert = self::$db->prepare(
+            'INSERT INTO learning_confirmations
+                (raw_supplier_name, normalized_supplier_name, supplier_id, action, created_at, updated_at)
+             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
+        );
+        $insert->execute([
+            $rawName,
+            strtolower($rawName),
+            $supplierId,
+            'confirm',
+        ]);
+        $learningId = (int)self::$db->lastInsertId();
+        $this->assertGreaterThan(0, $learningId);
+        self::$learningConfirmationIds[] = $learningId;
+
+        $delete = self::request('POST', '/api/learning-action.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'id' => $learningId,
+            'action' => 'delete',
+        ]);
+        $this->assertSame(200, $delete['status'], $delete['body']);
+        $deletePayload = json_decode($delete['body'], true);
+        $this->assertIsArray($deletePayload);
+        $this->assertTrue((bool)($deletePayload['success'] ?? false), $delete['body']);
+        $this->assertNull($deletePayload['error'] ?? null, $delete['body']);
+        $this->assertNull($deletePayload['error_type'] ?? null, $delete['body']);
+        $this->assertNotSame('', trim((string)($deletePayload['request_id'] ?? '')), $delete['body']);
+        $this->assertIsArray($deletePayload['data'] ?? null, $delete['body']);
+        $this->assertSame(
+            (string)($deletePayload['message'] ?? ''),
+            (string)($deletePayload['data']['message'] ?? ''),
+            $delete['body']
+        );
+
+        $verifyStmt = self::$db->prepare('SELECT id FROM learning_confirmations WHERE id = ? LIMIT 1');
+        $verifyStmt->execute([$learningId]);
+        $this->assertFalse((bool)$verifyStmt->fetchColumn(), 'learning confirmation row should be deleted');
+
+        self::$learningConfirmationIds = array_values(array_filter(
+            self::$learningConfirmationIds,
+            static fn(int $id): bool => $id !== $learningId
+        ));
+    }
+
+    public function testMatchingOverridesUsesCompatEnvelope(): void
+    {
+        $guest = self::request('GET', '/api/matching-overrides.php?limit=5', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $list = self::request('GET', '/api/matching-overrides.php?limit=5', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(200, $list['status'], $list['body']);
+        $listPayload = json_decode($list['body'], true);
+        $this->assertIsArray($listPayload);
+        $this->assertTrue((bool)($listPayload['success'] ?? false), $list['body']);
+        $this->assertNull($listPayload['error'] ?? null, $list['body']);
+        $this->assertNull($listPayload['error_type'] ?? null, $list['body']);
+        $this->assertNotSame('', trim((string)($listPayload['request_id'] ?? '')), $list['body']);
+        $this->assertIsArray($listPayload['items'] ?? null, $list['body']);
+        $this->assertIsArray($listPayload['data'] ?? null, $list['body']);
+        $this->assertSame(
+            count($listPayload['items'] ?? []),
+            count($listPayload['data']['items'] ?? []),
+            $list['body']
+        );
+
+        $invalid = self::request('POST', '/api/matching-overrides.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'raw_name' => 'Integration Missing Supplier',
+        ]);
+        $this->assertSame(400, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertSame('supplier_id مطلوب', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
+
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $supplierId = (int)(self::$db->query('SELECT id FROM suppliers ORDER BY id ASC LIMIT 1')->fetchColumn() ?: 0);
+        $this->assertGreaterThan(0, $supplierId, 'Matching override fixture requires at least one supplier');
+
+        $rawName = 'Integration Override ' . strtoupper(bin2hex(random_bytes(4)));
+        $create = self::request('POST', '/api/matching-overrides.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'raw_name' => $rawName,
+            'supplier_id' => $supplierId,
+            'reason' => 'integration-test',
+            'is_active' => true,
+        ]);
+        $this->assertSame(200, $create['status'], $create['body']);
+        $createPayload = json_decode($create['body'], true);
+        $this->assertIsArray($createPayload);
+        $this->assertTrue((bool)($createPayload['success'] ?? false), $create['body']);
+        $this->assertNull($createPayload['error'] ?? null, $create['body']);
+        $this->assertNull($createPayload['error_type'] ?? null, $create['body']);
+        $this->assertNotSame('', trim((string)($createPayload['request_id'] ?? '')), $create['body']);
+        $this->assertIsArray($createPayload['item'] ?? null, $create['body']);
+        $this->assertIsArray($createPayload['data'] ?? null, $create['body']);
+        $overrideId = (int)($createPayload['item']['id'] ?? 0);
+        $this->assertGreaterThan(0, $overrideId, $create['body']);
+        self::$matchingOverrideIds[] = $overrideId;
+        $this->assertSame(
+            $overrideId,
+            (int)($createPayload['data']['item']['id'] ?? 0),
+            $create['body']
+        );
+
+        $delete = self::request('DELETE', '/api/matching-overrides.php?id=' . $overrideId, [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(200, $delete['status'], $delete['body']);
+        $deletePayload = json_decode($delete['body'], true);
+        $this->assertIsArray($deletePayload);
+        $this->assertTrue((bool)($deletePayload['success'] ?? false), $delete['body']);
+        $this->assertNull($deletePayload['error'] ?? null, $delete['body']);
+        $this->assertNull($deletePayload['error_type'] ?? null, $delete['body']);
+        $this->assertNotSame('', trim((string)($deletePayload['request_id'] ?? '')), $delete['body']);
+        $this->assertIsArray($deletePayload['data'] ?? null, $delete['body']);
+        $this->assertTrue((bool)($deletePayload['deleted'] ?? false), $delete['body']);
+        $this->assertSame(
+            (bool)($deletePayload['deleted'] ?? false),
+            (bool)($deletePayload['data']['deleted'] ?? false),
+            $delete['body']
+        );
+
+        $verifyStmt = self::$db->prepare('SELECT id FROM supplier_overrides WHERE id = ? LIMIT 1');
+        $verifyStmt->execute([$overrideId]);
+        $this->assertFalse((bool)$verifyStmt->fetchColumn(), 'matching override row should be deleted');
+
+        self::$matchingOverrideIds = array_values(array_filter(
+            self::$matchingOverrideIds,
+            static fn(int $id): bool => $id !== $overrideId
+        ));
+    }
+
+    public function testImportMatchingOverridesUsesCompatEnvelope(): void
+    {
+        $guest = self::request('GET', '/api/import_matching_overrides.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $methodDenied = self::request('GET', '/api/import_matching_overrides.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(405, $methodDenied['status'], $methodDenied['body']);
+        $methodDeniedPayload = json_decode($methodDenied['body'], true);
+        $this->assertIsArray($methodDeniedPayload);
+        $this->assertSame(false, $methodDeniedPayload['success'] ?? null, $methodDenied['body']);
+        $this->assertSame('Method Not Allowed', (string)($methodDeniedPayload['error'] ?? ''), $methodDenied['body']);
+        $this->assertSame('validation', (string)($methodDeniedPayload['error_type'] ?? ''), $methodDenied['body']);
+        $this->assertNull($methodDeniedPayload['data'] ?? null, $methodDenied['body']);
+        $this->assertNotSame('', trim((string)($methodDeniedPayload['request_id'] ?? '')), $methodDenied['body']);
+
+        $invalid = self::request('POST', '/api/import_matching_overrides.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertSame('File upload failed', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
+
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $supplierId = (int)(self::$db->query('SELECT id FROM suppliers ORDER BY id ASC LIMIT 1')->fetchColumn() ?: 0);
+        $this->assertGreaterThan(0, $supplierId, 'Matching import fixture requires at least one supplier');
+
+        $rawName = 'Integration Import Override ' . strtoupper(bin2hex(random_bytes(4)));
+        $fileRows = [[
+            'raw_name' => $rawName,
+            'supplier_id' => $supplierId,
+            'reason' => 'integration-import',
+            'is_active' => 1,
+        ]];
+        $fileContent = json_encode($fileRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $this->assertNotFalse($fileContent);
+
+        $import = self::requestMultipart(
+            '/api/import_matching_overrides.php',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ],
+            [],
+            [
+                'field_name' => 'file',
+                'filename' => 'matching_overrides_integration.json',
+                'content_type' => 'application/json',
+                'content' => (string)$fileContent,
+            ]
+        );
+        $this->assertSame(200, $import['status'], $import['body']);
+        $importPayload = json_decode($import['body'], true);
+        $this->assertIsArray($importPayload);
+        $this->assertTrue((bool)($importPayload['success'] ?? false), $import['body']);
+        $this->assertNull($importPayload['error'] ?? null, $import['body']);
+        $this->assertNull($importPayload['error_type'] ?? null, $import['body']);
+        $this->assertNotSame('', trim((string)($importPayload['request_id'] ?? '')), $import['body']);
+        $this->assertIsArray($importPayload['stats'] ?? null, $import['body']);
+        $this->assertIsArray($importPayload['data'] ?? null, $import['body']);
+        $this->assertSame(
+            (string)($importPayload['message'] ?? ''),
+            (string)($importPayload['data']['message'] ?? ''),
+            $import['body']
+        );
+        $this->assertGreaterThanOrEqual(1, (int)($importPayload['stats']['inserted'] ?? 0), $import['body']);
+
+        $verifyStmt = self::$db->prepare('SELECT id FROM supplier_overrides WHERE raw_name = ? ORDER BY id DESC LIMIT 1');
+        $verifyStmt->execute([$rawName]);
+        $overrideId = (int)($verifyStmt->fetchColumn() ?: 0);
+        $this->assertGreaterThan(0, $overrideId, 'imported override should exist in database');
+        self::$matchingOverrideIds[] = $overrideId;
+    }
+
+    public function testImportBanksUsesCompatEnvelope(): void
+    {
+        $guest = self::request('GET', '/api/import_banks.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $methodDenied = self::request('GET', '/api/import_banks.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(405, $methodDenied['status'], $methodDenied['body']);
+        $methodDeniedPayload = json_decode($methodDenied['body'], true);
+        $this->assertIsArray($methodDeniedPayload);
+        $this->assertSame(false, $methodDeniedPayload['success'] ?? null, $methodDenied['body']);
+        $this->assertSame('Method Not Allowed', (string)($methodDeniedPayload['error'] ?? ''), $methodDenied['body']);
+        $this->assertSame('validation', (string)($methodDeniedPayload['error_type'] ?? ''), $methodDenied['body']);
+        $this->assertNull($methodDeniedPayload['data'] ?? null, $methodDenied['body']);
+        $this->assertNotSame('', trim((string)($methodDeniedPayload['request_id'] ?? '')), $methodDenied['body']);
+
+        $invalid = self::request('POST', '/api/import_banks.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertSame('File upload failed', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
+
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $suffix = strtoupper(bin2hex(random_bytes(4)));
+        $arabicName = 'بنك تكامل ' . $suffix;
+        $aliasName = 'تكامل-بنك-' . $suffix;
+        $fileRows = [[
+            'arabic_name' => $arabicName,
+            'english_name' => 'Integration Bank ' . $suffix,
+            'short_name' => 'INT' . substr($suffix, 0, 4),
+            'department' => 'Integration Ops',
+            'address_line1' => 'P.O. Box 1000',
+            'contact_email' => 'bank.' . strtolower($suffix) . '@example.test',
+            'aliases' => [$aliasName],
+        ]];
+        $fileContent = json_encode($fileRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $this->assertNotFalse($fileContent);
+
+        $import = self::requestMultipart(
+            '/api/import_banks.php',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ],
+            [],
+            [
+                'field_name' => 'file',
+                'filename' => 'banks_integration.json',
+                'content_type' => 'application/json',
+                'content' => (string)$fileContent,
+            ]
+        );
+        $this->assertSame(200, $import['status'], $import['body']);
+        $importPayload = json_decode($import['body'], true);
+        $this->assertIsArray($importPayload);
+        $this->assertTrue((bool)($importPayload['success'] ?? false), $import['body']);
+        $this->assertNull($importPayload['error'] ?? null, $import['body']);
+        $this->assertNull($importPayload['error_type'] ?? null, $import['body']);
+        $this->assertNotSame('', trim((string)($importPayload['request_id'] ?? '')), $import['body']);
+        $this->assertIsArray($importPayload['data'] ?? null, $import['body']);
+        $this->assertSame(
+            (string)($importPayload['message'] ?? ''),
+            (string)($importPayload['data']['message'] ?? ''),
+            $import['body']
+        );
+        $this->assertGreaterThanOrEqual(1, (int)($importPayload['inserted'] ?? 0), $import['body']);
+        $this->assertSame(
+            (int)($importPayload['inserted'] ?? 0),
+            (int)($importPayload['data']['inserted'] ?? -1),
+            $import['body']
+        );
+
+        $bankStmt = self::$db->prepare('SELECT id FROM banks WHERE arabic_name = ? ORDER BY id DESC LIMIT 1');
+        $bankStmt->execute([$arabicName]);
+        $bankId = (int)($bankStmt->fetchColumn() ?: 0);
+        $this->assertGreaterThan(0, $bankId, 'imported bank should exist in database');
+        self::$createdBankIds[] = $bankId;
+
+        $aliasStmt = self::$db->prepare('SELECT alternative_name FROM bank_alternative_names WHERE bank_id = ? AND alternative_name = ? LIMIT 1');
+        $aliasStmt->execute([$bankId, $aliasName]);
+        $this->assertSame($aliasName, (string)($aliasStmt->fetchColumn() ?: ''), 'imported bank alias should exist');
+    }
+
+    public function testImportSuppliersUsesCompatEnvelope(): void
+    {
+        $guest = self::request('GET', '/api/import_suppliers.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $methodDenied = self::request('GET', '/api/import_suppliers.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(405, $methodDenied['status'], $methodDenied['body']);
+        $methodDeniedPayload = json_decode($methodDenied['body'], true);
+        $this->assertIsArray($methodDeniedPayload);
+        $this->assertSame(false, $methodDeniedPayload['success'] ?? null, $methodDenied['body']);
+        $this->assertSame('Method Not Allowed', (string)($methodDeniedPayload['error'] ?? ''), $methodDenied['body']);
+        $this->assertSame('validation', (string)($methodDeniedPayload['error_type'] ?? ''), $methodDenied['body']);
+        $this->assertNull($methodDeniedPayload['data'] ?? null, $methodDenied['body']);
+        $this->assertNotSame('', trim((string)($methodDeniedPayload['request_id'] ?? '')), $methodDenied['body']);
+
+        $invalid = self::request('POST', '/api/import_suppliers.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertSame('File upload failed', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
+
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $suffix = strtoupper(bin2hex(random_bytes(4)));
+        $officialName = 'مورد تكامل ' . $suffix;
+        $fileRows = [[
+            'official_name' => $officialName,
+            'english_name' => 'Integration Supplier ' . $suffix,
+            'is_confirmed' => 1,
+        ]];
+        $fileContent = json_encode($fileRows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $this->assertNotFalse($fileContent);
+
+        $import = self::requestMultipart(
+            '/api/import_suppliers.php',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ],
+            [],
+            [
+                'field_name' => 'file',
+                'filename' => 'suppliers_integration.json',
+                'content_type' => 'application/json',
+                'content' => (string)$fileContent,
+            ]
+        );
+        $this->assertSame(200, $import['status'], $import['body']);
+        $importPayload = json_decode($import['body'], true);
+        $this->assertIsArray($importPayload);
+        $this->assertTrue((bool)($importPayload['success'] ?? false), $import['body']);
+        $this->assertNull($importPayload['error'] ?? null, $import['body']);
+        $this->assertNull($importPayload['error_type'] ?? null, $import['body']);
+        $this->assertNotSame('', trim((string)($importPayload['request_id'] ?? '')), $import['body']);
+        $this->assertIsArray($importPayload['data'] ?? null, $import['body']);
+        $this->assertSame(
+            (string)($importPayload['message'] ?? ''),
+            (string)($importPayload['data']['message'] ?? ''),
+            $import['body']
+        );
+        $this->assertGreaterThanOrEqual(1, (int)($importPayload['inserted'] ?? 0), $import['body']);
+        $this->assertSame(
+            (int)($importPayload['inserted'] ?? 0),
+            (int)($importPayload['data']['inserted'] ?? -1),
+            $import['body']
+        );
+
+        $supplierStmt = self::$db->prepare('SELECT id FROM suppliers WHERE official_name = ? ORDER BY id DESC LIMIT 1');
+        $supplierStmt->execute([$officialName]);
+        $supplierId = (int)($supplierStmt->fetchColumn() ?: 0);
+        $this->assertGreaterThan(0, $supplierId, 'imported supplier should exist in database');
+        self::$createdSupplierIds[] = $supplierId;
+    }
+
+    public function testImportExcelEndpointUsesCompatEnvelope(): void
+    {
+        $guest = self::request('GET', '/api/import.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $methodDenied = self::request('GET', '/api/import.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(405, $methodDenied['status'], $methodDenied['body']);
+        $methodDeniedPayload = json_decode($methodDenied['body'], true);
+        $this->assertIsArray($methodDeniedPayload);
+        $this->assertSame(false, $methodDeniedPayload['success'] ?? null, $methodDenied['body']);
+        $this->assertSame('Method Not Allowed', (string)($methodDeniedPayload['error'] ?? ''), $methodDenied['body']);
+        $this->assertSame('validation', (string)($methodDeniedPayload['error_type'] ?? ''), $methodDenied['body']);
+        $this->assertNull($methodDeniedPayload['data'] ?? null, $methodDenied['body']);
+        $this->assertNotSame('', trim((string)($methodDeniedPayload['request_id'] ?? '')), $methodDenied['body']);
+
+        $missingFile = self::request('POST', '/api/import.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $missingFile['status'], $missingFile['body']);
+        $missingFilePayload = json_decode($missingFile['body'], true);
+        $this->assertIsArray($missingFilePayload);
+        $this->assertSame(false, $missingFilePayload['success'] ?? null, $missingFile['body']);
+        $this->assertSame('لم يتم استلام الملف أو حدث خطأ في الرفع', (string)($missingFilePayload['error'] ?? ''), $missingFile['body']);
+        $this->assertSame('validation', (string)($missingFilePayload['error_type'] ?? ''), $missingFile['body']);
+        $this->assertNull($missingFilePayload['data'] ?? null, $missingFile['body']);
+        $this->assertNotSame('', trim((string)($missingFilePayload['request_id'] ?? '')), $missingFile['body']);
+
+        $badExtension = self::requestMultipart(
+            '/api/import.php',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ],
+            [],
+            [
+                'field_name' => 'file',
+                'filename' => 'integration-import.txt',
+                'content_type' => 'text/plain',
+                'content' => 'integration-test',
+            ]
+        );
+        $this->assertSame(400, $badExtension['status'], $badExtension['body']);
+        $badExtensionPayload = json_decode($badExtension['body'], true);
+        $this->assertIsArray($badExtensionPayload);
+        $this->assertSame(false, $badExtensionPayload['success'] ?? null, $badExtension['body']);
+        $this->assertSame('نوع الملف غير مسموح. يجب أن يكون ملف Excel (.xlsx أو .xls)', (string)($badExtensionPayload['error'] ?? ''), $badExtension['body']);
+        $this->assertSame('validation', (string)($badExtensionPayload['error_type'] ?? ''), $badExtension['body']);
+        $this->assertNull($badExtensionPayload['data'] ?? null, $badExtension['body']);
+        $this->assertNotSame('', trim((string)($badExtensionPayload['request_id'] ?? '')), $badExtension['body']);
+    }
+
+    public function testImportEmailUsesCompatEnvelope(): void
+    {
+        $guest = self::request('GET', '/api/import-email.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $methodDenied = self::request('GET', '/api/import-email.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(405, $methodDenied['status'], $methodDenied['body']);
+        $methodDeniedPayload = json_decode($methodDenied['body'], true);
+        $this->assertIsArray($methodDeniedPayload);
+        $this->assertSame(false, $methodDeniedPayload['success'] ?? null, $methodDenied['body']);
+        $this->assertSame('Method Not Allowed', (string)($methodDeniedPayload['error'] ?? ''), $methodDenied['body']);
+        $this->assertSame('validation', (string)($methodDeniedPayload['error_type'] ?? ''), $methodDenied['body']);
+        $this->assertNull($methodDeniedPayload['data'] ?? null, $methodDenied['body']);
+        $this->assertNotSame('', trim((string)($methodDeniedPayload['request_id'] ?? '')), $methodDenied['body']);
+
+        $invalidMissingFile = self::request('POST', '/api/import-email.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $invalidMissingFile['status'], $invalidMissingFile['body']);
+        $invalidMissingFilePayload = json_decode($invalidMissingFile['body'], true);
+        $this->assertIsArray($invalidMissingFilePayload);
+        $this->assertSame(false, $invalidMissingFilePayload['success'] ?? null, $invalidMissingFile['body']);
+        $this->assertSame('No valid file uploaded', (string)($invalidMissingFilePayload['error'] ?? ''), $invalidMissingFile['body']);
+        $this->assertSame('validation', (string)($invalidMissingFilePayload['error_type'] ?? ''), $invalidMissingFile['body']);
+        $this->assertNull($invalidMissingFilePayload['data'] ?? null, $invalidMissingFile['body']);
+        $this->assertNotSame('', trim((string)($invalidMissingFilePayload['request_id'] ?? '')), $invalidMissingFile['body']);
+
+        $invalidExtension = self::requestMultipart(
+            '/api/import-email.php',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ],
+            [],
+            [
+                'field_name' => 'email_file',
+                'filename' => 'integration-email.txt',
+                'content_type' => 'text/plain',
+                'content' => 'integration-test',
+            ]
+        );
+        $this->assertSame(400, $invalidExtension['status'], $invalidExtension['body']);
+        $invalidExtensionPayload = json_decode($invalidExtension['body'], true);
+        $this->assertIsArray($invalidExtensionPayload);
+        $this->assertSame(false, $invalidExtensionPayload['success'] ?? null, $invalidExtension['body']);
+        $this->assertSame('Only .msg files are supported', (string)($invalidExtensionPayload['error'] ?? ''), $invalidExtension['body']);
+        $this->assertSame('validation', (string)($invalidExtensionPayload['error_type'] ?? ''), $invalidExtension['body']);
+        $this->assertNull($invalidExtensionPayload['data'] ?? null, $invalidExtension['body']);
+        $this->assertNotSame('', trim((string)($invalidExtensionPayload['request_id'] ?? '')), $invalidExtension['body']);
+    }
+
+    public function testManualEntryUsesCompatEnvelopeForMethodAndValidation(): void
+    {
+        $guest = self::request('GET', '/api/manual-entry.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+
+        $methodDenied = self::request('GET', '/api/manual-entry.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(405, $methodDenied['status'], $methodDenied['body']);
+        $methodDeniedPayload = json_decode($methodDenied['body'], true);
+        $this->assertIsArray($methodDeniedPayload);
+        $this->assertSame(false, $methodDeniedPayload['success'] ?? null, $methodDenied['body']);
+        $this->assertSame('Method not allowed', (string)($methodDeniedPayload['error'] ?? ''), $methodDenied['body']);
+        $this->assertSame('validation', (string)($methodDeniedPayload['error_type'] ?? ''), $methodDenied['body']);
+        $this->assertNull($methodDeniedPayload['data'] ?? null, $methodDenied['body']);
+        $this->assertNotSame('', trim((string)($methodDeniedPayload['request_id'] ?? '')), $methodDenied['body']);
+
+        $invalid = self::request('POST', '/api/manual-entry.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertSame('بيانات غير صالحة', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
+    }
+
+    public function testSuggestionsLearningUsesCompatEnvelopeForValidation(): void
+    {
+        $guest = self::request('GET', '/api/suggestions-learning.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+
+        $missingRaw = self::request('GET', '/api/suggestions-learning.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(400, $missingRaw['status'], $missingRaw['body']);
+        $missingRawPayload = json_decode($missingRaw['body'], true);
+        $this->assertIsArray($missingRawPayload);
+        $this->assertSame(false, $missingRawPayload['success'] ?? null, $missingRaw['body']);
+        $this->assertSame('raw parameter required', (string)($missingRawPayload['error'] ?? ''), $missingRaw['body']);
+        $this->assertSame('validation', (string)($missingRawPayload['error_type'] ?? ''), $missingRaw['body']);
+        $this->assertNull($missingRawPayload['data'] ?? null, $missingRaw['body']);
+        $this->assertNotSame('', trim((string)($missingRawPayload['request_id'] ?? '')), $missingRaw['body']);
+    }
+
+    public function testExportEndpointsKeepRawPayloadAndRespectAuthBoundaries(): void
+    {
+        $guestBanks = self::request('GET', '/api/export_banks.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guestBanks['status'], $guestBanks['body']);
+        $guestBanksPayload = json_decode($guestBanks['body'], true);
+        $this->assertIsArray($guestBanksPayload);
+        $this->assertSame(false, $guestBanksPayload['success'] ?? null, $guestBanks['body']);
+        $this->assertSame('Unauthorized', (string)($guestBanksPayload['error'] ?? ''), $guestBanks['body']);
+        $this->assertNull($guestBanksPayload['data'] ?? null, $guestBanks['body']);
+
+        $exportBanks = self::request('GET', '/api/export_banks.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(200, $exportBanks['status'], $exportBanks['body']);
+        $banksPayload = json_decode($exportBanks['body'], true);
+        $this->assertIsArray($banksPayload, $exportBanks['body']);
+        $this->assertArrayNotHasKey('success', $banksPayload, 'export banks success payload should remain raw list');
+
+        $guestSuppliers = self::request('GET', '/api/export_suppliers.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guestSuppliers['status'], $guestSuppliers['body']);
+        $guestSuppliersPayload = json_decode($guestSuppliers['body'], true);
+        $this->assertIsArray($guestSuppliersPayload);
+        $this->assertSame(false, $guestSuppliersPayload['success'] ?? null, $guestSuppliers['body']);
+        $this->assertSame('Unauthorized', (string)($guestSuppliersPayload['error'] ?? ''), $guestSuppliers['body']);
+        $this->assertNull($guestSuppliersPayload['data'] ?? null, $guestSuppliers['body']);
+
+        $exportSuppliers = self::request('GET', '/api/export_suppliers.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(200, $exportSuppliers['status'], $exportSuppliers['body']);
+        $suppliersPayload = json_decode($exportSuppliers['body'], true);
+        $this->assertIsArray($suppliersPayload, $exportSuppliers['body']);
+        $this->assertArrayNotHasKey('success', $suppliersPayload, 'export suppliers success payload should remain raw list');
+
+        $guestOverrides = self::request('GET', '/api/export_matching_overrides.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guestOverrides['status'], $guestOverrides['body']);
+        $guestOverridesPayload = json_decode($guestOverrides['body'], true);
+        $this->assertIsArray($guestOverridesPayload);
+        $this->assertSame(false, $guestOverridesPayload['success'] ?? null, $guestOverrides['body']);
+        $this->assertSame('Unauthorized', (string)($guestOverridesPayload['error'] ?? ''), $guestOverrides['body']);
+        $this->assertNull($guestOverridesPayload['data'] ?? null, $guestOverrides['body']);
+
+        $exportOverrides = self::request('GET', '/api/export_matching_overrides.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(200, $exportOverrides['status'], $exportOverrides['body']);
+        $overridesPayload = json_decode($exportOverrides['body'], true);
+        $this->assertIsArray($overridesPayload, $exportOverrides['body']);
+        $this->assertArrayNotHasKey('success', $overridesPayload, 'export overrides success payload should remain raw list');
+    }
+
+    public function testSmartPasteConfidenceUsesCompatEnvelope(): void
+    {
+        $guest = self::request('GET', '/api/smart-paste-confidence.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $methodDenied = self::request('GET', '/api/smart-paste-confidence.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(405, $methodDenied['status'], $methodDenied['body']);
+        $methodDeniedPayload = json_decode($methodDenied['body'], true);
+        $this->assertIsArray($methodDeniedPayload);
+        $this->assertSame(false, $methodDeniedPayload['success'] ?? null, $methodDenied['body']);
+        $this->assertSame('Method not allowed', (string)($methodDeniedPayload['error'] ?? ''), $methodDenied['body']);
+        $this->assertSame('validation', (string)($methodDeniedPayload['error_type'] ?? ''), $methodDenied['body']);
+        $this->assertNull($methodDeniedPayload['data'] ?? null, $methodDenied['body']);
+        $this->assertNotSame('', trim((string)($methodDeniedPayload['request_id'] ?? '')), $methodDenied['body']);
+
+        $invalid = self::request('POST', '/api/smart-paste-confidence.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertSame('No text provided', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
+
+        $ok = self::request('POST', '/api/smart-paste-confidence.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'text' => 'العميل شركة النهضة يرغب بإصدار ضمان جديد',
+        ]);
+        $this->assertSame(200, $ok['status'], $ok['body']);
+        $okPayload = json_decode($ok['body'], true);
+        $this->assertIsArray($okPayload);
+        $this->assertTrue((bool)($okPayload['success'] ?? false), $ok['body']);
+        $this->assertNull($okPayload['error'] ?? null, $ok['body']);
+        $this->assertNull($okPayload['error_type'] ?? null, $ok['body']);
+        $this->assertNotSame('', trim((string)($okPayload['request_id'] ?? '')), $ok['body']);
+        $this->assertIsArray($okPayload['data'] ?? null, $ok['body']);
+        $this->assertIsArray($okPayload['data']['confidence_thresholds'] ?? null, $ok['body']);
+        $this->assertArrayHasKey('supplier', $okPayload['data'], $ok['body']);
+    }
+
+    public function testParsePasteEndpointsUseCompatEnvelopeForValidationErrors(): void
+    {
+        $guestLegacy = self::request('GET', '/api/parse-paste.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guestLegacy['status'], $guestLegacy['body']);
+        $guestLegacyPayload = json_decode($guestLegacy['body'], true);
+        $this->assertIsArray($guestLegacyPayload);
+        $this->assertSame(false, $guestLegacyPayload['success'] ?? null, $guestLegacy['body']);
+        $this->assertSame('Unauthorized', (string)($guestLegacyPayload['error'] ?? ''), $guestLegacy['body']);
+        $this->assertTrue(
+            !isset($guestLegacyPayload['error_type']) || (string)($guestLegacyPayload['error_type'] ?? '') === 'permission',
+            $guestLegacy['body']
+        );
+        $this->assertNull($guestLegacyPayload['data'] ?? null, $guestLegacy['body']);
+        $this->assertNotSame('', trim((string)($guestLegacyPayload['request_id'] ?? '')), $guestLegacy['body']);
+
+        $legacyInvalid = self::request('POST', '/api/parse-paste.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $legacyInvalid['status'], $legacyInvalid['body']);
+        $legacyInvalidPayload = json_decode($legacyInvalid['body'], true);
+        $this->assertIsArray($legacyInvalidPayload);
+        $this->assertSame(false, $legacyInvalidPayload['success'] ?? null, $legacyInvalid['body']);
+        $this->assertSame('لم يتم إدخال أي نص للتحليل', (string)($legacyInvalidPayload['error'] ?? ''), $legacyInvalid['body']);
+        $this->assertSame('validation', (string)($legacyInvalidPayload['error_type'] ?? ''), $legacyInvalid['body']);
+        $this->assertNull($legacyInvalidPayload['data'] ?? null, $legacyInvalid['body']);
+        $this->assertIsArray($legacyInvalidPayload['extracted'] ?? null, $legacyInvalid['body']);
+        $this->assertIsArray($legacyInvalidPayload['field_status'] ?? null, $legacyInvalid['body']);
+        $this->assertIsArray($legacyInvalidPayload['confidence'] ?? null, $legacyInvalid['body']);
+        $this->assertNotSame('', trim((string)($legacyInvalidPayload['request_id'] ?? '')), $legacyInvalid['body']);
+
+        $guestV2 = self::request('GET', '/api/parse-paste-v2.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guestV2['status'], $guestV2['body']);
+        $guestV2Payload = json_decode($guestV2['body'], true);
+        $this->assertIsArray($guestV2Payload);
+        $this->assertSame(false, $guestV2Payload['success'] ?? null, $guestV2['body']);
+        $this->assertSame('Unauthorized', (string)($guestV2Payload['error'] ?? ''), $guestV2['body']);
+        $this->assertTrue(
+            !isset($guestV2Payload['error_type']) || (string)($guestV2Payload['error_type'] ?? '') === 'permission',
+            $guestV2['body']
+        );
+        $this->assertNull($guestV2Payload['data'] ?? null, $guestV2['body']);
+        $this->assertNotSame('', trim((string)($guestV2Payload['request_id'] ?? '')), $guestV2['body']);
+
+        $v2Invalid = self::request('POST', '/api/parse-paste-v2.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+        $this->assertSame(400, $v2Invalid['status'], $v2Invalid['body']);
+        $v2InvalidPayload = json_decode($v2Invalid['body'], true);
+        $this->assertIsArray($v2InvalidPayload);
+        $this->assertSame(false, $v2InvalidPayload['success'] ?? null, $v2Invalid['body']);
+        $this->assertSame('لم يتم إدخال أي نص للتحليل', (string)($v2InvalidPayload['error'] ?? ''), $v2Invalid['body']);
+        $this->assertSame('validation', (string)($v2InvalidPayload['error_type'] ?? ''), $v2Invalid['body']);
+        $this->assertNull($v2InvalidPayload['data'] ?? null, $v2Invalid['body']);
+        $this->assertIsArray($v2InvalidPayload['extracted'] ?? null, $v2Invalid['body']);
+        $this->assertIsArray($v2InvalidPayload['field_status'] ?? null, $v2Invalid['body']);
+        $this->assertIsArray($v2InvalidPayload['confidence'] ?? null, $v2Invalid['body']);
+        $this->assertNotSame('', trim((string)($v2InvalidPayload['request_id'] ?? '')), $v2Invalid['body']);
+    }
+
+    public function testHistoryLegacyEndpointUsesCompatEnvelope(): void
+    {
+        $guest = self::request('GET', '/api/history.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $retired = self::request('GET', '/api/history.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(410, $retired['status'], $retired['body']);
+        $retiredPayload = json_decode($retired['body'], true);
+        $this->assertIsArray($retiredPayload);
+        $this->assertSame(false, $retiredPayload['success'] ?? null, $retired['body']);
+        $this->assertSame('api/history.php retired', (string)($retiredPayload['error'] ?? ''), $retired['body']);
+        $this->assertSame('validation', (string)($retiredPayload['error_type'] ?? ''), $retired['body']);
+        $this->assertNull($retiredPayload['data'] ?? null, $retired['body']);
+        $this->assertNotSame('', trim((string)($retiredPayload['request_id'] ?? '')), $retired['body']);
+        $this->assertSame('LEGACY_ENDPOINT_RETIRED', (string)($retiredPayload['code'] ?? ''), $retired['body']);
+        $this->assertIsArray($retiredPayload['replacement'] ?? null, $retired['body']);
+        $this->assertSame('/api/get-timeline.php', (string)($retiredPayload['replacement']['timeline'] ?? ''), $retired['body']);
+        $this->assertSame('/api/get-history-snapshot.php', (string)($retiredPayload['replacement']['snapshot'] ?? ''), $retired['body']);
     }
 
     public function testPrintEventsApiFlow(): void
@@ -201,6 +2020,8 @@ final class EnterpriseApiFlowsTest extends TestCase
         $postPayload = json_decode($post['body'], true);
         $this->assertIsArray($postPayload);
         $this->assertTrue((bool)($postPayload['success'] ?? false), $post['body']);
+        $this->assertNull($postPayload['error'] ?? null, $post['body']);
+        $this->assertNotSame('', trim((string)($postPayload['request_id'] ?? '')), $post['body']);
         $this->assertSame(1, (int)($postPayload['data']['inserted'] ?? 0));
 
         $list = self::request(
@@ -215,6 +2036,8 @@ final class EnterpriseApiFlowsTest extends TestCase
         $listPayload = json_decode($list['body'], true);
         $this->assertIsArray($listPayload);
         $this->assertTrue((bool)($listPayload['success'] ?? false), $list['body']);
+        $this->assertNull($listPayload['error'] ?? null, $list['body']);
+        $this->assertNotSame('', trim((string)($listPayload['request_id'] ?? '')), $list['body']);
 
         $rows = is_array($listPayload['data'] ?? null) ? $listPayload['data'] : [];
         $found = false;
@@ -245,6 +2068,49 @@ final class EnterpriseApiFlowsTest extends TestCase
 
         $this->assertSame(200, $response['status'], $response['body']);
         $this->assertStringContainsString('record-form-section', $response['body']);
+    }
+
+    public function testGetCurrentStateUsesCompatEnvelope(): void
+    {
+        $invalid = self::request(
+            'GET',
+            '/api/get-current-state.php',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ]
+        );
+        $this->assertSame(400, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
+
+        $guaranteeId = self::requireGuaranteeId();
+        $valid = self::request(
+            'GET',
+            '/api/get-current-state.php?id=' . $guaranteeId,
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ]
+        );
+        $this->assertSame(200, $valid['status'], $valid['body']);
+        $validPayload = json_decode($valid['body'], true);
+        $this->assertIsArray($validPayload);
+        $this->assertTrue((bool)($validPayload['success'] ?? false), $valid['body']);
+        $this->assertNull($validPayload['error'] ?? null, $valid['body']);
+        $this->assertNull($validPayload['error_type'] ?? null, $valid['body']);
+        $this->assertNotSame('', trim((string)($validPayload['request_id'] ?? '')), $valid['body']);
+        $this->assertIsArray($validPayload['data'] ?? null, $valid['body']);
+        $this->assertIsArray($validPayload['data']['snapshot'] ?? null, $valid['body']);
+        $this->assertSame(
+            (string)($validPayload['snapshot']['guarantee_number'] ?? ''),
+            (string)($validPayload['data']['snapshot']['guarantee_number'] ?? ''),
+            $valid['body']
+        );
     }
 
     public function testGetRecordReadPathDoesNotPersistAutoMatches(): void
@@ -356,6 +2222,18 @@ final class EnterpriseApiFlowsTest extends TestCase
         $this->assertIsArray($payload);
         $this->assertSame(false, $payload['success'] ?? null, $response['body']);
         $this->assertSame('Permission Denied', (string)($payload['error'] ?? ''), $response['body']);
+        $this->assertTrue(
+            !isset($payload['error_type']) || (string)($payload['error_type'] ?? '') === 'permission',
+            $response['body']
+        );
+        $this->assertNull($payload['data'] ?? null, $response['body']);
+        $this->assertNotSame('', trim((string)($payload['request_id'] ?? '')), $response['body']);
+        $this->assertTrue(
+            !isset($payload['error_type']) || (string)$payload['error_type'] === 'permission',
+            $response['body']
+        );
+        $this->assertNull($payload['data'] ?? null, $response['body']);
+        $this->assertNotSame('', trim((string)($payload['request_id'] ?? '')), $response['body']);
 
         $decisionAfter = self::decisionSnapshotForGuarantee($guaranteeId);
         $historyCountAfter = self::historyCountForGuarantee($guaranteeId);
@@ -365,6 +2243,64 @@ final class EnterpriseApiFlowsTest extends TestCase
         $this->assertSame((string)($decisionBefore['status'] ?? ''), (string)($decisionAfter['status'] ?? ''), 'Invisible save-and-next must not mutate status.');
         $this->assertSame((string)($decisionBefore['decision_source'] ?? ''), (string)($decisionAfter['decision_source'] ?? ''), 'Invisible save-and-next must not mutate decision source.');
         $this->assertSame($historyCountBefore, $historyCountAfter, 'Invisible save-and-next must not write timeline events.');
+    }
+
+    public function testWorkflowAdvanceMissingGuaranteeIdUsesUnifiedCompatEnvelope(): void
+    {
+        $response = self::request('POST', '/api/workflow-advance.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], []);
+
+        $this->assertSame(400, $response['status'], $response['body']);
+        $payload = json_decode($response['body'], true);
+        $this->assertIsArray($payload);
+        $this->assertSame(false, $payload['success'] ?? null, $response['body']);
+        $this->assertSame('Missing guarantee_id', (string)($payload['error'] ?? ''), $response['body']);
+        $this->assertSame('validation', (string)($payload['error_type'] ?? ''), $response['body']);
+        $this->assertNull($payload['data'] ?? null, $response['body']);
+        $this->assertNotSame('', trim((string)($payload['request_id'] ?? '')), $response['body']);
+    }
+
+    public function testUpdateGuaranteeUsesUnifiedCompatEnvelope(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $fixture = self::createLifecycleFixture();
+        $guaranteeId = (int)$fixture['guarantee_id'];
+        $guaranteeNumber = self::guaranteeNumberForGuarantee($guaranteeId);
+        $raw = self::rawDataForGuarantee($guaranteeId);
+
+        $response = self::request('POST', '/api/update-guarantee.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'guarantee_id' => $guaranteeId,
+            'guarantee_number' => $guaranteeNumber,
+            'supplier' => (string)($raw['supplier'] ?? 'Integration Fixture Supplier'),
+            'bank' => (string)($raw['bank'] ?? 'Integration Fixture Bank'),
+            'amount' => (string)($raw['amount'] ?? '15325.75'),
+            'contract_number' => (string)($raw['contract_number'] ?? 'INT-CONTRACT-DEFAULT'),
+            'expiry_date' => (string)($raw['expiry_date'] ?? date('Y-m-d', strtotime('+90 days'))),
+            'issue_date' => (string)($raw['issue_date'] ?? date('Y-m-d', strtotime('-30 days'))),
+            'type' => (string)($raw['type'] ?? 'Initial'),
+            'related_to' => (string)($raw['related_to'] ?? 'contract'),
+            'comment' => '[integration] compat envelope update',
+        ]);
+
+        $this->assertSame(200, $response['status'], $response['body']);
+        $payload = json_decode($response['body'], true);
+        $this->assertNotNull($payload, $response['body']);
+        $this->assertIsArray($payload);
+        $this->assertTrue((bool)($payload['success'] ?? false), $response['body']);
+        $this->assertNull($payload['error'] ?? null, $response['body']);
+        $this->assertNotSame('', trim((string)($payload['request_id'] ?? '')), $response['body']);
+        $this->assertIsArray($payload['data'] ?? null, $response['body']);
+        $this->assertSame((string)($payload['message'] ?? ''), (string)($payload['data']['message'] ?? ''), $response['body']);
+        $this->assertArrayHasKey('break_glass', $payload);
+        $this->assertSame($payload['break_glass'] ?? null, $payload['data']['break_glass'] ?? null, $response['body']);
     }
 
     public function testSaveNoteRejectsInvisibleGuaranteeAndPreventsWrites(): void
@@ -390,6 +2326,12 @@ final class EnterpriseApiFlowsTest extends TestCase
         $this->assertIsArray($payload);
         $this->assertSame(false, $payload['success'] ?? null, $response['body']);
         $this->assertSame('Permission Denied', (string)($payload['error'] ?? ''), $response['body']);
+        $this->assertTrue(
+            !isset($payload['error_type']) || (string)($payload['error_type'] ?? '') === 'permission',
+            $response['body']
+        );
+        $this->assertNull($payload['data'] ?? null, $response['body']);
+        $this->assertNotSame('', trim((string)($payload['request_id'] ?? '')), $response['body']);
 
         $notesAfter = self::notesCountForGuarantee($guaranteeId);
         $this->assertSame($notesBefore, $notesAfter, 'Invisible save-note must not insert notes.');
@@ -449,8 +2391,11 @@ final class EnterpriseApiFlowsTest extends TestCase
         $submitPayload = json_decode($submit['body'], true);
         $this->assertIsArray($submitPayload);
         $this->assertTrue((bool)($submitPayload['success'] ?? false), $submit['body']);
+        $this->assertNull($submitPayload['error'] ?? null, $submit['body']);
+        $this->assertIsArray($submitPayload['data'] ?? null, $submit['body']);
         $requestId = (int)($submitPayload['request_id'] ?? 0);
         $this->assertGreaterThan(0, $requestId, $submit['body']);
+        $this->assertSame($requestId, (int)($submitPayload['data']['request_id'] ?? 0), $submit['body']);
         self::$undoRequestIds[] = $requestId;
 
         $selfApprove = self::request('POST', '/api/undo-requests.php', [
@@ -465,6 +2410,8 @@ final class EnterpriseApiFlowsTest extends TestCase
         $selfApprovePayload = json_decode($selfApprove['body'], true);
         $this->assertIsArray($selfApprovePayload);
         $this->assertSame(false, $selfApprovePayload['success'] ?? null);
+        $this->assertSame('validation', (string)($selfApprovePayload['error_type'] ?? ''), $selfApprove['body']);
+        $this->assertNull($selfApprovePayload['data'] ?? null, $selfApprove['body']);
         $this->assertStringContainsString('Self-approval', (string)($selfApprovePayload['error'] ?? ''));
 
         $approve = self::request('POST', '/api/undo-requests.php', [
@@ -479,6 +2426,8 @@ final class EnterpriseApiFlowsTest extends TestCase
         $approvePayload = json_decode($approve['body'], true);
         $this->assertIsArray($approvePayload);
         $this->assertTrue((bool)($approvePayload['success'] ?? false), $approve['body']);
+        $this->assertNull($approvePayload['error'] ?? null, $approve['body']);
+        $this->assertIsArray($approvePayload['data'] ?? null, $approve['body']);
 
         $list = self::request(
             'GET',
@@ -492,6 +2441,8 @@ final class EnterpriseApiFlowsTest extends TestCase
         $listPayload = json_decode($list['body'], true);
         $this->assertIsArray($listPayload);
         $this->assertTrue((bool)($listPayload['success'] ?? false), $list['body']);
+        $this->assertNull($listPayload['error'] ?? null, $list['body']);
+        $this->assertNotSame('', trim((string)($listPayload['request_id'] ?? '')), $list['body']);
 
         $rows = is_array($listPayload['data'] ?? null) ? $listPayload['data'] : [];
         $ids = array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $rows);
@@ -646,8 +2597,10 @@ final class EnterpriseApiFlowsTest extends TestCase
         $this->assertIsArray($validPayload);
         $this->assertTrue((bool)($validPayload['success'] ?? false), $valid['body']);
         $this->assertNull($validPayload['error'] ?? null, $valid['body']);
+        $this->assertNull($validPayload['error_type'] ?? null, $valid['body']);
         $this->assertNotSame('', trim((string)($validPayload['request_id'] ?? '')), $valid['body']);
         $this->assertSame(0, (int)($validPayload['data']['saved_count'] ?? -1), $valid['body']);
+        $this->assertSame((int)($validPayload['saved_count'] ?? -1), (int)($validPayload['data']['saved_count'] ?? -2), $valid['body']);
 
         $invalid = self::request('POST', '/api/save-import.php', [
             'Accept: application/json',
@@ -661,6 +2614,7 @@ final class EnterpriseApiFlowsTest extends TestCase
         $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
         $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
         $this->assertSame('Invalid Input Data', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
         $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
     }
 
@@ -683,11 +2637,15 @@ final class EnterpriseApiFlowsTest extends TestCase
         $payload = json_decode($response['body'], true);
         $this->assertIsArray($payload);
         $this->assertTrue((bool)($payload['success'] ?? false), $response['body']);
+        $this->assertNotSame('', trim((string)($payload['request_id'] ?? '')), $response['body']);
         $this->assertNotSame('break_glass_direct', (string)($payload['mode'] ?? ''));
+        $this->assertIsArray($payload['data'] ?? null, $response['body']);
+        $this->assertSame((string)($payload['mode'] ?? ''), (string)($payload['data']['mode'] ?? ''), $response['body']);
 
         if ((string)($payload['mode'] ?? '') === 'undo_request') {
             $requestId = (int)($payload['request_id'] ?? 0);
             $this->assertGreaterThan(0, $requestId, $response['body']);
+            $this->assertSame($requestId, (int)($payload['data']['request_id'] ?? 0), $response['body']);
             self::$undoRequestIds[] = $requestId;
         }
     }
@@ -712,6 +2670,7 @@ final class EnterpriseApiFlowsTest extends TestCase
         $this->assertSame(400, $withoutTicket['status'], $withoutTicket['body']);
         $withoutTicketPayload = json_decode($withoutTicket['body'], true);
         $this->assertIsArray($withoutTicketPayload);
+        $this->assertSame('validation', (string)($withoutTicketPayload['error_type'] ?? ''), $withoutTicket['body']);
         $this->assertStringContainsString('رقم التذكرة/الحادث مطلوب', (string)($withoutTicketPayload['error'] ?? ''));
 
         $beforeCount = self::countBreakGlassEventsForTarget('reopen_guarantee_direct', 'guarantee', (string)$guaranteeId);
@@ -733,6 +2692,8 @@ final class EnterpriseApiFlowsTest extends TestCase
         $this->assertIsArray($withTicketPayload);
         $this->assertTrue((bool)($withTicketPayload['success'] ?? false), $withTicket['body']);
         $this->assertSame('break_glass_direct', (string)($withTicketPayload['mode'] ?? ''));
+        $this->assertIsArray($withTicketPayload['data'] ?? null, $withTicket['body']);
+        $this->assertSame((string)($withTicketPayload['mode'] ?? ''), (string)($withTicketPayload['data']['mode'] ?? ''), $withTicket['body']);
 
         $event = self::latestBreakGlassEventForTarget('reopen_guarantee_direct', 'guarantee', (string)$guaranteeId);
         $this->assertIsArray($event);
@@ -772,6 +2733,10 @@ final class EnterpriseApiFlowsTest extends TestCase
         $payload = json_decode($response['body'], true);
         $this->assertIsArray($payload);
         $this->assertTrue((bool)($payload['success'] ?? false), $response['body']);
+        $this->assertNull($payload['error'] ?? null, $response['body']);
+        $this->assertNotSame('', trim((string)($payload['request_id'] ?? '')), $response['body']);
+        $this->assertIsArray($payload['data'] ?? null, $response['body']);
+        $this->assertTrue((bool)($payload['data']['success'] ?? false), $response['body']);
 
         $statusStmt = self::$db->prepare('SELECT status FROM batch_metadata WHERE import_source = ? LIMIT 1');
         $statusStmt->execute([$importSource]);
@@ -823,6 +2788,8 @@ final class EnterpriseApiFlowsTest extends TestCase
         $openPayload = json_decode($open['body'], true);
         $this->assertIsArray($openPayload);
         $this->assertTrue((bool)($openPayload['success'] ?? false), $open['body']);
+        $this->assertNull($openPayload['error'] ?? null, $open['body']);
+        $this->assertNotSame('', trim((string)($openPayload['request_id'] ?? '')), $open['body']);
 
         $openRows = is_array($openPayload['data'] ?? null) ? $openPayload['data'] : [];
         $openIds = array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $openRows);
@@ -840,6 +2807,9 @@ final class EnterpriseApiFlowsTest extends TestCase
         $resolvePayload = json_decode($resolve['body'], true);
         $this->assertIsArray($resolvePayload);
         $this->assertTrue((bool)($resolvePayload['success'] ?? false), $resolve['body']);
+        $this->assertNull($resolvePayload['error'] ?? null, $resolve['body']);
+        $this->assertNotSame('', trim((string)($resolvePayload['request_id'] ?? '')), $resolve['body']);
+        $this->assertIsArray($resolvePayload['data'] ?? null, $resolve['body']);
 
         $resolved = self::request(
             'GET',
@@ -853,6 +2823,54 @@ final class EnterpriseApiFlowsTest extends TestCase
         $resolvedPayload = json_decode($resolved['body'], true);
         $this->assertIsArray($resolvedPayload);
         $this->assertTrue((bool)($resolvedPayload['success'] ?? false), $resolved['body']);
+        $this->assertNull($resolvedPayload['error'] ?? null, $resolved['body']);
+        $this->assertNotSame('', trim((string)($resolvedPayload['request_id'] ?? '')), $resolved['body']);
+    }
+
+    public function testNotificationsInboxListAndMarkReadUseCompatEnvelope(): void
+    {
+        $notificationId = NotificationService::create(
+            'integration_test',
+            'Integration Notification',
+            'Notification created by EnterpriseApiFlowsTest',
+            null,
+            ['suite' => 'EnterpriseApiFlowsTest']
+        );
+        self::$notificationIds[] = $notificationId;
+
+        $list = self::request(
+            'GET',
+            '/api/notifications.php?unread=1&limit=30',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ]
+        );
+        $this->assertSame(200, $list['status'], $list['body']);
+        $listPayload = json_decode($list['body'], true);
+        $this->assertIsArray($listPayload);
+        $this->assertTrue((bool)($listPayload['success'] ?? false), $list['body']);
+        $this->assertNull($listPayload['error'] ?? null, $list['body']);
+        $this->assertNotSame('', trim((string)($listPayload['request_id'] ?? '')), $list['body']);
+
+        $rows = is_array($listPayload['data'] ?? null) ? $listPayload['data'] : [];
+        $rowIds = array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $rows);
+        $this->assertContains($notificationId, $rowIds, $list['body']);
+
+        $markRead = self::request('POST', '/api/notifications.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'action' => 'mark_read',
+            'notification_id' => $notificationId,
+        ]);
+        $this->assertSame(200, $markRead['status'], $markRead['body']);
+        $markReadPayload = json_decode($markRead['body'], true);
+        $this->assertIsArray($markReadPayload);
+        $this->assertTrue((bool)($markReadPayload['success'] ?? false), $markRead['body']);
+        $this->assertNull($markReadPayload['error'] ?? null, $markRead['body']);
+        $this->assertNotSame('', trim((string)($markReadPayload['request_id'] ?? '')), $markRead['body']);
+        $this->assertIsArray($markReadPayload['data'] ?? null, $markRead['body']);
     }
 
     public function testMetricsEndpointRequiresManageUsersAndReturnsSnapshot(): void
@@ -866,6 +2884,16 @@ final class EnterpriseApiFlowsTest extends TestCase
             ]
         );
         $this->assertSame(403, $forbidden['status'], $forbidden['body']);
+        $forbiddenPayload = json_decode($forbidden['body'], true);
+        $this->assertIsArray($forbiddenPayload);
+        $this->assertSame(false, $forbiddenPayload['success'] ?? null, $forbidden['body']);
+        $this->assertSame('Permission Denied', (string)($forbiddenPayload['error'] ?? ''), $forbidden['body']);
+        $this->assertTrue(
+            !isset($forbiddenPayload['error_type']) || (string)($forbiddenPayload['error_type'] ?? '') === 'permission',
+            $forbidden['body']
+        );
+        $this->assertNull($forbiddenPayload['data'] ?? null, $forbidden['body']);
+        $this->assertNotSame('', trim((string)($forbiddenPayload['request_id'] ?? '')), $forbidden['body']);
 
         $allowed = self::request(
             'GET',
@@ -879,6 +2907,8 @@ final class EnterpriseApiFlowsTest extends TestCase
         $allowedPayload = json_decode($allowed['body'], true);
         $this->assertIsArray($allowedPayload);
         $this->assertTrue((bool)($allowedPayload['success'] ?? false), $allowed['body']);
+        $this->assertNull($allowedPayload['error'] ?? null, $allowed['body']);
+        $this->assertNotSame('', trim((string)($allowedPayload['request_id'] ?? '')), $allowed['body']);
 
         $data = $allowedPayload['data'] ?? null;
         $this->assertIsArray($data);
@@ -887,6 +2917,153 @@ final class EnterpriseApiFlowsTest extends TestCase
         $this->assertIsArray($data['counters']);
         $this->assertArrayHasKey('open_dead_letters', $data['counters']);
         $this->assertArrayHasKey('scheduler_failures_24h', $data['counters']);
+    }
+
+    public function testUsersListRequiresManageUsersAndUsesCompatEnvelope(): void
+    {
+        $forbidden = self::request(
+            'GET',
+            '/api/users/list.php',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$operatorToken,
+            ]
+        );
+        $this->assertSame(403, $forbidden['status'], $forbidden['body']);
+        $forbiddenPayload = json_decode($forbidden['body'], true);
+        $this->assertIsArray($forbiddenPayload);
+        $this->assertSame(false, $forbiddenPayload['success'] ?? null, $forbidden['body']);
+        $this->assertSame('Permission Denied', (string)($forbiddenPayload['error'] ?? ''), $forbidden['body']);
+        $this->assertTrue(
+            !isset($forbiddenPayload['error_type']) || (string)($forbiddenPayload['error_type'] ?? '') === 'permission',
+            $forbidden['body']
+        );
+        $this->assertNull($forbiddenPayload['data'] ?? null, $forbidden['body']);
+        $this->assertNotSame('', trim((string)($forbiddenPayload['request_id'] ?? '')), $forbidden['body']);
+
+        $allowed = self::request(
+            'GET',
+            '/api/users/list.php',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ]
+        );
+        $this->assertSame(200, $allowed['status'], $allowed['body']);
+        $allowedPayload = json_decode($allowed['body'], true);
+        $this->assertIsArray($allowedPayload);
+        $this->assertTrue((bool)($allowedPayload['success'] ?? false), $allowed['body']);
+        $this->assertNull($allowedPayload['error'] ?? null, $allowed['body']);
+        $this->assertNull($allowedPayload['error_type'] ?? null, $allowed['body']);
+        $this->assertNotSame('', trim((string)($allowedPayload['request_id'] ?? '')), $allowed['body']);
+        $this->assertIsArray($allowedPayload['data'] ?? null, $allowed['body']);
+        $this->assertIsArray($allowedPayload['users'] ?? null, $allowed['body']);
+        $this->assertIsArray($allowedPayload['roles'] ?? null, $allowed['body']);
+        $this->assertIsArray($allowedPayload['permissions'] ?? null, $allowed['body']);
+        $this->assertIsArray($allowedPayload['overrides'] ?? null, $allowed['body']);
+        $this->assertIsArray($allowedPayload['permission_catalog'] ?? null, $allowed['body']);
+        $this->assertSame(
+            count($allowedPayload['users'] ?? []),
+            count($allowedPayload['data']['users'] ?? []),
+            $allowed['body']
+        );
+    }
+
+    public function testSettingsEndpointsUseCompatEnvelopeAndPermissionBoundaries(): void
+    {
+        $settingsForbidden = self::request(
+            'GET',
+            '/api/settings.php',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$operatorToken,
+            ]
+        );
+        $this->assertSame(403, $settingsForbidden['status'], $settingsForbidden['body']);
+        $settingsForbiddenPayload = json_decode($settingsForbidden['body'], true);
+        $this->assertIsArray($settingsForbiddenPayload);
+        $this->assertSame(false, $settingsForbiddenPayload['success'] ?? null, $settingsForbidden['body']);
+        $this->assertSame('Permission Denied', (string)($settingsForbiddenPayload['error'] ?? ''), $settingsForbidden['body']);
+        $this->assertTrue(
+            !isset($settingsForbiddenPayload['error_type']) || (string)($settingsForbiddenPayload['error_type'] ?? '') === 'permission',
+            $settingsForbidden['body']
+        );
+        $this->assertNull($settingsForbiddenPayload['data'] ?? null, $settingsForbidden['body']);
+        $this->assertNotSame('', trim((string)($settingsForbiddenPayload['request_id'] ?? '')), $settingsForbidden['body']);
+
+        $settingsAllowed = self::request(
+            'GET',
+            '/api/settings.php',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ]
+        );
+        $this->assertSame(200, $settingsAllowed['status'], $settingsAllowed['body']);
+        $settingsAllowedPayload = json_decode($settingsAllowed['body'], true);
+        $this->assertIsArray($settingsAllowedPayload);
+        $this->assertTrue((bool)($settingsAllowedPayload['success'] ?? false), $settingsAllowed['body']);
+        $this->assertNull($settingsAllowedPayload['error'] ?? null, $settingsAllowed['body']);
+        $this->assertNull($settingsAllowedPayload['error_type'] ?? null, $settingsAllowed['body']);
+        $this->assertNotSame('', trim((string)($settingsAllowedPayload['request_id'] ?? '')), $settingsAllowed['body']);
+        $this->assertIsArray($settingsAllowedPayload['data'] ?? null, $settingsAllowed['body']);
+        $this->assertIsArray($settingsAllowedPayload['settings'] ?? null, $settingsAllowed['body']);
+        $this->assertIsArray($settingsAllowedPayload['data']['settings'] ?? null, $settingsAllowed['body']);
+
+        $settingsAuditForbidden = self::request(
+            'GET',
+            '/api/settings-audit.php?limit=5',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$operatorToken,
+            ]
+        );
+        $this->assertSame(403, $settingsAuditForbidden['status'], $settingsAuditForbidden['body']);
+        $settingsAuditForbiddenPayload = json_decode($settingsAuditForbidden['body'], true);
+        $this->assertIsArray($settingsAuditForbiddenPayload);
+        $this->assertSame(false, $settingsAuditForbiddenPayload['success'] ?? null, $settingsAuditForbidden['body']);
+        $this->assertSame('Permission Denied', (string)($settingsAuditForbiddenPayload['error'] ?? ''), $settingsAuditForbidden['body']);
+        $this->assertTrue(
+            !isset($settingsAuditForbiddenPayload['error_type']) || (string)($settingsAuditForbiddenPayload['error_type'] ?? '') === 'permission',
+            $settingsAuditForbidden['body']
+        );
+        $this->assertNull($settingsAuditForbiddenPayload['data'] ?? null, $settingsAuditForbidden['body']);
+        $this->assertNotSame('', trim((string)($settingsAuditForbiddenPayload['request_id'] ?? '')), $settingsAuditForbidden['body']);
+
+        $settingsAuditAllowed = self::request(
+            'GET',
+            '/api/settings-audit.php?limit=5',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ]
+        );
+        $this->assertSame(200, $settingsAuditAllowed['status'], $settingsAuditAllowed['body']);
+        $settingsAuditAllowedPayload = json_decode($settingsAuditAllowed['body'], true);
+        $this->assertIsArray($settingsAuditAllowedPayload);
+        $this->assertTrue((bool)($settingsAuditAllowedPayload['success'] ?? false), $settingsAuditAllowed['body']);
+        $this->assertNull($settingsAuditAllowedPayload['error'] ?? null, $settingsAuditAllowed['body']);
+        $this->assertNull($settingsAuditAllowedPayload['error_type'] ?? null, $settingsAuditAllowed['body']);
+        $this->assertNotSame('', trim((string)($settingsAuditAllowedPayload['request_id'] ?? '')), $settingsAuditAllowed['body']);
+        $this->assertIsArray($settingsAuditAllowedPayload['data'] ?? null, $settingsAuditAllowed['body']);
+
+        $settingsAuditMethod = self::request(
+            'POST',
+            '/api/settings-audit.php?limit=5',
+            [
+                'Accept: application/json',
+                'Authorization: Bearer ' . self::$adminToken,
+            ],
+            []
+        );
+        $this->assertSame(405, $settingsAuditMethod['status'], $settingsAuditMethod['body']);
+        $settingsAuditMethodPayload = json_decode($settingsAuditMethod['body'], true);
+        $this->assertIsArray($settingsAuditMethodPayload);
+        $this->assertSame(false, $settingsAuditMethodPayload['success'] ?? null, $settingsAuditMethod['body']);
+        $this->assertSame('Method not allowed', (string)($settingsAuditMethodPayload['error'] ?? ''), $settingsAuditMethod['body']);
+        $this->assertSame('validation', (string)($settingsAuditMethodPayload['error_type'] ?? ''), $settingsAuditMethod['body']);
+        $this->assertNull($settingsAuditMethodPayload['data'] ?? null, $settingsAuditMethod['body']);
+        $this->assertNotSame('', trim((string)($settingsAuditMethodPayload['request_id'] ?? '')), $settingsAuditMethod['body']);
     }
 
     public function testAlertsEndpointRequiresManageUsersAndReturnsAlertPayload(): void
@@ -900,6 +3077,16 @@ final class EnterpriseApiFlowsTest extends TestCase
             ]
         );
         $this->assertSame(403, $forbidden['status'], $forbidden['body']);
+        $forbiddenPayload = json_decode($forbidden['body'], true);
+        $this->assertIsArray($forbiddenPayload);
+        $this->assertSame(false, $forbiddenPayload['success'] ?? null, $forbidden['body']);
+        $this->assertSame('Permission Denied', (string)($forbiddenPayload['error'] ?? ''), $forbidden['body']);
+        $this->assertTrue(
+            !isset($forbiddenPayload['error_type']) || (string)($forbiddenPayload['error_type'] ?? '') === 'permission',
+            $forbidden['body']
+        );
+        $this->assertNull($forbiddenPayload['data'] ?? null, $forbidden['body']);
+        $this->assertNotSame('', trim((string)($forbiddenPayload['request_id'] ?? '')), $forbidden['body']);
 
         $allowed = self::request(
             'GET',
@@ -913,6 +3100,8 @@ final class EnterpriseApiFlowsTest extends TestCase
         $payload = json_decode($allowed['body'], true);
         $this->assertIsArray($payload);
         $this->assertTrue((bool)($payload['success'] ?? false), $allowed['body']);
+        $this->assertNull($payload['error'] ?? null, $allowed['body']);
+        $this->assertNotSame('', trim((string)($payload['request_id'] ?? '')), $allowed['body']);
 
         $data = $payload['data'] ?? null;
         $this->assertIsArray($data);
@@ -943,6 +3132,58 @@ final class EnterpriseApiFlowsTest extends TestCase
         $payload = json_decode($response['body'], true);
         $this->assertIsArray($payload);
         $this->assertTrue((bool)($payload['success'] ?? false), $response['body']);
+        $this->assertSame($requestId, (string)($payload['request_id'] ?? ''), $response['body']);
+    }
+
+    public function testUserPreferencesUsesCompatEnvelopeForReadAndValidationErrors(): void
+    {
+        $guest = self::request('GET', '/api/user-preferences.php', [
+            'Accept: application/json',
+        ]);
+        $this->assertSame(401, $guest['status'], $guest['body']);
+        $guestPayload = json_decode($guest['body'], true);
+        $this->assertIsArray($guestPayload);
+        $this->assertSame(false, $guestPayload['success'] ?? null, $guest['body']);
+        $this->assertSame('Unauthorized', (string)($guestPayload['error'] ?? ''), $guest['body']);
+        $this->assertTrue(
+            !isset($guestPayload['error_type']) || (string)($guestPayload['error_type'] ?? '') === 'permission',
+            $guest['body']
+        );
+        $this->assertNull($guestPayload['data'] ?? null, $guest['body']);
+        $this->assertNotSame('', trim((string)($guestPayload['request_id'] ?? '')), $guest['body']);
+
+        $read = self::request('GET', '/api/user-preferences.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ]);
+        $this->assertSame(200, $read['status'], $read['body']);
+        $readPayload = json_decode($read['body'], true);
+        $this->assertIsArray($readPayload);
+        $this->assertTrue((bool)($readPayload['success'] ?? false), $read['body']);
+        $this->assertNull($readPayload['error'] ?? null, $read['body']);
+        $this->assertNull($readPayload['error_type'] ?? null, $read['body']);
+        $this->assertNotSame('', trim((string)($readPayload['request_id'] ?? '')), $read['body']);
+        $this->assertIsArray($readPayload['data'] ?? null, $read['body']);
+        $this->assertSame(
+            (string)($readPayload['preferences']['language'] ?? ''),
+            (string)($readPayload['data']['preferences']['language'] ?? ''),
+            $read['body']
+        );
+
+        $invalid = self::request('POST', '/api/user-preferences.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$adminToken,
+        ], [
+            'language' => 'zz',
+        ]);
+        $this->assertSame(422, $invalid['status'], $invalid['body']);
+        $invalidPayload = json_decode($invalid['body'], true);
+        $this->assertIsArray($invalidPayload);
+        $this->assertSame(false, $invalidPayload['success'] ?? null, $invalid['body']);
+        $this->assertSame('language must be ar or en', (string)($invalidPayload['error'] ?? ''), $invalid['body']);
+        $this->assertSame('validation', (string)($invalidPayload['error_type'] ?? ''), $invalid['body']);
+        $this->assertNull($invalidPayload['data'] ?? null, $invalid['body']);
+        $this->assertNotSame('', trim((string)($invalidPayload['request_id'] ?? '')), $invalid['body']);
     }
 
     private static function bootstrapUsersAndTokens(): void

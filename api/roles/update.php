@@ -7,7 +7,6 @@ use App\Repositories\RoleRepository;
 use App\Services\AuditTrailService;
 use App\Support\Database;
 
-wbgl_api_json_headers();
 wbgl_api_require_permission('manage_roles');
 
 /**
@@ -45,12 +44,12 @@ $permissionIds = is_array($input['permission_ids'] ?? null) ? $input['permission
 $permissionIds = wbgl_roles_update_normalize_permission_ids($permissionIds);
 
 if ($roleId <= 0 || $name === '') {
-    wbgl_api_fail(400, 'role_id واسم الدور مطلوبان');
+    wbgl_api_compat_fail(400, 'role_id واسم الدور مطلوبان');
 }
 
 $slug = $slugRaw !== '' ? strtolower($slugRaw) : wbgl_roles_update_slugify($name);
 if (!preg_match('/^[a-z0-9_\\-]{2,64}$/', $slug)) {
-    wbgl_api_fail(400, 'صيغة slug غير صالحة (a-z, 0-9, _, -)');
+    wbgl_api_compat_fail(400, 'صيغة slug غير صالحة (a-z, 0-9, _, -)');
 }
 
 try {
@@ -59,24 +58,24 @@ try {
 
     $existing = $repo->find($roleId);
     if (!$existing) {
-        wbgl_api_fail(404, 'الدور غير موجود');
+        wbgl_api_compat_fail(404, 'الدور غير موجود');
     }
 
     $slugOwner = $repo->findBySlug($slug);
     if ($slugOwner && (int)$slugOwner->id !== $roleId) {
-        wbgl_api_fail(409, 'يوجد دور آخر بنفس slug');
+        wbgl_api_compat_fail(409, 'يوجد دور آخر بنفس slug');
     }
 
     $allPermissionIds = array_map('intval', $db->query('SELECT id FROM permissions')->fetchAll(PDO::FETCH_COLUMN));
     $invalidPermissionIds = array_values(array_diff($permissionIds, $allPermissionIds));
     if (!empty($invalidPermissionIds)) {
-        wbgl_api_fail(400, 'تم إرسال صلاحيات غير موجودة: ' . implode(',', $invalidPermissionIds));
+        wbgl_api_compat_fail(400, 'تم إرسال صلاحيات غير موجودة: ' . implode(',', $invalidPermissionIds));
     }
 
     $before = $existing->toArray();
     $updated = $repo->updateRole($roleId, $name, $slug, $description === '' ? null : $description, $permissionIds);
     if (!$updated) {
-        wbgl_api_fail(500, 'تعذر تحديث الدور');
+        wbgl_api_compat_fail(500, 'تعذر تحديث الدور', [], 'internal');
     }
 
     AuditTrailService::record(
@@ -92,10 +91,10 @@ try {
         'high'
     );
 
-    wbgl_api_success([
+    wbgl_api_compat_success([
         'message' => 'تم تحديث الدور بنجاح',
         'role' => $updated->toArray(),
     ]);
 } catch (\Throwable $e) {
-    wbgl_api_fail(500, $e->getMessage());
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

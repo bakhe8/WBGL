@@ -13,9 +13,8 @@ use App\Services\SmartPaste\ConfidenceCalculator;
 header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_login();
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['success' => false, 'error' => 'Method not allowed']);
-    exit;
+if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST') {
+    wbgl_api_compat_fail(405, 'Method not allowed');
 }
 
 try {
@@ -23,8 +22,7 @@ try {
     $text = $data['text'] ?? '';
     
     if (empty($text)) {
-        echo json_encode(['success' => false, 'error' => 'No text provided']);
-        exit;
+        wbgl_api_compat_fail(400, 'No text provided');
     }
     
     $calculator = new ConfidenceCalculator();
@@ -54,8 +52,7 @@ try {
     }
     
     // Return enhanced data
-    echo json_encode([
-        'success' => true,
+    wbgl_api_compat_success([
         'data' => [
             'supplier' => $extractedSupplier,
             'confidence_thresholds' => [
@@ -63,15 +60,12 @@ try {
                 'medium' => ConfidenceCalculator::THRESHOLD_MEDIUM,
                 'low' => ConfidenceCalculator::THRESHOLD_LOW
             ]
-        ]
+        ],
     ]);
     
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log("Smart paste confidence error: " . $e->getMessage());
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage()
-    ]);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }
 
 /**

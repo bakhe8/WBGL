@@ -9,7 +9,6 @@ require_once __DIR__ . '/_bootstrap.php';
 use App\Support\Database;
 use App\Support\Input;
 
-header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_permission('supplier_manage');
 
 try {
@@ -52,13 +51,12 @@ try {
     $result = \App\Services\SupplierManagementService::create($db, $data);
     
     // Return response in expected format for Decision Flow
-    echo json_encode([
+    wbgl_api_compat_success([
         'success' => true,
         'supplier_id' => $result['supplier_id'],
         'official_name' => $result['official_name']
     ]);
     
 } catch (\Throwable $e) {
-    http_response_code(400); // Bad Request
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(400, $e->getMessage());
 }

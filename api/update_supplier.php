@@ -4,7 +4,6 @@ use App\Support\Database;
 use App\Support\Input;
 use App\Support\Normalizer;
 
-header('Content-Type: application/json');
 wbgl_api_require_permission('supplier_manage');
 
 try {
@@ -15,12 +14,12 @@ try {
     
     $supplierId = Input::int($data, 'id');
     if (!$supplierId) {
-        throw new Exception('Missing ID');
+        wbgl_api_compat_fail(400, 'Missing ID');
     }
     
     $officialName = Input::string($data, 'official_name', '');
     if ($officialName === '') {
-        throw new Exception('Official name is required');
+        wbgl_api_compat_fail(400, 'Official name is required');
     }
 
     // Auto-normalize
@@ -73,9 +72,11 @@ try {
         throw new Exception('Critical: Supplier ID was lost during update!');
     }
     
-    echo json_encode(['success' => true, 'updated' => $stmt->rowCount() > 0]);
+    wbgl_api_compat_success([
+        'success' => true,
+        'updated' => $stmt->rowCount() > 0,
+    ]);
 
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

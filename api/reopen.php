@@ -13,7 +13,6 @@ use App\Support\Logger;
 use App\Services\BreakGlassService;
 use App\Services\UndoRequestService;
 
-wbgl_api_json_headers();
 wbgl_api_require_login();
 
 try {
@@ -24,13 +23,22 @@ try {
     $guaranteeId = Input::int($input, 'guarantee_id');
     $user = wbgl_api_current_user_display();
     $breakGlassRequested = BreakGlassService::isRequested($input);
+    $hasReopenPermission = Guard::has('reopen_guarantee');
 
     if (!$guaranteeId) {
-        throw new Exception('guarantee_id is required');
+        wbgl_api_compat_fail(400, 'guarantee_id is required');
     }
-    wbgl_api_require_guarantee_visibility((int)$guaranteeId);
 
     $breakGlass = null;
+    // Governance decision:
+    // - Users with reopen_guarantee can submit undo requests without broad manage_data.
+    // - break_glass path is validated first (ticket/reason/permission), then action is executed.
+    // - visibility scope remains enforced for callers outside both paths.
+    if (!$hasReopenPermission && !$breakGlassRequested) {
+        wbgl_api_require_guarantee_visibility((int)$guaranteeId);
+        wbgl_api_compat_fail(403, 'Permission Denied');
+    }
+
     if ($breakGlassRequested) {
         $breakGlass = BreakGlassService::authorizeAndRecord(
             $input,
@@ -41,14 +49,10 @@ try {
         );
     }
 
-    if (!Guard::has('reopen_guarantee') && !$breakGlassRequested) {
-        throw new Exception('ليس لديك صلاحية إعادة فتح الضمان مباشرة');
-    }
-
     if ($breakGlass === null) {
         $reason = Input::string($input, 'reason', '');
         if (trim($reason) === '') {
-            throw new Exception('reason is required');
+            wbgl_api_compat_fail(400, 'reason is required');
         }
         $requestId = UndoRequestService::submit($guaranteeId, $reason, $user);
         Logger::info('undo_request_submitted_via_reopen', [
@@ -56,12 +60,10 @@ try {
             'guarantee_id' => $guaranteeId,
             'user' => $user
         ]);
-        echo json_encode([
-            'success' => true,
+        wbgl_api_compat_success([
             'mode' => 'undo_request',
             'request_id' => $requestId
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
 
     UndoRequestService::reopenDirect($guaranteeId, $user);
@@ -73,12 +75,10 @@ try {
         'bypassed_undo_workflow' => true,
     ]);
 
-    echo json_encode([
-        'success' => true,
+    wbgl_api_compat_success([
         'mode' => $breakGlass !== null ? 'break_glass_direct' : 'direct',
         'break_glass' => $breakGlass,
-    ], JSON_UNESCAPED_UNICODE);
+    ]);
 } catch (Exception $e) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(400, $e->getMessage(), [], 'validation');
 }

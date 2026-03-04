@@ -4,7 +4,10 @@
  * Logout API
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+if (!defined('WBGL_API_SKIP_GLOBAL_CSRF')) {
+    define('WBGL_API_SKIP_GLOBAL_CSRF', true);
+}
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\AuthService;
 use App\Support\ApiTokenService;
@@ -19,12 +22,9 @@ if (ApiTokenService::hasBearerToken()) {
 AuthService::logout();
 
 if ($isApiRequest) {
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode([
-        'success' => true,
+    wbgl_api_compat_success([
         'message' => 'تم تسجيل الخروج بنجاح',
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
+    ]);
 }
 
 header('Location: /views/login.php');

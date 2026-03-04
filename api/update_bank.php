@@ -4,7 +4,6 @@ require_once __DIR__ . '/_bootstrap.php';
 use App\Support\Database;
 use App\Support\Input;
 
-header('Content-Type: application/json');
 wbgl_api_require_permission('bank_manage');
 
 try {
@@ -15,7 +14,7 @@ try {
     
     $bankId = Input::int($data, 'id');
     if (!$bankId) {
-        throw new Exception('Missing ID');
+        wbgl_api_compat_fail(400, 'Missing ID');
     }
     
     $db = Database::connect();
@@ -62,9 +61,11 @@ try {
         throw new Exception('Critical: Bank ID was lost during update!');
     }
     
-    echo json_encode(['success' => true, 'updated' => $stmt->rowCount() > 0]);
+    wbgl_api_compat_success([
+        'success' => true,
+        'updated' => $stmt->rowCount() > 0,
+    ]);
 
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

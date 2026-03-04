@@ -11,12 +11,12 @@ wbgl_api_require_permission('import_excel');
 ob_start();
 
 try {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        throw new Exception('Method Not Allowed');
+    if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST') {
+        wbgl_api_compat_fail(405, 'Method Not Allowed');
     }
 
     if (!isset($_FILES['email_file']) || $_FILES['email_file']['error'] !== UPLOAD_ERR_OK) {
-        throw new Exception('No valid file uploaded');
+        wbgl_api_compat_fail(400, 'No valid file uploaded', [], 'validation');
     }
 
     $tmpPath = $_FILES['email_file']['tmp_name'];
@@ -24,13 +24,13 @@ try {
     $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
 
     if ($extension !== 'msg') {
-        throw new Exception('Only .msg files are supported');
+        wbgl_api_compat_fail(400, 'Only .msg files are supported', [], 'validation');
     }
 
     // Move to safe temp
     $safeTempPath = sys_get_temp_dir() . '/' . uniqid('upload_') . '.msg';
     if (!move_uploaded_file($tmpPath, $safeTempPath)) {
-        throw new Exception('Failed to move uploaded file');
+        wbgl_api_compat_fail(500, 'Failed to move uploaded file', [], 'internal');
     }
 
     $service = new EmailImportService();
@@ -39,13 +39,9 @@ try {
     @unlink($safeTempPath);
 
     ob_clean(); // Discard any warnings/notices outputted so far
-    echo json_encode($result);
+    wbgl_api_compat_success(is_array($result) ? $result : ['result' => $result]);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     ob_clean();
-    http_response_code(500);
-    echo json_encode([
-        'status' => 'error',
-        'message' => $e->getMessage()
-    ]);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

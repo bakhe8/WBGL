@@ -11,16 +11,16 @@ use App\Support\AuthService;
 use App\Support\Database;
 use App\Repositories\UserRepository;
 
-header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_permission('manage_users');
 
 $input = json_decode(file_get_contents('php://input'), true);
+if (!is_array($input)) {
+    $input = [];
+}
 $userId = $input['user_id'] ?? null;
 
 if (!$userId) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'Missing user_id']);
-    exit;
+    wbgl_api_compat_fail(400, 'Missing user_id');
 }
 
 try {
@@ -30,16 +30,12 @@ try {
     // Sanity Checks
     $currentUser = AuthService::getCurrentUser();
     if ($currentUser && $currentUser->id == $userId) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'error' => 'لا يمكنك حذف حسابك الحالي']);
-        exit;
+        wbgl_api_compat_fail(400, 'لا يمكنك حذف حسابك الحالي');
     }
 
     $user = $repo->find((int)$userId);
     if (!$user) {
-        http_response_code(404);
-        echo json_encode(['success' => false, 'error' => 'المستخدم غير موجود']);
-        exit;
+        wbgl_api_compat_fail(404, 'المستخدم غير موجود');
     }
 
     $repo->delete((int)$userId);
@@ -57,8 +53,9 @@ try {
         'critical'
     );
 
-    echo json_encode(['success' => true, 'message' => 'تم حذف المستخدم بنجاح']);
+    wbgl_api_compat_success([
+        'message' => 'تم حذف المستخدم بنجاح',
+    ]);
 } catch (\Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

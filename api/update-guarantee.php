@@ -14,7 +14,7 @@ use App\Support\Settings;
 use App\Models\Guarantee;
 
 header('Content-Type: application/json; charset=utf-8');
-wbgl_api_require_permission('guarantee_save');
+wbgl_api_require_login();
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -29,6 +29,7 @@ try {
     }
 
     wbgl_api_require_guarantee_visibility((int)$guaranteeId);
+    wbgl_api_require_permission('guarantee_save');
 
     // Validate required fields
     $required = ['guarantee_number', 'supplier', 'bank', 'amount', 'contract_number'];
@@ -121,13 +122,11 @@ try {
         is_array($oldSnapshot) ? $oldSnapshot : null
     );
 
-    echo json_encode([
-        'success' => true,
+    wbgl_api_compat_success([
         'message' => 'تم تعديل الضمان بنجاح',
         'break_glass' => $policy['break_glass']
-    ], JSON_UNESCAPED_UNICODE);
+    ]);
 
 } catch (\Throwable $e) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(400, $e->getMessage());
 }

@@ -9,7 +9,6 @@ use App\Repositories\AttachmentRepository;
 use App\Support\Database;
 use App\Models\Guarantee;
 
-header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_permission('manage_data');
 
 try {
@@ -99,8 +98,7 @@ try {
 
     $db->commit();
 
-    echo json_encode([
-        'success' => true, 
+    wbgl_api_compat_success([
         'message' => 'تم حفظ ' . count($createdIds) . ' ضمانات بنجاح',
         'redirect_id' => $createdIds[0]
     ]);
@@ -109,6 +107,5 @@ try {
     if (isset($db)) {
         $db->rollBack();
     }
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(400, $e->getMessage());
 }

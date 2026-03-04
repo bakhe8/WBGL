@@ -30,10 +30,6 @@ try {
             throw new \RuntimeException('import_source مطلوب');
         }
 
-        if ($action !== 'reopen') {
-            wbgl_api_require_permission('manage_data');
-        }
-
         $selectedGuaranteeIds = Input::array($input, 'guarantee_ids', null);
         if (is_array($selectedGuaranteeIds)) {
             foreach ($selectedGuaranteeIds as $selectedGuaranteeId) {
@@ -41,6 +37,10 @@ try {
                     wbgl_api_require_guarantee_visibility((int)$selectedGuaranteeId);
                 }
             }
+        }
+
+        if ($action !== 'reopen') {
+            wbgl_api_require_permission('manage_data');
         }
         
         switch ($action) {
@@ -172,8 +172,17 @@ try {
             default:
                 throw new \RuntimeException('Action غير معروف: ' . $action);
         }
-        
-        echo json_encode($result, JSON_UNESCAPED_UNICODE);
+
+        if (is_array($result) && array_key_exists('success', $result) && $result['success'] === false) {
+            wbgl_api_compat_fail(
+                200,
+                (string)($result['error'] ?? 'Batch operation failed'),
+                $result,
+                'validation'
+            );
+        }
+
+        wbgl_api_compat_success(is_array($result) ? $result : []);
         
     } elseif ($method === 'GET') {
         wbgl_api_require_permission('manage_data');
@@ -186,14 +195,13 @@ try {
         
         $result = $service->getBatchSummary($importSource);
         if ($result === null) {
-            http_response_code(404);
-            echo json_encode([
+            wbgl_api_compat_fail(404, 'الدفعة غير موجودة', [
                 'success' => false,
                 'error' => 'الدفعة غير موجودة'
-            ], JSON_UNESCAPED_UNICODE);
+            ], 'not_found');
         } else {
             $result['success'] = true;
-            echo json_encode($result, JSON_UNESCAPED_UNICODE);
+            wbgl_api_compat_success($result);
         }
         
     } else {
@@ -201,9 +209,5 @@ try {
     }
     
 } catch (\Throwable $e) {
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage()
-    ], JSON_UNESCAPED_UNICODE);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

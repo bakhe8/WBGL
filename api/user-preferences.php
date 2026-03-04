@@ -14,12 +14,11 @@ use App\Support\LocaleResolver;
 use App\Support\Settings;
 use App\Support\ThemeResolver;
 
-wbgl_api_json_headers();
 wbgl_api_require_login();
 
 $user = AuthService::getCurrentUser();
 if (!$user) {
-    wbgl_api_fail(401, 'Unauthorized');
+    wbgl_api_compat_fail(401, 'Unauthorized', [], 'permission');
 }
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -33,8 +32,7 @@ if ($method === 'GET') {
         (string)$settings->get('DEFAULT_DIRECTION', 'auto')
     );
     $theme = ThemeResolver::resolve($user->preferredTheme ?? null, $settings);
-    echo json_encode([
-        'success' => true,
+    wbgl_api_compat_success([
         'preferences' => [
             'language' => $locale['locale'],
             'theme' => $theme['theme'],
@@ -46,12 +44,11 @@ if ($method === 'GET') {
                 'theme_source' => $theme['source'],
             ],
         ],
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
+    ]);
 }
 
 if ($method !== 'POST') {
-    wbgl_api_fail(405, 'Method not allowed');
+    wbgl_api_compat_fail(405, 'Method not allowed');
 }
 
 $input = json_decode((string)file_get_contents('php://input'), true);
@@ -68,27 +65,27 @@ $hasTheme = $themeInput !== '';
 $hasDirection = $directionInput !== '';
 
 if (!$hasLanguage && !$hasTheme && !$hasDirection) {
-    wbgl_api_fail(422, 'At least one preference is required');
+    wbgl_api_compat_fail(422, 'At least one preference is required');
 }
 
 if ($hasLanguage && !Guard::has('ui_change_language')) {
-    wbgl_api_fail(403, 'Permission Denied: ui_change_language');
+    wbgl_api_compat_fail(403, 'Permission Denied: ui_change_language', [], 'permission');
 }
 if ($hasTheme && !Guard::has('ui_change_theme')) {
-    wbgl_api_fail(403, 'Permission Denied: ui_change_theme');
+    wbgl_api_compat_fail(403, 'Permission Denied: ui_change_theme', [], 'permission');
 }
 if ($hasDirection && !Guard::has('ui_change_direction')) {
-    wbgl_api_fail(403, 'Permission Denied: ui_change_direction');
+    wbgl_api_compat_fail(403, 'Permission Denied: ui_change_direction', [], 'permission');
 }
 
 $language = $hasLanguage ? LocaleResolver::normalize($languageInput) : null;
 if ($hasLanguage && $language === null) {
-    wbgl_api_fail(422, 'language must be ar or en');
+    wbgl_api_compat_fail(422, 'language must be ar or en');
 }
 
 $theme = $hasTheme ? ThemeResolver::normalize($themeInput) : null;
 if ($hasTheme && $theme === null) {
-    wbgl_api_fail(422, 'theme must be one of: system, light, dark, desert');
+    wbgl_api_compat_fail(422, 'theme must be one of: system, light, dark, desert');
 }
 
 $directionOverride = $hasDirection ? DirectionResolver::normalizeOverride($directionInput) : null;
@@ -144,8 +141,7 @@ AuditTrailService::record(
     ]
 );
 
-echo json_encode([
-    'success' => true,
+wbgl_api_compat_success([
     'preferences' => [
         'language' => $resolvedLocale['locale'],
         'theme' => $resolvedTheme['theme'],
@@ -157,4 +153,4 @@ echo json_encode([
             'theme_source' => $resolvedTheme['source'],
         ],
     ],
-], JSON_UNESCAPED_UNICODE);
+]);

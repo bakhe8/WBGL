@@ -14,11 +14,13 @@ use App\Models\User;
 use App\Support\DirectionResolver;
 use App\Support\ThemeResolver;
 
-header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_permission('manage_users');
 
 // 2. Input Validation
 $input = json_decode(file_get_contents('php://input'), true);
+if (!is_array($input)) {
+    $input = [];
+}
 $fullName = $input['full_name'] ?? null;
 $username = $input['username'] ?? null;
 $email = $input['email'] ?? null;
@@ -32,9 +34,7 @@ $preferredTheme = ThemeResolver::normalize((string)($input['preferred_theme'] ??
 $preferredDirection = DirectionResolver::normalizeOverride((string)($input['preferred_direction'] ?? 'auto'));
 
 if (!$fullName || !$username || !$roleId || !$password) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'الرجاء تعبئة كافة الحقول المطلوبة']);
-    exit;
+    wbgl_api_compat_fail(400, 'الرجاء تعبئة كافة الحقول المطلوبة');
 }
 
 try {
@@ -43,16 +43,12 @@ try {
     $roleRepo = new RoleRepository($db);
 
     if (!$roleRepo->find((int)$roleId)) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'error' => 'الدور المحدد غير موجود']);
-        exit;
+        wbgl_api_compat_fail(400, 'الدور المحدد غير موجود');
     }
 
     // Check if username unique
     if ($repo->findByUsername($username)) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'error' => 'اسم المستخدم موجود مسبقاً']);
-        exit;
+        wbgl_api_compat_fail(400, 'اسم المستخدم موجود مسبقاً');
     }
 
     $passwordHash = password_hash($password, PASSWORD_BCRYPT);
@@ -93,8 +89,9 @@ try {
         'high'
     );
 
-    echo json_encode(['success' => true, 'message' => 'تم إنشاء المستخدم بنجاح']);
+    wbgl_api_compat_success([
+        'message' => 'تم إنشاء المستخدم بنجاح',
+    ]);
 } catch (\Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

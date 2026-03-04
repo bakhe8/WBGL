@@ -23,12 +23,10 @@ try {
         $activeOnly = isset($_GET['active_only']) ? ((int)$_GET['active_only'] === 1) : false;
         $rows = $service->list($limit, $activeOnly);
 
-        echo json_encode([
-            'success' => true,
+        wbgl_api_compat_success([
             'items' => $rows,
             'count' => count($rows),
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
 
     if ($method === 'POST') {
@@ -49,11 +47,9 @@ try {
             wbgl_api_current_user_display()
         );
 
-        echo json_encode([
-            'success' => true,
+        wbgl_api_compat_success([
             'item' => $item,
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
 
     if ($method === 'PUT' || $method === 'PATCH') {
@@ -68,11 +64,9 @@ try {
             wbgl_api_current_user_display()
         );
 
-        echo json_encode([
-            'success' => true,
+        wbgl_api_compat_success([
             'item' => $item,
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
 
     if ($method === 'DELETE') {
@@ -85,23 +79,12 @@ try {
         }
 
         $deleted = $service->deleteById((int)$id);
-        echo json_encode([
-            'success' => true,
+        wbgl_api_compat_success([
             'deleted' => $deleted,
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
 
-    http_response_code(405);
-    echo json_encode([
-        'success' => false,
-        'error' => 'Method Not Allowed',
-    ], JSON_UNESCAPED_UNICODE);
+    wbgl_api_compat_fail(405, 'Method Not Allowed');
 } catch (Throwable $e) {
-    http_response_code(400);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage(),
-    ], JSON_UNESCAPED_UNICODE);
+    wbgl_api_compat_fail(400, $e->getMessage(), [], 'validation');
 }
-

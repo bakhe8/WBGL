@@ -8,13 +8,10 @@ use App\Repositories\NoteRepository;
 use App\Support\Database;
 use App\Support\Input;
 
-wbgl_api_json_headers();
 wbgl_api_require_permission('notes_create');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'error' => 'Method not allowed']);
-    exit;
+    wbgl_api_compat_fail(405, 'Method not allowed');
 }
 
 // Get JSON Input
@@ -27,9 +24,7 @@ $guaranteeId = Input::int($input, 'guarantee_id');
 $content = Input::string($input, 'content', '');
 
 if (!$guaranteeId || $content === '') {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'Missing guarantee_id or content']);
-    exit;
+    wbgl_api_compat_fail(400, 'Missing guarantee_id or content');
 }
 
 wbgl_api_require_guarantee_visibility((int)$guaranteeId);
@@ -45,10 +40,7 @@ try {
         $stepStmt->execute([(int)$guaranteeId]);
         $currentStep = (string)($stepStmt->fetchColumn() ?: 'unknown');
 
-        http_response_code(403);
-        echo json_encode([
-            'success' => false,
-            'error' => 'Permission Denied',
+        wbgl_api_compat_fail(403, 'Permission Denied', [
             'message' => 'ليس لديك صلاحية إضافة ملاحظة على هذا السجل في حالته الحالية.',
             'required_permission' => 'notes_create',
             'current_step' => $currentStep,
@@ -56,9 +48,7 @@ try {
             'policy' => $policy,
             'surface' => $surface,
             'reasons' => $policy['reasons'] ?? [],
-            'request_id' => wbgl_api_request_id(),
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
 
     $createdBy = wbgl_api_current_user_display();
@@ -69,8 +59,7 @@ try {
         'created_by' => $createdBy
     ]);
     
-    echo json_encode([
-        'success' => true, 
+    wbgl_api_compat_success([
         'note' => [
             'id' => $id,
             'content' => $content,
@@ -80,14 +69,8 @@ try {
         'policy' => $policy,
         'surface' => $surface,
         'reasons' => $policy['reasons'] ?? [],
-        'request_id' => wbgl_api_request_id(),
-    ], JSON_UNESCAPED_UNICODE);
+    ]);
     
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage(),
-        'request_id' => wbgl_api_request_id(),
-    ], JSON_UNESCAPED_UNICODE);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

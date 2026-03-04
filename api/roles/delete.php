@@ -8,7 +8,6 @@ use App\Services\AuditTrailService;
 use App\Support\AuthService;
 use App\Support\Database;
 
-wbgl_api_json_headers();
 wbgl_api_require_permission('manage_roles');
 
 $input = json_decode(file_get_contents('php://input'), true);
@@ -18,7 +17,7 @@ if (!is_array($input)) {
 
 $roleId = (int)($input['role_id'] ?? 0);
 if ($roleId <= 0) {
-    wbgl_api_fail(400, 'role_id مطلوب');
+    wbgl_api_compat_fail(400, 'role_id مطلوب');
 }
 
 try {
@@ -27,22 +26,22 @@ try {
 
     $role = $repo->find($roleId);
     if (!$role) {
-        wbgl_api_fail(404, 'الدور غير موجود');
+        wbgl_api_compat_fail(404, 'الدور غير موجود');
     }
 
     $assignedUsers = $repo->countUsersByRole($roleId);
     if ($assignedUsers > 0) {
-        wbgl_api_fail(409, 'لا يمكن حذف الدور لأنه مرتبط بمستخدمين. أعد توزيع المستخدمين أولًا.');
+        wbgl_api_compat_fail(409, 'لا يمكن حذف الدور لأنه مرتبط بمستخدمين. أعد توزيع المستخدمين أولًا.');
     }
 
     $currentUser = AuthService::getCurrentUser();
     if ($currentUser && (int)($currentUser->roleId ?? 0) === $roleId) {
-        wbgl_api_fail(409, 'لا يمكن حذف الدور الحالي لحسابك');
+        wbgl_api_compat_fail(409, 'لا يمكن حذف الدور الحالي لحسابك');
     }
 
     $deleted = $repo->deleteRole($roleId);
     if (!$deleted) {
-        wbgl_api_fail(500, 'تعذر حذف الدور');
+        wbgl_api_compat_fail(500, 'تعذر حذف الدور', [], 'internal');
     }
 
     AuditTrailService::record(
@@ -57,9 +56,9 @@ try {
         'critical'
     );
 
-    wbgl_api_success([
+    wbgl_api_compat_success([
         'message' => 'تم حذف الدور بنجاح',
     ]);
 } catch (\Throwable $e) {
-    wbgl_api_fail(500, $e->getMessage());
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

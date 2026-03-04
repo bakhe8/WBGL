@@ -56,6 +56,9 @@ jobs:
       - name: Install PHP dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
 
+      - name: Validate sequential execution state
+        run: php app/Scripts/sequential-execution.php guard
+
       - name: Apply migrations
         run: php app/Scripts/migrate.php
 

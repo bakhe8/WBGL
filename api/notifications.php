@@ -14,7 +14,6 @@ require_once __DIR__ . '/_bootstrap.php';
 use App\Services\NotificationService;
 use App\Support\Input;
 
-wbgl_api_json_headers();
 wbgl_api_require_login();
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -24,17 +23,13 @@ try {
         $limit = Input::int($_GET, 'limit', 50) ?? 50;
         $unread = Input::int($_GET, 'unread', 0) === 1;
         $rows = NotificationService::listForCurrentUser($limit, $unread);
-        echo json_encode([
-            'success' => true,
+        wbgl_api_compat_success([
             'data' => $rows,
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
 
     if ($method !== 'POST') {
-        http_response_code(405);
-        echo json_encode(['success' => false, 'error' => 'Method not allowed'], JSON_UNESCAPED_UNICODE);
-        exit;
+        wbgl_api_compat_fail(405, 'Method not allowed');
     }
 
     $input = json_decode(file_get_contents('php://input'), true);
@@ -46,21 +41,15 @@ try {
     if ($action === 'mark_read') {
         $id = Input::int($input, 'notification_id', 0) ?? 0;
         NotificationService::markReadForCurrentUser($id);
-        echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE);
-        exit;
+        wbgl_api_compat_success([]);
     }
 
     if ($action === 'mark_all_read') {
         $count = NotificationService::markAllReadForCurrentUser();
-        echo json_encode(['success' => true, 'updated' => $count], JSON_UNESCAPED_UNICODE);
-        exit;
+        wbgl_api_compat_success(['updated' => $count]);
     }
 
     throw new RuntimeException('Unsupported action');
 } catch (Throwable $e) {
-    http_response_code(400);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage(),
-    ], JSON_UNESCAPED_UNICODE);
+    wbgl_api_compat_fail(400, $e->getMessage(), [], 'validation');
 }

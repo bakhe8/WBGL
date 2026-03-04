@@ -14,7 +14,20 @@
 php app/Scripts/migration-status.php
 php app/Scripts/migrate.php --dry-run
 php app/Scripts/migrate.php
+php app/Scripts/rehearse-migrations.php
+php app/Scripts/rehearse-migrations.php --with-integration
 ```
+
+## Rehearsal آمن بدون CREATEDB لكل تشغيل
+
+للتشغيل المتكرر على قاعدة فارغة دون منح `CREATEDB` لمستخدم التطبيق:
+
+1. إنشاء قاعدة rehearsal مرة واحدة فقط بواسطة DBA/superuser:
+   - `CREATE DATABASE wbgl_rehearsal OWNER wbgl_user;`
+   - `GRANT ALL PRIVILEGES ON DATABASE wbgl_rehearsal TO wbgl_user;`
+2. بعد ذلك شغّل:
+   - `php app/Scripts/rehearse-migrations.php`
+   - السكربت يعيد تهيئة `public schema` ثم يطبق كل المايغريشن.
 
 ## القواعد
 

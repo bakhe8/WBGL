@@ -4,13 +4,10 @@ require_once __DIR__ . '/_bootstrap.php';
 use App\Support\Database;
 use App\Support\Input;
 
-header('Content-Type: application/json');
 wbgl_api_require_login();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'error' => 'Method not allowed']);
-    exit;
+    wbgl_api_compat_fail(405, 'Method not allowed');
 }
 
 try {
@@ -22,7 +19,7 @@ try {
     $action = Input::string($data, 'action', ''); // 'delete'
 
     if (!$id || $action === '') {
-        throw new Exception('Missing parameters');
+        wbgl_api_compat_fail(400, 'Missing parameters');
     }
 
     $db = Database::connect();
@@ -31,12 +28,11 @@ try {
         $stmt = $db->prepare("DELETE FROM learning_confirmations WHERE id = ?");
         $stmt->execute([$id]);
         
-        echo json_encode(['success' => true, 'message' => 'Item deleted']);
+        wbgl_api_compat_success(['message' => 'Item deleted']);
     } else {
-        throw new Exception('Invalid action');
+        wbgl_api_compat_fail(400, 'Invalid action');
     }
 
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

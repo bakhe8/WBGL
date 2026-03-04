@@ -13,11 +13,13 @@ use App\Repositories\UserRepository;
 use App\Support\DirectionResolver;
 use App\Support\ThemeResolver;
 
-header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_permission('manage_users');
 
 // 2. Input Validation
 $input = json_decode(file_get_contents('php://input'), true);
+if (!is_array($input)) {
+    $input = [];
+}
 $userId = $input['user_id'] ?? null;
 $fullName = $input['full_name'] ?? null;
 $username = $input['username'] ?? null;
@@ -32,9 +34,7 @@ $preferredTheme = ThemeResolver::normalize((string)($input['preferred_theme'] ??
 $preferredDirection = DirectionResolver::normalizeOverride((string)($input['preferred_direction'] ?? 'auto'));
 
 if (!$userId || !$fullName || !$username || !$roleId) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'Missing parameters']);
-    exit;
+    wbgl_api_compat_fail(400, 'Missing parameters');
 }
 
 try {
@@ -44,23 +44,17 @@ try {
 
     $user = $repo->find((int)$userId);
     if (!$user) {
-        http_response_code(404);
-        echo json_encode(['success' => false, 'error' => 'المستخدم غير موجود']);
-        exit;
+        wbgl_api_compat_fail(404, 'المستخدم غير موجود');
     }
 
     if (!$roleRepo->find((int)$roleId)) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'error' => 'الدور المحدد غير موجود']);
-        exit;
+        wbgl_api_compat_fail(400, 'الدور المحدد غير موجود');
     }
 
     // Check username unique if changed
     if ($username !== $user->username) {
         if ($repo->findByUsername($username)) {
-            http_response_code(400);
-            echo json_encode(['success' => false, 'error' => 'اسم المستخدم الجديد موجود مسبقاً']);
-            exit;
+            wbgl_api_compat_fail(400, 'اسم المستخدم الجديد موجود مسبقاً');
         }
     }
 
@@ -99,8 +93,9 @@ try {
         'high'
     );
 
-    echo json_encode(['success' => true, 'message' => 'تم تحديث البيانات بنجاح']);
+    wbgl_api_compat_success([
+        'message' => 'تم تحديث البيانات بنجاح',
+    ]);
 } catch (\Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

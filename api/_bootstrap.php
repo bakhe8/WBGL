@@ -96,7 +96,97 @@ if (!function_exists('wbgl_api_fail')) {
             );
         }
 
-        wbgl_api_envelope($statusCode, false, null, $message);
+        wbgl_api_compat_fail(
+            $statusCode,
+            $message,
+            ['request_id' => $requestId],
+            wbgl_api_error_type_from_status($statusCode)
+        );
+    }
+}
+
+if (!function_exists('wbgl_api_error_type_from_status')) {
+    function wbgl_api_error_type_from_status(int $statusCode): string
+    {
+        if ($statusCode === 401 || $statusCode === 403) {
+            return 'permission';
+        }
+        if ($statusCode === 404) {
+            return 'not_found';
+        }
+        if ($statusCode === 409) {
+            return 'conflict';
+        }
+        if ($statusCode >= 500) {
+            return 'internal';
+        }
+        return 'validation';
+    }
+}
+
+if (!function_exists('wbgl_api_compat_success')) {
+    /**
+     * Emit unified envelope while preserving legacy top-level fields.
+     *
+     * @param array<string,mixed> $payload
+     */
+    function wbgl_api_compat_success(array $payload = [], int $statusCode = 200): void
+    {
+        $requestId = wbgl_api_request_id();
+        if (!array_key_exists('request_id', $payload)) {
+            $payload['request_id'] = $requestId;
+        }
+
+        wbgl_api_json_headers();
+        http_response_code($statusCode);
+        echo json_encode(array_merge([
+            'success' => true,
+            'data' => $payload,
+            'error' => null,
+            'error_type' => null,
+            'request_id' => $requestId,
+        ], $payload), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
+if (!function_exists('wbgl_api_compat_fail')) {
+    /**
+     * Emit unified envelope while preserving legacy top-level fields.
+     *
+     * @param array<string,mixed> $payload
+     */
+    function wbgl_api_compat_fail(
+        int $statusCode,
+        string $message,
+        array $payload = [],
+        ?string $errorType = null
+    ): void {
+        $requestId = wbgl_api_request_id();
+        $resolvedErrorType = trim((string)$errorType) !== ''
+            ? (string)$errorType
+            : wbgl_api_error_type_from_status($statusCode);
+
+        if (!array_key_exists('request_id', $payload)) {
+            $payload['request_id'] = $requestId;
+        }
+        if (!array_key_exists('error', $payload)) {
+            $payload['error'] = $message;
+        }
+        if (!array_key_exists('error_type', $payload)) {
+            $payload['error_type'] = $resolvedErrorType;
+        }
+
+        wbgl_api_json_headers();
+        http_response_code($statusCode);
+        echo json_encode(array_merge([
+            'success' => false,
+            'data' => null,
+            'error' => $message,
+            'error_type' => $resolvedErrorType,
+            'request_id' => $requestId,
+        ], $payload), JSON_UNESCAPED_UNICODE);
+        exit;
     }
 }
 
@@ -256,6 +346,7 @@ if (!function_exists('wbgl_api_require_csrf')) {
 
 $csrfEnforced = (bool)Settings::getInstance()->get('CSRF_ENFORCE_MUTATING', true);
 wbgl_api_request_id();
-if ($csrfEnforced && CsrfGuard::isMutatingMethod()) {
+$skipGlobalCsrf = defined('WBGL_API_SKIP_GLOBAL_CSRF') && (bool)WBGL_API_SKIP_GLOBAL_CSRF;
+if (!$skipGlobalCsrf && $csrfEnforced && CsrfGuard::isMutatingMethod()) {
     wbgl_api_require_csrf();
 }

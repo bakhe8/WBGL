@@ -28,6 +28,8 @@ try {
     echo json_encode($banks, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    if (function_exists('header_remove')) {
+        @header_remove('Content-Disposition');
+    }
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

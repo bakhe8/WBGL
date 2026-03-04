@@ -20,27 +20,16 @@ use App\Repositories\SupplierRepository;
 use App\Repositories\BankRepository;
 use App\Services\GuaranteeVisibilityService;
 
-header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_login();
 
 // Validate input
 $guaranteeId = $_GET['id'] ?? null;
 if (!$guaranteeId || !is_numeric($guaranteeId)) {
-    http_response_code(400);
-    echo json_encode([
-        'success' => false,
-        'error' => 'معرف الضمان مطلوب ويجب أن يكون رقم'
-    ]);
-    exit;
+    wbgl_api_compat_fail(400, 'معرف الضمان مطلوب ويجب أن يكون رقم');
 }
 
 if (!GuaranteeVisibilityService::canAccessGuarantee((int)$guaranteeId)) {
-    http_response_code(403);
-    echo json_encode([
-        'success' => false,
-        'error' => 'Permission Denied'
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
+    wbgl_api_compat_fail(403, 'Permission Denied', [], 'permission');
 }
 
 try {
@@ -55,12 +44,7 @@ try {
     // Load guarantee
     $guarantee = $guaranteeRepo->find($guaranteeId);
     if (!$guarantee) {
-        http_response_code(404);
-        echo json_encode([
-            'success' => false,
-            'error' => 'الضمان غير موجود'
-        ]);
-        exit;
+        wbgl_api_compat_fail(404, 'الضمان غير موجود');
     }
 
     // Build record data
@@ -153,14 +137,9 @@ try {
         'signatures_received' => $record['signatures_received']
     ];
 
-    echo json_encode([
-        'success' => true,
-        'snapshot' => $snapshot
+    wbgl_api_compat_success([
+        'snapshot' => $snapshot,
     ]);
 } catch (\Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'error' => 'خطأ في السيرفر: ' . $e->getMessage()
-    ]);
+    wbgl_api_compat_fail(500, 'خطأ في السيرفر: ' . $e->getMessage(), [], 'internal');
 }

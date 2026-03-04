@@ -1,0 +1,68 @@
+{
+    "manifest_file": "Docs/WBGL-EXECUTION-SEQUENCE-AR.json",
+    "manifest_version": "1.0.0",
+    "mode": "mandatory_sequential",
+    "updated_at": "2026-03-04T00:00:00Z",
+    "steps": {
+        "P1-01": {
+            "status": "done",
+            "started_at": "2026-03-04T00:00:00Z",
+            "completed_at": "2026-03-04T00:00:00Z",
+            "blocked_at": null,
+            "evidence": "تم إغلاق موجة A بالكامل مع اختبارات Unit+Integration خضراء.",
+            "refs": [
+                "Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md",
+                "tests/Integration/EnterpriseApiFlowsTest.php"
+            ],
+            "note": null
+        },
+        "P2-01": {
+            "status": "done",
+            "started_at": "2026-03-04T00:00:00Z",
+            "completed_at": "2026-03-04T00:00:00Z",
+            "blocked_at": null,
+            "evidence": "تم تحويل save-and-next إلى orchestration service مرحليًا بدون تغيير سلوكي.",
+            "refs": [
+                "api/save-and-next.php",
+                "app/Services/SaveAndNextApplicationService.php"
+            ],
+            "note": null
+        },
+        "P3-01": {
+            "status": "done",
+            "started_at": "2026-03-04T00:00:00Z",
+            "completed_at": "2026-03-04T00:00:00Z",
+            "blocked_at": null,
+            "evidence": "تم اعتماد baseline migration وتشغيل rehearsal ناجح.",
+            "refs": [
+                "database/migrations/20260225_000000_pgsql_baseline_core_schema.sql",
+                "app/Scripts/rehearse-migrations.php"
+            ],
+            "note": null
+        },
+        "P4-01": {
+            "status": "done",
+            "started_at": "2026-03-04T00:00:00Z",
+            "completed_at": "2026-03-04T00:00:00Z",
+            "blocked_at": null,
+            "evidence": "تم حذف dead code المؤكد بدون regressions.",
+            "refs": [
+                "Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md",
+                "tests/Integration/EnterpriseApiFlowsTest.php"
+            ],
+            "note": null
+        },
+        "P5-01": {
+            "status": "done",
+            "started_at": "2026-03-04T00:00:00Z",
+            "completed_at": "2026-03-04T00:00:00Z",
+            "blocked_at": null,
+            "evidence": "تم إضافة الحراس الآلية وتوحيد fail helper مركزيًا.",
+            "refs": [
+                "tests/Unit/ApiContractGuardWiringTest.php",
+                "api/_bootstrap.php"
+            ],
+            "note": null
+        }
+    }
+}

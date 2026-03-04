@@ -1,5 +1,4 @@
 <?php
-header('Content-Type: application/json; charset=utf-8');
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -14,9 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $input = json_decode(file_get_contents('php://input'), true);
         
         if (!is_array($input)) {
-            http_response_code(400);
-            echo json_encode(['success' => false, 'error' => 'Invalid JSON input']);
-            exit;
+            wbgl_api_compat_fail(400, 'Invalid JSON input');
         }
         
         // Validation
@@ -74,9 +71,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         if (!empty($errors)) {
-            http_response_code(400);
-            echo json_encode(['success' => false, 'errors' => $errors]);
-            exit;
+            wbgl_api_compat_fail(400, 'Validation failed', [
+                'errors' => $errors,
+            ]);
         }
         
         // Save settings
@@ -97,27 +94,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Non-blocking audit trail
         }
         
-        echo json_encode(['success' => true, 'settings' => $saved]);
+        wbgl_api_compat_success([
+            'settings' => $saved,
+        ]);
         
     } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
     }
-    exit;
 }
 
 // Handle GET request to load settings
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
         $settings = new Settings();
-        echo json_encode(['success' => true, 'settings' => $settings->all()]);
+        wbgl_api_compat_success([
+            'settings' => $settings->all(),
+        ]);
     } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
     }
-    exit;
 }
 
 // Method not allowed
-http_response_code(405);
-echo json_encode(['success' => false, 'error' => 'Method not allowed']);
+wbgl_api_compat_fail(405, 'Method not allowed');

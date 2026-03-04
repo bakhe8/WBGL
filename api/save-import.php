@@ -161,14 +161,14 @@ try {
         $savedCount++;
         // Return ID for redirection
         $pdo->commit();
-        wbgl_api_success([
+        wbgl_api_compat_success([
             'saved_count' => 1,
             'redirect_id' => (int)$guaranteeId,
         ]);
     }
 
     $pdo->commit();
-    wbgl_api_success([
+    wbgl_api_compat_success([
         'saved_count' => (int)$savedCount,
     ]);
 
@@ -180,5 +180,5 @@ try {
     if ($statusCode < 400 || $statusCode >= 600) {
         $statusCode = 500;
     }
-    wbgl_api_fail($statusCode, $e->getMessage());
+    wbgl_api_compat_fail($statusCode, $e->getMessage());
 }

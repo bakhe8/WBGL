@@ -10,12 +10,10 @@ require_once __DIR__ . '/_bootstrap.php';
 use App\Repositories\GuaranteeRepository;
 use App\Support\Database;
 
-header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_permission('manage_data');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['success' => false, 'error' => 'Method not allowed']);
-    exit;
+    wbgl_api_compat_fail(405, 'Method not allowed');
 }
 
 try {
@@ -23,8 +21,7 @@ try {
     $guaranteeId = $data['guarantee_id'] ?? null;
     
     if (!$guaranteeId) {
-        echo json_encode(['success' => false, 'error' => 'Missing guarantee_id']);
-        exit;
+        wbgl_api_compat_fail(400, 'Missing guarantee_id');
     }
 
     wbgl_api_require_guarantee_visibility((int)$guaranteeId);
@@ -34,21 +31,14 @@ try {
     $success = $repo->convertToReal((int)$guaranteeId);
     
     if ($success) {
-        echo json_encode([
-            'success' => true,
+        wbgl_api_compat_success([
             'message' => 'Guarantee converted to real data successfully'
         ]);
     } else {
-        echo json_encode([
-            'success' => false,
-            'error' => 'Failed to convert guarantee'
-        ]);
+        wbgl_api_compat_fail(500, 'Failed to convert guarantee', [], 'internal');
     }
     
 } catch (Exception $e) {
     error_log("Convert to real error: " . $e->getMessage());
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage()
-    ]);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

@@ -49,6 +49,7 @@ final class GovernancePolicyWiringTest extends TestCase
         $releaseApi = $this->readFile('api/release.php');
         $updateGuaranteeApi = $this->readFile('api/update-guarantee.php');
         $saveAndNextApi = $this->readFile('api/save-and-next.php');
+        $saveAndNextService = $this->readFile('app/Services/SaveAndNextApplicationService.php');
         $uploadAttachmentApi = $this->readFile('api/upload-attachment.php');
 
         $this->assertStringContainsString("wbgl_api_require_permission('guarantee_extend');", $extendApi);
@@ -60,7 +61,11 @@ final class GovernancePolicyWiringTest extends TestCase
         $this->assertStringContainsString('GuaranteeMutationPolicyService::evaluate', $extendApi);
         $this->assertStringContainsString('GuaranteeMutationPolicyService::evaluate', $reduceApi);
         $this->assertStringContainsString('GuaranteeMutationPolicyService::evaluate', $updateGuaranteeApi);
-        $this->assertStringContainsString('GuaranteeMutationPolicyService::evaluate', $saveAndNextApi);
+        $this->assertTrue(
+            str_contains($saveAndNextApi, 'GuaranteeMutationPolicyService::evaluate')
+                || str_contains($saveAndNextService, 'GuaranteeMutationPolicyService::evaluate'),
+            'save-and-next policy evaluation wiring is missing'
+        );
         $this->assertStringContainsString('GuaranteeMutationPolicyService::evaluate', $uploadAttachmentApi);
     }
 

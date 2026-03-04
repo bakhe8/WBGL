@@ -35,12 +35,7 @@ try {
     // Production Mode: Block test data creation
     $settings = Settings::getInstance();
     if ($isTestData && $settings->isProductionMode()) {
-        http_response_code(403);
-        echo json_encode([
-            'success' => false,
-            'error' => 'لا يمكن إنشاء بيانات اختبار في وضع الإنتاج'
-        ]);
-        exit;
+        wbgl_api_compat_fail(403, 'لا يمكن إنشاء بيانات اختبار في وضع الإنتاج', [], 'permission');
     }
 
     if (empty($text)) {
@@ -165,24 +160,25 @@ try {
         }
     }
     
-    // Return result with confidence scores
-    echo json_encode($result);
-    
-    // Set appropriate HTTP status
-    if (!$result['success']) {
-        http_response_code(400);
+    if (!is_array($result)) {
+        wbgl_api_compat_fail(500, 'Parse service returned invalid response', [], 'internal');
     }
+
+    if (!($result['success'] ?? false)) {
+        $message = (string)($result['error'] ?? 'فشل تحليل النص');
+        wbgl_api_compat_fail(400, $message, $result, 'validation');
+    }
+
+    // Return result with confidence scores
+    wbgl_api_compat_success($result);
 
 } catch (\Throwable $e) {
     // Error handling
     error_log("Parse-paste-v2 error: " . $e->getMessage());
     
-    http_response_code(400);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage(),
+    wbgl_api_compat_fail(400, $e->getMessage(), [
         'extracted' => [],
         'field_status' => [],
-        'confidence' => []
-    ]);
+        'confidence' => [],
+    ], 'validation');
 }

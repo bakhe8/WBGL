@@ -15,10 +15,8 @@ try {
     $rows = $service->exportRows(5000);
     echo json_encode($rows, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage(),
-    ], JSON_UNESCAPED_UNICODE);
+    if (function_exists('header_remove')) {
+        @header_remove('Content-Disposition');
+    }
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }
-

@@ -14,7 +14,6 @@ require_once __DIR__ . '/_bootstrap.php';
 use App\Services\SchedulerDeadLetterService;
 use App\Support\Input;
 
-wbgl_api_json_headers();
 wbgl_api_require_permission('manage_users');
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -26,20 +25,13 @@ try {
         $status = Input::string($_GET, 'status', 'open');
         $status = $status !== '' ? $status : 'open';
         $rows = SchedulerDeadLetterService::list($limit, $status);
-        echo json_encode([
-            'success' => true,
+        wbgl_api_compat_success([
             'data' => $rows,
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
 
     if ($method !== 'POST') {
-        http_response_code(405);
-        echo json_encode([
-            'success' => false,
-            'error' => 'Method not allowed',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        wbgl_api_compat_fail(405, 'Method not allowed');
     }
 
     $input = json_decode((string)file_get_contents('php://input'), true);
@@ -56,24 +48,17 @@ try {
     if ($action === 'resolve') {
         $note = Input::string($input, 'note', '');
         SchedulerDeadLetterService::resolve($id, $currentUser, $note !== '' ? $note : null);
-        echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE);
-        exit;
+        wbgl_api_compat_success([]);
     }
 
     if ($action === 'retry') {
         $result = SchedulerDeadLetterService::retry($id, $currentUser);
-        echo json_encode([
-            'success' => true,
+        wbgl_api_compat_success([
             'data' => $result,
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
 
     throw new RuntimeException('Unsupported action');
 } catch (Throwable $e) {
-    http_response_code(400);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage(),
-    ], JSON_UNESCAPED_UNICODE);
+    wbgl_api_compat_fail(400, $e->getMessage(), [], 'validation');
 }

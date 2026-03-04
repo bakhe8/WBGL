@@ -4,7 +4,10 @@
  * Login API
  */
 
-require_once __DIR__ . '/../app/Support/autoload.php';
+if (!defined('WBGL_API_SKIP_GLOBAL_CSRF')) {
+    define('WBGL_API_SKIP_GLOBAL_CSRF', true);
+}
+require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\AuthService;
 use App\Support\ApiTokenService;
@@ -16,12 +19,10 @@ header('Content-Type: application/json; charset=utf-8');
 
 try {
     if (!CsrfGuard::validateRequest()) {
-        http_response_code(419);
-        echo json_encode([
-            'success' => false,
-            'message' => 'رمز الطلب غير صالح. يرجى تحديث الصفحة ثم المحاولة.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        $message = 'رمز الطلب غير صالح. يرجى تحديث الصفحة ثم المحاولة.';
+        wbgl_api_compat_fail(419, $message, [
+            'message' => $message,
+        ], 'validation');
     }
 
     $input = json_decode(file_get_contents('php://input'), true);
@@ -35,20 +36,21 @@ try {
     $tokenName = trim((string)($input['token_name'] ?? 'web-client'));
 
     if (empty($username) || empty($password)) {
-        throw new \Exception('يرجى إدخال اسم المستخدم وكلمة المرور');
+        $message = 'يرجى إدخال اسم المستخدم وكلمة المرور';
+        wbgl_api_compat_fail(400, $message, [
+            'message' => $message,
+        ], 'validation');
     }
 
     $rate = LoginRateLimiter::check($username);
     if (!$rate['allowed']) {
         $retryAfter = (int)($rate['retry_after'] ?? 60);
         header('Retry-After: ' . $retryAfter);
-        http_response_code(429);
-        echo json_encode([
-            'success' => false,
-            'message' => 'تم تجاوز عدد محاولات تسجيل الدخول. حاول مرة أخرى لاحقًا.',
-            'retry_after' => $retryAfter
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        $message = 'تم تجاوز عدد محاولات تسجيل الدخول. حاول مرة أخرى لاحقًا.';
+        wbgl_api_compat_fail(429, $message, [
+            'message' => $message,
+            'retry_after' => $retryAfter,
+        ], 'validation');
     }
 
     if (AuthService::login($username, $password)) {
@@ -87,34 +89,29 @@ try {
             $payload['expires_at'] = $issued['expires_at'];
         }
 
-        echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+        wbgl_api_compat_success($payload);
     } else {
         $failure = LoginRateLimiter::recordFailure($username);
         if (!empty($failure['locked'])) {
             $retryAfter = (int)($failure['retry_after'] ?? 60);
             header('Retry-After: ' . $retryAfter);
-            http_response_code(429);
-            echo json_encode([
-                'success' => false,
-                'message' => 'تم تجاوز عدد محاولات تسجيل الدخول. حاول مرة أخرى لاحقًا.',
-                'retry_after' => $retryAfter
-            ], JSON_UNESCAPED_UNICODE);
-            exit;
+            $message = 'تم تجاوز عدد محاولات تسجيل الدخول. حاول مرة أخرى لاحقًا.';
+            wbgl_api_compat_fail(429, $message, [
+                'message' => $message,
+                'retry_after' => $retryAfter,
+            ], 'validation');
         }
 
-        http_response_code(401);
-        echo json_encode([
-            'success' => false,
-            'message' => 'اسم المستخدم أو كلمة المرور غير صحيحة'
-        ], JSON_UNESCAPED_UNICODE);
+        $message = 'اسم المستخدم أو كلمة المرور غير صحيحة';
+        wbgl_api_compat_fail(401, $message, [
+            'message' => $message,
+        ], 'permission');
     }
 } catch (\Throwable $e) {
     Logger::error('login_endpoint_failed', [
         'error' => $e->getMessage(),
     ]);
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'message' => $e->getMessage()
-    ], JSON_UNESCAPED_UNICODE);
+    wbgl_api_compat_fail(500, $e->getMessage(), [
+        'message' => $e->getMessage(),
+    ], 'internal');
 }

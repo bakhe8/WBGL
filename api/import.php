@@ -26,15 +26,18 @@ register_shutdown_function(function() {
             @mkdir($logsDir, 0755, true);
         }
         file_put_contents($logsDir . '/import_fatal.log', date('Y-m-d H:i:s') . " FATAL: " . json_encode($error) . PHP_EOL, FILE_APPEND);
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'Fatal Error', 'details' => $error]);
+        wbgl_api_compat_fail(500, 'Fatal Error', ['details' => $error], 'internal');
     }
 });
 
 try {
+    if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST') {
+        wbgl_api_compat_fail(405, 'Method Not Allowed');
+    }
+
     // Validate upload
     if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
-        throw new \RuntimeException('لم يتم استلام الملف أو حدث خطأ في الرفع');
+        wbgl_api_compat_fail(400, 'لم يتم استلام الملف أو حدث خطأ في الرفع', [], 'validation');
     }
 
     $file = $_FILES['file'];
@@ -42,12 +45,7 @@ try {
     // Production Mode: Block test data creation
     $settings = Settings::getInstance();
     if (!empty($_POST['is_test_data']) && $settings->isProductionMode()) {
-        http_response_code(403);
-        echo json_encode([
-            'success' => false,
-            'error' => 'لا يمكن إنشاء بيانات اختبار في وضع الإنتاج'
-        ]);
-        exit;
+        wbgl_api_compat_fail(403, 'لا يمكن إنشاء بيانات اختبار في وضع الإنتاج', [], 'permission');
     }
 
     // Validate extension
@@ -55,7 +53,7 @@ try {
     $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
 
     if (!in_array($ext, ['xlsx', 'xls'])) {
-        throw new \RuntimeException('نوع الملف غير مسموح. يجب أن يكون ملف Excel (.xlsx أو .xls)');
+        wbgl_api_compat_fail(400, 'نوع الملف غير مسموح. يجب أن يكون ملف Excel (.xlsx أو .xls)', [], 'validation');
     }
 
     // Move to temporary location
@@ -67,7 +65,7 @@ try {
     $tempPath = $uploadDir . '/temp_' . date('Ymd_His') . '_' . uniqid() . '.xlsx';
     
     if (!move_uploaded_file($file['tmp_name'], $tempPath)) {
-        throw new \RuntimeException('فشل نقل الملف المرفوع');
+        wbgl_api_compat_fail(500, 'فشل نقل الملف المرفوع', [], 'internal');
     }
 
     try {
@@ -117,9 +115,7 @@ try {
         } catch (\Throwable $e) { /* Ignore automation errors, keep import success */ }
         // ------------------------------
 
-        http_response_code(200);
-        echo json_encode([
-            'success' => true,
+        wbgl_api_compat_success([
             'data' => [
                 'imported' => $importedCount,
                 'imported_records' => $importedRecords,
@@ -152,13 +148,11 @@ try {
         FILE_APPEND
     );
     
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
+    wbgl_api_compat_fail(500, $e->getMessage(), [
         'message' => $e->getMessage(),
         'error' => [
             'file' => basename($e->getFile()),
             'line' => $e->getLine(),
-        ]
-    ]);
+        ],
+    ], 'internal');
 }

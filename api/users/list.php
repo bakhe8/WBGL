@@ -10,7 +10,6 @@ require_once __DIR__ . '/../_bootstrap.php';
 use App\Support\PermissionCapabilityCatalog;
 use App\Support\Database;
 
-header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_permission('manage_users');
 
 try {
@@ -96,8 +95,7 @@ try {
         ];
     }
 
-    echo json_encode([
-        'success' => true,
+    wbgl_api_compat_success([
         'users' => $users,
         'roles' => $roles,
         'permissions' => $permissions,
@@ -105,6 +103,5 @@ try {
         'permission_catalog' => $catalog,
     ]);
 } catch (\Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

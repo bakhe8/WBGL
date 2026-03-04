@@ -50,7 +50,15 @@ class TimelineRecorder
             $data = $decisionData;
         }
 
-        $rawData = json_decode($data['raw_data'], true);
+        $rawPayload = $data['raw_data'] ?? [];
+        if (is_string($rawPayload)) {
+            $decoded = json_decode($rawPayload, true);
+            $rawData = is_array($decoded) ? $decoded : [];
+        } elseif (is_array($rawPayload)) {
+            $rawData = $rawPayload;
+        } else {
+            $rawData = [];
+        }
 
         // 🔥 FIX: Fallback to raw_data if decision fields are null
         // This ensures snapshots ALWAYS have bank/supplier names
@@ -64,10 +72,10 @@ class TimelineRecorder
             'expiry_date' => $rawData['expiry_date'] ?? '',
             'issue_date' => $rawData['issue_date'] ?? '',
             'type' => $rawData['type'] ?? '',
-            'supplier_id' => $data['supplier_id'],
+            'supplier_id' => $data['supplier_id'] ?? null,
             'supplier_name' => $supplierName,  // ← Always filled
             'raw_supplier_name' => $rawData['supplier'] ?? '', // 🟢 explicit raw fallback
-            'bank_id' => $data['bank_id'],
+            'bank_id' => $data['bank_id'] ?? null,
             'bank_name' => $bankName,          // ← Always filled
             'raw_bank_name' => $rawData['bank'] ?? '',  // 🟢 explicit raw fallback
             'status' => $data['status'] ?? 'pending'

@@ -8,27 +8,20 @@ use App\Repositories\AttachmentRepository;
 use App\Services\GuaranteeMutationPolicyService;
 use App\Support\Database;
 
-wbgl_api_json_headers();
 wbgl_api_require_permission('attachments_upload');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'error' => 'Method not allowed']);
-    exit;
+    wbgl_api_compat_fail(405, 'Method not allowed');
 }
 
 $guaranteeId = $_POST['guarantee_id'] ?? null;
 if (!$guaranteeId) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'Missing guarantee_id']);
-    exit;
+    wbgl_api_compat_fail(400, 'Missing guarantee_id');
 }
 wbgl_api_require_guarantee_visibility((int)$guaranteeId);
 
 if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'File upload failed']);
-    exit;
+    wbgl_api_compat_fail(400, 'File upload failed');
 }
 
 $file = $_FILES['file'];
@@ -44,10 +37,7 @@ try {
         $stepStmt->execute([(int)$guaranteeId]);
         $currentStep = (string)($stepStmt->fetchColumn() ?: 'unknown');
 
-        http_response_code(403);
-        echo json_encode([
-            'success' => false,
-            'error' => 'Permission Denied',
+        wbgl_api_compat_fail(403, 'Permission Denied', [
             'message' => 'ليس لديك صلاحية رفع مرفقات على هذا السجل في حالته الحالية.',
             'required_permission' => 'attachments_upload',
             'current_step' => $currentStep,
@@ -55,9 +45,7 @@ try {
             'policy' => $policyContext,
             'surface' => $surface,
             'reasons' => $policyContext['reasons'] ?? [],
-            'request_id' => wbgl_api_request_id(),
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
 
     $actor = wbgl_api_current_user_display();
@@ -72,10 +60,7 @@ try {
         $stepStmt->execute([(int)$guaranteeId]);
         $currentStep = (string)($stepStmt->fetchColumn() ?: 'unknown');
 
-        http_response_code(403);
-        echo json_encode([
-            'success' => false,
-            'error' => 'released_read_only',
+        wbgl_api_compat_fail(403, 'released_read_only', [
             'message' => $policy['reason'],
             'required_permission' => 'attachments_upload',
             'current_step' => $currentStep,
@@ -83,9 +68,7 @@ try {
             'policy' => $policyContext,
             'surface' => $surface,
             'reasons' => $policyContext['reasons'] ?? [],
-            'request_id' => wbgl_api_request_id(),
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
 
     $uploadDir = __DIR__ . '/../storage/attachments/';
@@ -110,8 +93,7 @@ try {
             'uploaded_by' => $uploadedBy
         ]);
         
-        echo json_encode([
-            'success' => true, 
+        wbgl_api_compat_success([
             'file' => [
                 'id' => $id,
                 'name' => $file['name'],
@@ -121,17 +103,11 @@ try {
             'policy' => $policyContext,
             'surface' => $surface,
             'reasons' => $policyContext['reasons'] ?? [],
-            'request_id' => wbgl_api_request_id(),
-        ], JSON_UNESCAPED_UNICODE);
+        ]);
         
     } else {
         throw new Exception('Failed to move uploaded file');
     }
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage(),
-        'request_id' => wbgl_api_request_id(),
-    ], JSON_UNESCAPED_UNICODE);
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

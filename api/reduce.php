@@ -13,7 +13,7 @@ use App\Support\Database;
 use App\Support\Guard;
 use App\Support\Input;
 
-wbgl_api_require_permission('guarantee_reduce');
+wbgl_api_require_login();
 $policyContext = null;
 $surface = null;
 
@@ -33,6 +33,7 @@ try {
     }
 
     wbgl_api_require_guarantee_visibility((int)$guaranteeId);
+    wbgl_api_require_permission('guarantee_reduce');
     
     if ($newAmount === null) {
         throw new \RuntimeException('المبلغ غير صحيح');
@@ -53,10 +54,7 @@ try {
     $currentStep = (string)($stepStmt->fetchColumn() ?: 'unknown');
 
     if (!($surface['can_execute_actions'] ?? false) && !Guard::has('manage_data')) {
-        http_response_code(403);
-        echo json_encode([
-            'success' => false,
-            'error' => 'Permission Denied',
+        wbgl_api_compat_fail(403, 'Permission Denied', [
             'message' => 'لا يمكن تنفيذ التخفيض على هذا السجل في حالته الحالية.',
             'required_permission' => 'guarantee_reduce',
             'current_step' => $currentStep,
@@ -64,9 +62,7 @@ try {
             'policy' => $policyContext,
             'surface' => $surface,
             'reasons' => $policyContext['reasons'] ?? [],
-            'request_id' => wbgl_api_request_id(),
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
     $decisionRepo = new GuaranteeDecisionRepository($db);
     $guaranteeRepo = new GuaranteeRepository($db);
@@ -79,10 +75,7 @@ try {
     );
     $isBreakGlass = !empty($policy['break_glass']);
     if (!$policy['allowed']) {
-        http_response_code(403);
-        echo json_encode([
-            'success' => false,
-            'error' => 'released_read_only',
+        wbgl_api_compat_fail(403, 'released_read_only', [
             'message' => (string)($policy['reason'] ?? 'Operation is not allowed'),
             'required_permission' => 'guarantee_reduce',
             'current_step' => $currentStep,
@@ -90,9 +83,7 @@ try {
             'policy' => $policyContext,
             'surface' => $surface,
             'reasons' => $policyContext['reasons'] ?? [],
-            'request_id' => wbgl_api_request_id(),
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+        ]);
     }
     
     // ===== CRITICAL FIX: Validate new amount is LESS than current amount =====
@@ -206,7 +197,7 @@ try {
     echo '</div>';
     $html = (string)ob_get_clean();
 
-    wbgl_api_success([
+    wbgl_api_compat_success([
         'html' => $html,
         'guarantee_id' => (int)$guaranteeId,
         'status' => 'reduced',
@@ -218,14 +209,10 @@ try {
     ]);
     
 } catch (\Throwable $e) {
-    http_response_code(400);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage(),
+    wbgl_api_compat_fail(400, $e->getMessage(), [
         'reason_code' => 'REDUCE_OPERATION_FAILED',
         'policy' => $policyContext,
         'surface' => $surface,
         'reasons' => is_array($policyContext) ? ($policyContext['reasons'] ?? []) : [],
-        'request_id' => wbgl_api_request_id(),
-    ], JSON_UNESCAPED_UNICODE);
+    ], 'validation');
 }

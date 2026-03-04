@@ -15,7 +15,6 @@ use App\Support\Settings;
 use App\Models\Guarantee;
 use App\Models\GuaranteeDecision;
 
-header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_permission('manual_entry');
 
 try {
@@ -27,12 +26,7 @@ try {
     // Production Mode: Block test data creation
     $settings = Settings::getInstance();
     if (!empty($input['is_test_data']) && $settings->isProductionMode()) {
-        http_response_code(403);
-        echo json_encode([
-            'success' => false,
-            'error' => 'لا يمكن إنشاء بيانات اختبار في وضع الإنتاج'
-        ]);
-        exit;
+        wbgl_api_compat_fail(403, 'لا يمكن إنشاء بيانات اختبار في وضع الإنتاج', [], 'permission');
     }
 
     // Validate required fields
@@ -143,9 +137,11 @@ try {
         error_log("Auto-matching failed (non-critical): " . $e->getMessage());
     }
 
-    echo json_encode(['success' => true, 'id' => $guaranteeId, 'message' => 'تم إنشاء الضمان بنجاح']);
+    wbgl_api_compat_success([
+        'id' => $guaranteeId,
+        'message' => 'تم إنشاء الضمان بنجاح',
+    ]);
 
 } catch (\Throwable $e) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    wbgl_api_compat_fail(400, $e->getMessage());
 }

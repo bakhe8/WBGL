@@ -7,19 +7,19 @@ header('Content-Type: application/json');
 wbgl_api_require_permission('import_excel');
 
 try {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        throw new Exception('Invalid method');
+    if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST') {
+        wbgl_api_compat_fail(405, 'Method Not Allowed');
     }
 
     if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
-        throw new Exception('File upload failed');
+        wbgl_api_compat_fail(400, 'File upload failed', [], 'validation');
     }
 
     $json = file_get_contents($_FILES['file']['tmp_name']);
     $data = json_decode($json, true);
 
     if (!is_array($data)) {
-        throw new Exception('Invalid JSON format');
+        wbgl_api_compat_fail(400, 'Invalid JSON format', [], 'validation');
     }
 
     $db = Database::connect();
@@ -75,9 +75,12 @@ try {
         }
     }
 
-    echo json_encode(['success' => true, 'message' => "تم الاستيراد: $inserts إضافة، $updates تحديث"]);
+    wbgl_api_compat_success([
+        'message' => "تم الاستيراد: $inserts إضافة، $updates تحديث",
+        'inserted' => $inserts,
+        'updated' => $updates,
+    ]);
 
-} catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+} catch (Throwable $e) {
+    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }
