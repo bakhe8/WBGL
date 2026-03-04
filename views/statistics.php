@@ -151,153 +151,26 @@ try {
     $efficiencyRatio = StatisticsDashboardService::calculateEfficiencyRatio($overview);
 
     // ============================================
-    // SECTION 2: BATCH OPERATIONS ANALYSIS
+    // SECTION 2 + 3: BATCH OPERATIONS + BANKS/SUPPLIERS
     // ============================================
-    // Analyze recent batches: Content vs Context
-    $batchStats = $db->query("
-        SELECT 
-            o.batch_identifier,
-            COALESCE(MAX(m.batch_name), '{$statsBatchPrefixMarker}' || SUBSTR(o.batch_identifier, 1, 15)) as batch_name,
-            MAX(o.occurred_at) as import_date,
-            COUNT(o.id) as total_rows,
-            SUM(CASE WHEN g.import_source = o.batch_identifier THEN 1 ELSE 0 END) as new_items,
-            SUM(CASE WHEN g.import_source != o.batch_identifier THEN 1 ELSE 0 END) as recurring_items
-        FROM guarantee_occurrences o
-        JOIN guarantees g ON o.guarantee_id = g.id
-        LEFT JOIN batch_metadata m ON o.batch_identifier = m.import_source
-        $whereG
-        GROUP BY o.batch_identifier
-        ORDER BY import_date DESC
-        LIMIT 5
-    ")->fetchAll(PDO::FETCH_ASSOC);
-
-    // Identify Most Frequent Assets (Top Recurring)
-    $topRecurring = $db->query("
-        SELECT 
-            g.guarantee_number,
-            MAX(COALESCE(s.official_name, '{$statsUnknownMarker}')) as supplier,
-            MAX(COALESCE(b.arabic_name, '{$statsUnknownMarker}')) as bank,
-            COUNT(o.id) as occurrence_count,
-            MAX(g.imported_at) as imported_at
-        FROM guarantee_occurrences o
-        JOIN guarantees g ON o.guarantee_id = g.id
-        LEFT JOIN guarantee_decisions d ON g.id = d.guarantee_id
-        LEFT JOIN suppliers s ON d.supplier_id = s.id
-        LEFT JOIN banks b ON d.bank_id = b.id
-        $whereG
-        GROUP BY g.id, g.guarantee_number
-        ORDER BY occurrence_count DESC, imported_at DESC
-        LIMIT 5
-    ")->fetchAll(PDO::FETCH_ASSOC);
-
-    // ============================================
-    // SECTION 3: BANKS & SUPPLIERS (Existing)
-    // ============================================
-    $topSuppliers = $db->query("
-        SELECT s.official_name, COUNT(*) as count
-        FROM guarantee_decisions d
-        JOIN suppliers s ON d.supplier_id = s.id
-        JOIN guarantees g ON d.guarantee_id = g.id 
-        $whereG
-        GROUP BY s.id
-        ORDER BY count DESC
-        LIMIT 10
-    ")->fetchAll(PDO::FETCH_ASSOC);
-
-    $topBanks = $db->query("
-        SELECT 
-            b.arabic_name as bank_name,
-            COUNT(*) as count,
-            SUM(CAST({$statsJsonAmountExpr} AS REAL)) as total_amount,
-            (SELECT COUNT(*) FROM guarantee_history h 
-             JOIN guarantee_decisions d2 ON h.guarantee_id = d2.guarantee_id
-             WHERE d2.bank_id = b.id AND h.event_subtype = 'extension') as extensions
-        FROM guarantee_decisions d
-        JOIN banks b ON d.bank_id = b.id
-        JOIN guarantees g ON d.guarantee_id = g.id
-        $whereG
-        GROUP BY b.id
-        ORDER BY count DESC
-        LIMIT 10
-    ")->fetchAll(PDO::FETCH_ASSOC);
-
-    $stableSuppliers = $db->query("
-        SELECT s.official_name, COUNT(DISTINCT d.guarantee_id) as count
-        FROM suppliers s
-        JOIN guarantee_decisions d ON s.id = d.supplier_id
-        JOIN guarantees g ON d.guarantee_id = g.id
-        $whereG
-        GROUP BY s.id
-        ORDER BY count DESC
-        LIMIT 5
-    ")->fetchAll(PDO::FETCH_ASSOC);
-    
-    $riskySuppliers = $db->query("
-        SELECT 
-            s.official_name,
-            COUNT(DISTINCT d.guarantee_id) as total,
-            COUNT(DISTINCT CASE WHEN h.event_subtype = 'extension' THEN h.guarantee_id END) as extensions,
-            COUNT(DISTINCT CASE WHEN h.event_subtype = 'reduction' THEN h.guarantee_id END) as reductions,
-            ROUND(((CAST(COUNT(DISTINCT CASE WHEN h.event_subtype = 'extension' THEN h.guarantee_id END) AS REAL) * 0.6 + 
-                   CAST(COUNT(DISTINCT CASE WHEN h.event_subtype = 'reduction' THEN h.guarantee_id END) AS REAL) * 0.4) / 
-                   CAST(COUNT(DISTINCT d.guarantee_id) AS REAL) * 100)::numeric, 1) as risk_score
-        FROM suppliers s
-        JOIN guarantee_decisions d ON s.id = d.supplier_id
-        JOIN guarantees g ON d.guarantee_id = g.id
-        LEFT JOIN guarantee_history h ON d.guarantee_id = h.guarantee_id
-        $whereG
-        GROUP BY s.id
-        HAVING COUNT(DISTINCT d.guarantee_id) >= 2
-        ORDER BY risk_score DESC
-        LIMIT 10
-    ")->fetchAll(PDO::FETCH_ASSOC);
-    
-    $challengingSuppliers = $db->query("
-        SELECT s.official_name, COUNT(*) as manual_count
-        FROM guarantee_decisions d
-        JOIN suppliers s ON d.supplier_id = s.id
-        JOIN guarantees g ON d.guarantee_id = g.id
-        WHERE (d.decision_source = 'manual' OR d.decision_source IS NULL)
-        $andG
-        GROUP BY s.id
-        ORDER BY manual_count DESC
-        LIMIT 5
-    ")->fetchAll(PDO::FETCH_ASSOC);
-    
-    $uniqueCounts = $db->query("
-        SELECT 
-            COUNT(DISTINCT d.supplier_id) as suppliers,
-            COUNT(DISTINCT d.bank_id) as banks
-        FROM guarantee_decisions d
-        JOIN guarantees g ON d.guarantee_id = g.id
-        $whereG
-    ")->fetch(PDO::FETCH_ASSOC);
-    
-    $bankSupplierPairs = $db->query("
-        SELECT 
-            b.arabic_name as bank,
-            s.official_name as supplier,
-            COUNT(*) as count
-        FROM guarantee_decisions d
-        JOIN banks b ON d.bank_id = b.id
-        JOIN suppliers s ON d.supplier_id = s.id
-        JOIN guarantees g ON d.guarantee_id = g.id
-        $whereG
-        GROUP BY b.id, s.id
-        ORDER BY count DESC
-        LIMIT 10
-    ")->fetchAll(PDO::FETCH_ASSOC);
-    
-    $exclusiveSuppliers = $db->query("
-        SELECT COUNT(*) FROM (
-            SELECT d.supplier_id
-            FROM guarantee_decisions d
-            JOIN guarantees g ON d.guarantee_id = g.id
-            $whereG
-            GROUP BY d.supplier_id
-            HAVING COUNT(DISTINCT d.bank_id) = 1
-        )
-    ")->fetchColumn();
+    $batchAndSupplier = StatisticsDashboardService::fetchBatchAndSupplierBlocks(
+        $db,
+        $whereG,
+        $andG,
+        $statsBatchPrefixMarker,
+        $statsUnknownMarker,
+        $statsJsonAmountExpr
+    );
+    $batchStats = is_array($batchAndSupplier['batchStats'] ?? null) ? $batchAndSupplier['batchStats'] : [];
+    $topRecurring = is_array($batchAndSupplier['topRecurring'] ?? null) ? $batchAndSupplier['topRecurring'] : [];
+    $topSuppliers = is_array($batchAndSupplier['topSuppliers'] ?? null) ? $batchAndSupplier['topSuppliers'] : [];
+    $topBanks = is_array($batchAndSupplier['topBanks'] ?? null) ? $batchAndSupplier['topBanks'] : [];
+    $stableSuppliers = is_array($batchAndSupplier['stableSuppliers'] ?? null) ? $batchAndSupplier['stableSuppliers'] : [];
+    $riskySuppliers = is_array($batchAndSupplier['riskySuppliers'] ?? null) ? $batchAndSupplier['riskySuppliers'] : [];
+    $challengingSuppliers = is_array($batchAndSupplier['challengingSuppliers'] ?? null) ? $batchAndSupplier['challengingSuppliers'] : [];
+    $uniqueCounts = is_array($batchAndSupplier['uniqueCounts'] ?? null) ? $batchAndSupplier['uniqueCounts'] : ['suppliers' => 0, 'banks' => 0];
+    $bankSupplierPairs = is_array($batchAndSupplier['bankSupplierPairs'] ?? null) ? $batchAndSupplier['bankSupplierPairs'] : [];
+    $exclusiveSuppliers = (int)($batchAndSupplier['exclusiveSuppliers'] ?? 0);
 
 
     // ============================================

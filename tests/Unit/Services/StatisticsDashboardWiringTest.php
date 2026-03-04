@@ -21,10 +21,12 @@ final class StatisticsDashboardWiringTest extends TestCase
         $this->assertStringContainsString('use App\\Services\\StatisticsDashboardService;', $view);
         $this->assertStringContainsString('StatisticsDashboardService::fetchOverview(', $view);
         $this->assertStringContainsString('StatisticsDashboardService::calculateEfficiencyRatio(', $view);
+        $this->assertStringContainsString('StatisticsDashboardService::fetchBatchAndSupplierBlocks(', $view);
 
         $this->assertStringContainsString('final class StatisticsDashboardService', $service);
         $this->assertStringContainsString('public static function fetchOverview(', $service);
         $this->assertStringContainsString('public static function calculateEfficiencyRatio(', $service);
+        $this->assertStringContainsString('public static function fetchBatchAndSupplierBlocks(', $service);
     }
 
     private function readFile(string $relativePath): string
@@ -34,4 +36,3 @@ final class StatisticsDashboardWiringTest extends TestCase
         return (string)file_get_contents($path);
     }
 }
-

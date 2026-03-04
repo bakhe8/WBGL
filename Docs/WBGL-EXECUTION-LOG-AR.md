@@ -129,6 +129,16 @@
   - app/Services/StatisticsDashboardService.php
   - tests/Unit/Services/StatisticsDashboardWiringTest.php
 
+## 2026-03-04T01:39:31Z | P9-01 (PROGRESS)
+- المرحلة: P9 — تفكيك شاشات العرض الثقيلة
+- المهمة: فصل منطق البيانات في statistics إلى خدمة لوحة مؤشرات
+- الربط المرجعي: H-010
+- الدليل: تم نقل كتلة batch/suppliers/banks من `views/statistics.php` إلى `StatisticsDashboardService::fetchBatchAndSupplierBlocks` مع نجاح Unit + Integration.
+- الملفات المرجعية:
+  - views/statistics.php
+  - app/Services/StatisticsDashboardService.php
+  - tests/Unit/Services/StatisticsDashboardWiringTest.php
+
 ## 2026-03-04T01:19:44+00:00 | P8-01
 - المرحلة: P8 — حوكمة التنفيذ v1.1
 - المهمة: إغلاق الأدلة والتوثيق التشغيلي للمرحلة الجديدة
