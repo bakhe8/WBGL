@@ -1,30 +1,20 @@
 <?php
 require_once __DIR__ . '/../app/Support/autoload.php';
 
-use App\Support\AuthService;
-use App\Support\DirectionResolver;
-use App\Support\LocaleResolver;
-use App\Support\Settings;
+use App\Services\SettingsDashboardService;
 use App\Support\ViewPolicy;
 
 ViewPolicy::guardView('settings.php');
 
-// Load current settings
-$settings = new Settings();
-$currentSettings = $settings->all();
-$currentUser = AuthService::getCurrentUser();
-$localeInfo = LocaleResolver::resolve(
-    $currentUser,
-    $settings,
+$settingsViewModel = SettingsDashboardService::buildViewModel(
     $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? null
 );
-$pageLocale = (string)($localeInfo['locale'] ?? 'ar');
-$directionInfo = DirectionResolver::resolve(
-    $pageLocale,
-    $currentUser?->preferredDirection ?? 'auto',
-    (string)$settings->get('DEFAULT_DIRECTION', 'auto')
-);
-$pageDirection = (string)($directionInfo['direction'] ?? ($pageLocale === 'ar' ? 'rtl' : 'ltr'));
+$currentSettings = is_array($settingsViewModel['currentSettings'] ?? null)
+    ? $settingsViewModel['currentSettings']
+    : [];
+$pageLocale = (string)($settingsViewModel['pageLocale'] ?? 'ar');
+$pageDirection = (string)($settingsViewModel['pageDirection'] ?? ($pageLocale === 'ar' ? 'rtl' : 'ltr'));
+$currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? date('Y-m-d H:i:s'));
 ?>
 <!DOCTYPE html>
 <html lang="<?= htmlspecialchars($pageLocale, ENT_QUOTES, 'UTF-8') ?>" dir="<?= htmlspecialchars($pageDirection, ENT_QUOTES, 'UTF-8') ?>">
@@ -393,14 +383,7 @@ $pageDirection = (string)($directionInfo['direction'] ?? ($pageLocale === 'ar' ?
                         </select>
                         <small class="form-help">
                             <span data-i18n="settings.general.system.current_time_label">التوقيت الحالي:</span>
-                            <?php
-                            use App\Support\DateTime as DT;
-                            try {
-                                echo date('Y-m-d' . ' ' . 'H:i:s') . ' (' . date_default_timezone_get() . ')';
-                            } catch (Exception $e) {
-                                echo date('Y-m-d' . ' ' . 'H:i:s');
-                            }
-                            ?>
+                            <?= htmlspecialchars($currentDateTimeLabel, ENT_QUOTES, 'UTF-8') ?>
                         </small>
                     </div>
 	

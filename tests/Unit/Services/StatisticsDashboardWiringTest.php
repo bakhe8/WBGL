@@ -24,6 +24,11 @@ final class StatisticsDashboardWiringTest extends TestCase
         $this->assertStringContainsString('StatisticsDashboardService::fetchBatchAndSupplierBlocks(', $view);
         $this->assertStringContainsString('StatisticsDashboardService::fetchTimePerformanceBlocks(', $view);
         $this->assertStringContainsString('StatisticsDashboardService::fetchExpirationActionBlocks(', $view);
+        $this->assertStringContainsString('StatisticsDashboardService::fetchAiLearningBlocks(', $view);
+        $this->assertStringContainsString('StatisticsDashboardService::fetchFinancialTypeBlocks(', $view);
+        $this->assertStringContainsString('StatisticsDashboardService::fetchUrgentList(', $view);
+        $this->assertStringNotContainsString('$db->query(', $view);
+        $this->assertStringNotContainsString('$db->prepare(', $view);
 
         $this->assertStringContainsString('final class StatisticsDashboardService', $service);
         $this->assertStringContainsString('public static function fetchOverview(', $service);
@@ -31,6 +36,9 @@ final class StatisticsDashboardWiringTest extends TestCase
         $this->assertStringContainsString('public static function fetchBatchAndSupplierBlocks(', $service);
         $this->assertStringContainsString('public static function fetchTimePerformanceBlocks(', $service);
         $this->assertStringContainsString('public static function fetchExpirationActionBlocks(', $service);
+        $this->assertStringContainsString('public static function fetchAiLearningBlocks(', $service);
+        $this->assertStringContainsString('public static function fetchFinancialTypeBlocks(', $service);
+        $this->assertStringContainsString('public static function fetchUrgentList(', $service);
     }
 
     private function readFile(string $relativePath): string

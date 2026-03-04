@@ -233,119 +233,47 @@ try {
     // ============================================
     // SECTION 5: AI & MACHINE LEARNING
     // ============================================
-    $aiStats = $db->query("
-        SELECT
-            COUNT(*) as total,
-            COUNT(CASE WHEN d.decision_source IN ('auto', 'auto_match', 'ai_match', 'ai_quick', 'direct_match', 'auto_create_on_save', 'auto_match_bank', 'auto_bank_resolve') THEN 1 END) as ai_matches,
-            COUNT(CASE WHEN d.decision_source = 'manual' OR d.decision_source IS NULL THEN 1 END) as manual
-        FROM guarantee_decisions d
-        JOIN guarantees g ON d.guarantee_id = g.id
-        $whereG
-    ")->fetch(PDO::FETCH_ASSOC);
-    
-    $aiMatchRate = $aiStats['total'] > 0 ? round(($aiStats['ai_matches'] / $aiStats['total']) * 100, 1) : 0;
-    $manualIntervention = $aiStats['total'] > 0 ? round(($aiStats['manual'] / $aiStats['total']) * 100, 1) : 0;
-    $automationRate = 100 - $manualIntervention;
-    
-    $autoMatchEvents = $db->query("
-        SELECT COUNT(*) 
-        FROM guarantee_history h
-        JOIN guarantees g ON h.guarantee_id = g.id
-        WHERE h.event_type IN ('auto_matched', 'modified')
-        AND h.event_subtype IN ('auto_match', 'bank_match', 'ai_match')
+    $aiLearning = StatisticsDashboardService::fetchAiLearningBlocks(
+        $db,
+        $whereG,
         $andG
-    ")->fetchColumn();
-    
-    // ML from learning_confirmations
-    $mlStats = ['confirmations' => 0, 'rejections' => 0, 'total' => 0];
-    $confirmedPatterns = [];
-    $rejectedPatterns = [];
-    $confidenceDistribution = ['high' => 0, 'medium' => 0, 'low' => 0];
-    
-    try {
-        $mlStatsCheckStmt = $db->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'learning_confirmations' LIMIT 1");
-        $mlStatsCheckStmt->execute();
-        $mlStatsCheck = $mlStatsCheckStmt->fetch();
-        if ($mlStatsCheck) {
-             $mlStats = $db->query("
-                SELECT 
-                    COUNT(CASE WHEN action = 'confirm' THEN 1 END) as confirmations,
-                    COUNT(CASE WHEN action = 'reject' THEN 1 END) as rejections,
-                    COUNT(*) as total
-                FROM learning_confirmations
-            ")->fetch(PDO::FETCH_ASSOC);
-            
-            $confirmedPatterns = $db->query("
-                SELECT lc.raw_supplier_name, s.official_name, COUNT(*) as count
-                FROM learning_confirmations lc
-                JOIN suppliers s ON lc.supplier_id = s.id
-                WHERE lc.action = 'confirm'
-                GROUP BY lc.raw_supplier_name, s.official_name
-                ORDER BY count DESC
-                LIMIT 5
-            ")->fetchAll(PDO::FETCH_ASSOC);
-            
-            $rejectedPatterns = $db->query("
-                SELECT lc.raw_supplier_name, s.official_name, COUNT(*) as count
-                FROM learning_confirmations lc
-                JOIN suppliers s ON lc.supplier_id = s.id
-                WHERE lc.action = 'reject'
-                GROUP BY lc.raw_supplier_name, s.official_name
-                ORDER BY count DESC
-                LIMIT 5
-            ")->fetchAll(PDO::FETCH_ASSOC);
-        }
-
-        $learningPatternsCheckStmt = $db->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'learning_patterns' LIMIT 1");
-        $learningPatternsCheckStmt->execute();
-        $learningPatternsCheck = $learningPatternsCheckStmt->fetch();
-        if ($learningPatternsCheck) {
-            $confidenceDistribution = $db->query("
-                SELECT 
-                    COUNT(CASE WHEN confidence >= 80 THEN 1 END) as high,
-                    COUNT(CASE WHEN confidence >= 50 AND confidence < 80 THEN 1 END) as medium,
-                    COUNT(CASE WHEN confidence < 50 THEN 1 END) as low
-                FROM learning_patterns
-            ")->fetch(PDO::FETCH_ASSOC);
-        }
-    } catch (Exception $e) {
-        // Tables don't exist
-    }
-    
-    $mlAccuracy = $mlStats['total'] > 0 ? round(($mlStats['confirmations'] / $mlStats['total']) * 100, 1) : 0;
-    $timeSaved = round(($aiStats['ai_matches'] ?? 0) * 2 / 60, 1); // 2 min per decision
-    
-    // ✅ Fix: ROI Variables (Moved to top of file)
-
+    );
+    $aiStats = is_array($aiLearning['aiStats'] ?? null) ? $aiLearning['aiStats'] : ['total' => 0, 'ai_matches' => 0, 'manual' => 0];
+    $aiMatchRate = (float)($aiLearning['aiMatchRate'] ?? 0);
+    $manualIntervention = (float)($aiLearning['manualIntervention'] ?? 0);
+    $automationRate = (float)($aiLearning['automationRate'] ?? 0);
+    $autoMatchEvents = (int)($aiLearning['autoMatchEvents'] ?? 0);
+    $mlStats = is_array($aiLearning['mlStats'] ?? null) ? $aiLearning['mlStats'] : ['confirmations' => 0, 'rejections' => 0, 'total' => 0];
+    $confirmedPatterns = is_array($aiLearning['confirmedPatterns'] ?? null) ? $aiLearning['confirmedPatterns'] : [];
+    $rejectedPatterns = is_array($aiLearning['rejectedPatterns'] ?? null) ? $aiLearning['rejectedPatterns'] : [];
+    $confidenceDistribution = is_array($aiLearning['confidenceDistribution'] ?? null) ? $aiLearning['confidenceDistribution'] : ['high' => 0, 'medium' => 0, 'low' => 0];
+    $mlAccuracy = (float)($aiLearning['mlAccuracy'] ?? 0);
+    $timeSaved = (float)($aiLearning['timeSaved'] ?? 0);
 
     // ============================================
     // SECTION 6: FINANCIAL & TYPES
     // ============================================
-    // 🔧 REVERTED: Normalization should happen at import time, not here.
-    $typeDistribution = $db->query("
-        SELECT {$statsJsonRawTypeExpr} as type, COUNT(*) as count
-        FROM guarantees
-        $whereD
-        GROUP BY type
-        ORDER BY count DESC
-    ")->fetchAll(PDO::FETCH_ASSOC);
-    
-    $amountCorrelation = $db->query("
-        SELECT 
-            CASE 
-                WHEN CAST({$statsJsonAmountExpr} AS REAL) < 100000 THEN 'RANGE_SMALL'
-                WHEN CAST({$statsJsonAmountExpr} AS REAL) < 500000 THEN 'RANGE_MEDIUM'
-                ELSE 'RANGE_LARGE'
-            END as range,
-            COUNT(DISTINCT g.id) as total,
-            COUNT(DISTINCT h.guarantee_id) as extended,
-            ROUND((CAST(COUNT(DISTINCT h.guarantee_id) AS REAL) / CAST(COUNT(DISTINCT g.id) AS REAL) * 100)::numeric, 1) as ext_rate
-        FROM guarantees g
-        LEFT JOIN guarantee_history h ON g.id = h.guarantee_id AND h.event_subtype = 'extension'
-        $whereG
-        GROUP BY range
-        ORDER BY ext_rate DESC
-    ")->fetchAll(PDO::FETCH_ASSOC);
+    $financialType = StatisticsDashboardService::fetchFinancialTypeBlocks(
+        $db,
+        $whereD,
+        $whereG,
+        $statsJsonRawTypeExpr,
+        $statsJsonAmountExpr
+    );
+    $typeDistribution = is_array($financialType['typeDistribution'] ?? null) ? $financialType['typeDistribution'] : [];
+    $amountCorrelation = is_array($financialType['amountCorrelation'] ?? null) ? $financialType['amountCorrelation'] : [];
+
+    // Urgent action table (was inline query in view)
+    $urgentList = StatisticsDashboardService::fetchUrgentList(
+        $db,
+        $statsUnknownMarker,
+        $statsJsonAmountExpr,
+        $statsJsonExpiryExpr,
+        $statsJsonExpiryDateExpr,
+        $statsNowDateExpr,
+        $statsPlus90DateExpr,
+        $andG
+    );
 
     // ============================================
     // SECTION 0: ROI & EXECUTIVE VALUE (NEW)
@@ -412,6 +340,7 @@ try {
     $timeSaved = 0;
     $typeDistribution = [];
     $amountCorrelation = [];
+    $urgentList = [];
 }
 ?>
 <!DOCTYPE html>
@@ -762,23 +691,6 @@ try {
                             <span data-i18n="statistics.ui.txt_f519c908">أعلى 5 مبالغ قريبة الانتهاء</span>
                             <span class="text-muted font-normal" data-i18n="statistics.ui.txt_c3fdfe6a">تنبيه عالي الأهمية</span>
                         </div>
-                        <?php
-                        $urgentList = $db->query("
-                            SELECT g.id, g.guarantee_number, 
-                                   COALESCE(s.official_name, '{$statsUnknownMarker}') as supplier,
-                                   CAST({$statsJsonAmountExpr} AS REAL) as amount,
-                                   {$statsJsonExpiryExpr} as expiry_date
-                            FROM guarantees g
-                            LEFT JOIN guarantee_decisions d ON g.id = d.guarantee_id
-                            LEFT JOIN suppliers s ON d.supplier_id = s.id
-                            WHERE {$statsJsonExpiryExpr} IS NOT NULL
-                            AND {$statsJsonExpiryDateExpr} BETWEEN {$statsNowDateExpr} AND {$statsPlus90DateExpr}
-                            AND (d.is_locked IS NULL OR d.is_locked = FALSE)
-                            $andG
-                            ORDER BY amount DESC
-                            LIMIT 5
-                        ")->fetchAll(PDO::FETCH_ASSOC);
-                        ?>
                         <table class="table table-sm text-xs">
                             <tbody class="stats-tbody-borderless">
                                 <?php if (empty($urgentList)): ?>

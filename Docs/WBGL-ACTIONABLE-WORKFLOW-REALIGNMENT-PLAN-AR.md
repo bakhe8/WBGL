@@ -1626,9 +1626,9 @@ php vendor/bin/phpunit tests/Integration/EnterpriseApiFlowsTest.php --log-junit 
 
 ---
 
-## 3.2) المرحلة التالية v1.2 (جارية)
+## 3.2) المرحلة التالية v1.2 (مكتملة)
 
-### TASK H-010 (IN_PROGRESS) - فصل منطق بيانات شاشة `statistics` إلى خدمة مخصصة
+### TASK H-010 (DONE) - فصل منطق بيانات شاشة `statistics` إلى خدمة مخصصة
 - الهدف: تقليل تعقيد `views/statistics.php` عبر نقل استعلامات وتجميع بيانات اللوحة إلى `StatisticsDashboardService`.
 - الملفات المستهدفة:
   - `views/statistics.php`
@@ -1646,40 +1646,57 @@ php vendor/bin/phpunit tests/Integration/EnterpriseApiFlowsTest.php --log-junit 
   2. انخفاض ملموس في حجم منطق SQL داخل `views/statistics.php`.
   3. `Unit + Integration` خضراء بالكامل.
 
-- تقدم التنفيذ الحالي:
-  1. تم إنشاء `app/Services/StatisticsDashboardService.php`.
-  2. تم نقل كتلة `overview metrics` وحساب `efficiencyRatio` من `views/statistics.php` إلى الخدمة.
-  3. تم نقل كتلة `batch + suppliers/banks` إلى الخدمة (`fetchBatchAndSupplierBlocks`) مع إبقاء السلوك كما هو.
-  4. تم نقل كتلة `time/performance` إلى الخدمة (`fetchTimePerformanceBlocks`) مع الإبقاء على حسابات العرض نفسها داخل الصفحة.
-  5. تم نقل كتلة `expiration/actions` إلى الخدمة (`fetchExpirationActionBlocks`) مع الحفاظ على نفس ناتج المؤشرات.
-  6. تمت إضافة/تحديث اختبار wiring (`StatisticsDashboardWiringTest`) والتحقق ناجح: `Unit` أخضر (`121/121`, `926 assertions`) و`EnterpriseApiFlowsTest` أخضر (`45/45`, `1033 assertions`).
+- ملخص التنفيذ:
+  1. تم نقل جميع كتل SQL من `views/statistics.php` إلى `StatisticsDashboardService` بما يشمل: overview, batch/suppliers, time/performance, expiration/actions, AI/ML, financial/types, urgent list.
+  2. أصبحت الصفحة `statistics.php` طبقة عرض فقط (adapter) وتم تثبيت ذلك باختبار wiring يمنع وجود `$db->query/$db->prepare` داخل الصفحة.
+  3. التحقق ناجح: `Unit` أخضر (`121/121`, `934 assertions`) و`EnterpriseApiFlowsTest` أخضر (`45/45`, `1033 assertions`) و`sequential guard` أخضر.
 
-### TASK H-020 (PENDING) - فصل منطق بيانات شاشة `settings` إلى خدمة قراءة/حوكمة
+### TASK H-020 (DONE) - فصل منطق بيانات شاشة `settings` إلى خدمة قراءة/حوكمة
 - الهدف: نقل استعلامات الإعدادات والتدقيق من `views/settings.php` إلى خدمة واضحة الحدود.
 - الملفات المستهدفة:
   - `views/settings.php`
   - `app/Services/SettingsDashboardService.php` (جديد/توسعة)
 
-### TASK H-030 (PENDING) - تقرير دوري لانحراف الصلاحيات وربطه ضمن CI
+- ملخص التنفيذ:
+  1. تم إنشاء `SettingsDashboardService::buildViewModel` لتجميع bootstrap data (settings snapshot + locale/direction + current time label).
+  2. تم تبسيط `views/settings.php` إلى طبقة عرض تعتمد `view-model` بدل استدعاء `AuthService/LocaleResolver/DirectionResolver` مباشرة.
+  3. تمت إضافة اختبار wiring (`SettingsDashboardWiringTest`) مع نجاح `Unit + Integration + guard`.
+
+### TASK H-030 (DONE) - تقرير دوري لانحراف الصلاحيات وربطه ضمن CI
 - الهدف: كشف drift في role-permission matrix وإخراج تقرير واضح قبل الدمج.
 - الملفات المستهدفة:
   - `app/Scripts/permissions-drift-report.php`
   - `.github/workflows/ci.yml`
   - `Docs/` (artifact summary)
 
-### TASK H-040 (PENDING) - توسيع `data-integrity-check` وإضافة artifact تفصيلي
+- ملخص التنفيذ:
+  1. تم إنشاء `app/Scripts/permissions-drift-report.php` لمقارنة صلاحيات DB مقابل مرجع الكود (`PermissionCapabilityCatalog + UiPolicy + ApiPolicyMatrix`).
+  2. تم ربط التقرير في CI وإنتاج artifact بصيغتي JSON/Markdown مع رفعه ضمن `wbgl-governance-artifacts`.
+  3. تم توثيق آلية التقرير في `Docs/PERMISSIONS-DRIFT-REPORT-AR.md` مع نتيجة تشغيل محلية `PASS`.
+
+### TASK H-040 (DONE) - توسيع `data-integrity-check` وإضافة artifact تفصيلي
 - الهدف: توسيع invariants وفصل إخراج النتائج إلى JSON/Markdown قابل للتدقيق الإداري.
 - الملفات المستهدفة:
   - `app/Scripts/data-integrity-check.php`
   - `.github/workflows/ci.yml`
   - `Docs/` (نتائج الفحص)
 
-### TASK H-050 (PENDING) - إغلاق التوثيق التشغيلي للمرحلة v1.2
+- ملخص التنفيذ:
+  1. تم توسيع `data-integrity-check` ليشمل invariants إضافية (status/signatures/orphans/role-user permission links) مع دعم `--output-json/--output-md/--strict-warn`.
+  2. تم ربط artifact سلامة البيانات في CI (`data-integrity-report.json/.md`) ورفعه ضمن artifact الحوكمة.
+  3. تم توثيق الفحص في `Docs/DATA-INTEGRITY-REPORT-AR.md` مع نتيجة محلية `Fail=0` و`Warn>0` دون كسر التنفيذ.
+
+### TASK H-050 (DONE) - إغلاق التوثيق التشغيلي للمرحلة v1.2
 - الهدف: تحديث docs/state/log بالأدلة النهائية بعد إنهاء `H-010..H-040`.
 - الملفات المستهدفة:
   - `Docs/WBGL-EXECUTION-STATE-AR.json`
   - `Docs/WBGL-EXECUTION-LOG-AR.md`
   - `Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md`
+
+- ملخص التنفيذ:
+  1. تم تحديث حالة التنفيذ المتسلسل عبر `sequential-execution` وإغلاق خطوات `P9-01 .. P11-01` بأدلة قابلة للتتبع.
+  2. تم تحديث خطة التنفيذ والسجل التشغيلي لتثبيت نتائج v1.2 ومخرجات الحوكمة (permissions drift + data integrity artifacts).
+  3. الحالة النهائية للدورة v1.2: مكتملة وظيفيًا وهندسيًا مع `Unit + Integration + guard` خضراء.
 
 ---
 

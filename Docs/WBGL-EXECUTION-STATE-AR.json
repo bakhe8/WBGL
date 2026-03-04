@@ -2,7 +2,7 @@
     "manifest_file": "Docs/WBGL-EXECUTION-SEQUENCE-AR.json",
     "manifest_version": "1.2.0",
     "mode": "mandatory_sequential",
-    "updated_at": "2026-03-04T01:34:42+00:00",
+    "updated_at": "2026-03-04T01:59:13+00:00",
     "steps": {
         "P1-01": {
             "status": "done",
@@ -137,48 +137,73 @@
             "note": null
         },
         "P9-01": {
-            "status": "in_progress",
+            "status": "done",
             "started_at": "2026-03-04T01:34:42+00:00",
-            "completed_at": null,
+            "completed_at": "2026-03-04T01:49:25+00:00",
             "blocked_at": null,
-            "evidence": null,
-            "refs": [],
+            "evidence": "تم فصل منطق البيانات بالكامل من views/statistics.php إلى StatisticsDashboardService (overview, batch/suppliers, time/performance, expiration/actions, AI/ML, financial/types, urgent list) مع بقاء الصفحة adapter للعرض فقط واجتياز Unit+Integration+guard.",
+            "refs": [
+                "views/statistics.php",
+                "app/Services/StatisticsDashboardService.php",
+                "tests/Unit/Services/StatisticsDashboardWiringTest.php",
+                "storage/logs/phpunit-enterprise.xml"
+            ],
             "note": null
         },
         "P9-02": {
-            "status": "pending",
-            "started_at": null,
-            "completed_at": null,
+            "status": "done",
+            "started_at": "2026-03-04T01:49:25+00:00",
+            "completed_at": "2026-03-04T01:51:53+00:00",
             "blocked_at": null,
-            "evidence": null,
-            "refs": [],
+            "evidence": "تم فصل bootstrap logic في views/settings.php إلى SettingsDashboardService (settings snapshot + locale/direction + current time label) وأصبحت الصفحة تعتمد view-model جاهز مع اختبارات Unit+Integration+guard خضراء.",
+            "refs": [
+                "views/settings.php",
+                "app/Services/SettingsDashboardService.php",
+                "tests/Unit/Services/SettingsDashboardWiringTest.php",
+                "storage/logs/phpunit-enterprise.xml"
+            ],
             "note": null
         },
         "P10-01": {
-            "status": "pending",
-            "started_at": null,
-            "completed_at": null,
+            "status": "done",
+            "started_at": "2026-03-04T01:51:53+00:00",
+            "completed_at": "2026-03-04T01:55:04+00:00",
             "blocked_at": null,
-            "evidence": null,
-            "refs": [],
+            "evidence": "تم إنشاء permissions-drift-report وربطه في CI مع رفع artifacts (JSON/MD) للتحقق الدوري من انحراف role-permission matrix؛ التشغيل المحلي أظهر PASS بدون missing/unknown/orphans/duplicates.",
+            "refs": [
+                "app/Scripts/permissions-drift-report.php",
+                ".github/workflows/ci.yml",
+                "Docs/PERMISSIONS-DRIFT-REPORT-AR.md",
+                "storage/logs/permissions-drift-report.json"
+            ],
             "note": null
         },
         "P11-01": {
-            "status": "pending",
-            "started_at": null,
-            "completed_at": null,
+            "status": "done",
+            "started_at": "2026-03-04T01:55:04+00:00",
+            "completed_at": "2026-03-04T01:58:24+00:00",
             "blocked_at": null,
-            "evidence": null,
-            "refs": [],
+            "evidence": "تم توسيع data-integrity-check بإضافة invariants إضافية (status/signatures/orphans/role-user permission links) وإخراج artifact JSON+Markdown وربطه في CI؛ الفحص المحلي: Fail=0 مع Warn على notifications الفارغة دون كسر التنفيذ.",
+            "refs": [
+                "app/Scripts/data-integrity-check.php",
+                ".github/workflows/ci.yml",
+                "Docs/DATA-INTEGRITY-REPORT-AR.md",
+                "storage/logs/data-integrity-report.json"
+            ],
             "note": null
         },
         "P12-01": {
-            "status": "pending",
-            "started_at": null,
-            "completed_at": null,
+            "status": "done",
+            "started_at": "2026-03-04T01:58:24+00:00",
+            "completed_at": "2026-03-04T01:59:13+00:00",
             "blocked_at": null,
-            "evidence": null,
-            "refs": [],
+            "evidence": "تم إغلاق دورة v1.2 توثيقيًا بعد إنجاز H-010..H-040 مع تثبيت الأدلة في plan/state/log واعتماد artifacts الحوكمة (permissions drift + data integrity) ضمن CI.",
+            "refs": [
+                "Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md",
+                "Docs/WBGL-EXECUTION-STATE-AR.json",
+                "Docs/WBGL-EXECUTION-LOG-AR.md",
+                ".github/workflows/ci.yml"
+            ],
             "note": null
         }
     }

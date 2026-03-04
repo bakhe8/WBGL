@@ -69,7 +69,23 @@ jobs:
         run: vendor/bin/phpunit --testsuite Integration
 
       - name: Run data integrity checker
-        run: php app/Scripts/data-integrity-check.php
+        run: php app/Scripts/data-integrity-check.php --output-json=storage/logs/data-integrity-report.json --output-md=storage/logs/data-integrity-report.md
+
+      - name: Run permissions drift report
+        run: php app/Scripts/permissions-drift-report.php --output-json=storage/logs/permissions-drift-report.json --output-md=storage/logs/permissions-drift-report.md
+
+      - name: Upload governance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wbgl-governance-artifacts
+          path: |
+            storage/logs/phpunit-enterprise.xml
+            storage/logs/data-integrity-report.json
+            storage/logs/data-integrity-report.md
+            storage/logs/permissions-drift-report.json
+            storage/logs/permissions-drift-report.md
+          if-no-files-found: warn
 
   pgsql-rehearsal:
     runs-on: ubuntu-latest

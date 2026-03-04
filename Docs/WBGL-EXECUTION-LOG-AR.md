@@ -170,3 +170,72 @@
   - Docs/WBGL-EXECUTION-LOG-AR.md
 - الحالة: جميع الخطوات مكتملة.
 
+## 2026-03-04T01:49:25+00:00 | P9-01
+- المرحلة: P9 — تفكيك شاشات العرض الثقيلة
+- المهمة: فصل منطق البيانات في statistics إلى خدمة لوحة مؤشرات
+- الربط المرجعي: H-010
+- الدليل: تم فصل منطق البيانات بالكامل من views/statistics.php إلى StatisticsDashboardService (overview, batch/suppliers, time/performance, expiration/actions, AI/ML, financial/types, urgent list) مع بقاء الصفحة adapter للعرض فقط واجتياز Unit+Integration+guard.
+- الملفات المرجعية:
+  - views/statistics.php
+  - app/Services/StatisticsDashboardService.php
+  - tests/Unit/Services/StatisticsDashboardWiringTest.php
+  - storage/logs/phpunit-enterprise.xml
+- الخطوة التالية: P9-02
+
+## 2026-03-04T01:49:25+00:00 | P9-02 (START)
+- المرحلة: P9 — تفكيك شاشات العرض الثقيلة
+- المهمة: فصل منطق البيانات في settings إلى خدمة قراءة/حوكمة
+- الربط المرجعي: H-020
+- الدليل: تم بدء الخطوة تلقائيًا بعد إغلاق P9-01 عبر `sequential-execution complete`.
+- الملفات المرجعية:
+  - Docs/WBGL-EXECUTION-STATE-AR.json
+  - Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md
+
+## 2026-03-04T01:51:53+00:00 | P9-02
+- المرحلة: P9 — تفكيك شاشات العرض الثقيلة
+- المهمة: فصل منطق البيانات في settings إلى خدمة قراءة/حوكمة
+- الربط المرجعي: H-020
+- الدليل: تم فصل bootstrap logic في views/settings.php إلى SettingsDashboardService (settings snapshot + locale/direction + current time label) وأصبحت الصفحة تعتمد view-model جاهز مع اختبارات Unit+Integration+guard خضراء.
+- الملفات المرجعية:
+  - views/settings.php
+  - app/Services/SettingsDashboardService.php
+  - tests/Unit/Services/SettingsDashboardWiringTest.php
+  - storage/logs/phpunit-enterprise.xml
+- الخطوة التالية: P10-01
+
+## 2026-03-04T01:55:04+00:00 | P10-01
+- المرحلة: P10 — حوكمة الصلاحيات
+- المهمة: تقرير دوري لانحراف الصلاحيات وربطه في CI
+- الربط المرجعي: H-030
+- الدليل: تم إنشاء permissions-drift-report وربطه في CI مع رفع artifacts (JSON/MD) للتحقق الدوري من انحراف role-permission matrix؛ التشغيل المحلي أظهر PASS بدون missing/unknown/orphans/duplicates.
+- الملفات المرجعية:
+  - app/Scripts/permissions-drift-report.php
+  - .github/workflows/ci.yml
+  - Docs/PERMISSIONS-DRIFT-REPORT-AR.md
+  - storage/logs/permissions-drift-report.json
+- الخطوة التالية: P11-01
+
+## 2026-03-04T01:58:24+00:00 | P11-01
+- المرحلة: P11 — تعميق سلامة البيانات
+- المهمة: توسيع data-integrity-check وإضافة artifact تفصيلي
+- الربط المرجعي: H-040
+- الدليل: تم توسيع data-integrity-check بإضافة invariants إضافية (status/signatures/orphans/role-user permission links) وإخراج artifact JSON+Markdown وربطه في CI؛ الفحص المحلي: Fail=0 مع Warn على notifications الفارغة دون كسر التنفيذ.
+- الملفات المرجعية:
+  - app/Scripts/data-integrity-check.php
+  - .github/workflows/ci.yml
+  - Docs/DATA-INTEGRITY-REPORT-AR.md
+  - storage/logs/data-integrity-report.json
+- الخطوة التالية: P12-01
+
+## 2026-03-04T01:59:13+00:00 | P12-01
+- المرحلة: P12 — إغلاق دورة v1.2
+- المهمة: إغلاق التوثيق التشغيلي وإثبات الاستقرار
+- الربط المرجعي: H-050
+- الدليل: تم إغلاق دورة v1.2 توثيقيًا بعد إنجاز H-010..H-040 مع تثبيت الأدلة في plan/state/log واعتماد artifacts الحوكمة (permissions drift + data integrity) ضمن CI.
+- الملفات المرجعية:
+  - Docs/WBGL-ACTIONABLE-WORKFLOW-REALIGNMENT-PLAN-AR.md
+  - Docs/WBGL-EXECUTION-STATE-AR.json
+  - Docs/WBGL-EXECUTION-LOG-AR.md
+  - .github/workflows/ci.yml
+- الحالة: جميع الخطوات مكتملة.
+
