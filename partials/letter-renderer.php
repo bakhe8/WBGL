@@ -10,6 +10,7 @@
  * Required variables:
  * @var array $record - Guarantee data with all fields
  * @var bool $showPlaceholder - (optional) Show "no action" state if true (default: true)
+ * @var bool $showPrintButton - (optional) Controls overlay print button visibility
  */
 
 use App\Services\LetterBuilder;
@@ -29,7 +30,12 @@ if (($showPlaceholder ?? true) && !$hasAction) {
 }
 
 // Build letter data using LetterBuilder
-$letterData = LetterBuilder::prepare($record, $record['active_action']);
+$showPrintButton = isset($showPrintButton) ? (bool)$showPrintButton : false;
+$letterData = LetterBuilder::prepare(
+    $record,
+    $record['active_action'],
+    ['show_print_button' => $showPrintButton]
+);
 
 // Render letter using template
 echo LetterBuilder::render($letterData);

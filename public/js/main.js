@@ -224,10 +224,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Phase 3: Workflow Action Handler ---
+    // --- Workflow Action Handlers (advance/reject) ---
     document.addEventListener('click', async (e) => {
-        const btn = e.target.closest('[data-action="workflow-advance"]');
+        const btn = e.target.closest('[data-action="workflow-advance"], [data-action="workflow-reject"]');
         if (!btn) return;
+        const action = btn.getAttribute('data-action');
 
         const guaranteeId = document.querySelector('[data-record-id]')?.dataset.recordId;
         if (!guaranteeId) {
@@ -235,14 +236,29 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        let requestBody = { guarantee_id: guaranteeId };
+        let endpoint = '/api/workflow-advance.php';
+        if (action === 'workflow-reject') {
+            const reason = (window.prompt('اكتب سبب الرفض (إجباري):') || '').trim();
+            if (!reason) {
+                showToast('سبب الرفض مطلوب.', 'warning');
+                return;
+            }
+            endpoint = '/api/workflow-reject.php';
+            requestBody = { guarantee_id: guaranteeId, reason };
+        }
+
         btn.disabled = true;
-        btn.textContent = wbglT('index.workflow.execute_next_step', '');
+        const originalText = btn.textContent;
+        btn.textContent = action === 'workflow-reject'
+            ? 'جاري الرفض...'
+            : wbglT('index.workflow.execute_next_step', '');
 
         try {
-            const response = await fetch('/api/workflow-advance.php', {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ guarantee_id: guaranteeId })
+                body: JSON.stringify(requestBody)
             });
 
             const data = await response.json();
@@ -264,13 +280,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                 showToast(wbglT('messages.records.error.prefix', '') + (data.error || data.message || wbglT('messages.error.unknown', '')), 'error');
                 btn.disabled = false;
-                btn.textContent = wbglT('index.workflow.execute_next_step', '');
+                btn.textContent = originalText;
             }
         } catch (err) {
             console.error('WORKFLOW_ERROR', err);
             showToast(wbglT('messages.records.error.network', ''), 'error');
             btn.disabled = false;
-            btn.textContent = wbglT('index.workflow.execute_next_step', '');
+            btn.textContent = originalText;
         }
     });
 

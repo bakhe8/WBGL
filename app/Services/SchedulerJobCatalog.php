@@ -10,13 +10,7 @@ class SchedulerJobCatalog
      */
     public static function all(): array
     {
-        return [
-            [
-                'name' => 'notify-expiry',
-                'path' => base_path('app/Scripts/notify-expiry.php'),
-                'max_attempts' => 2,
-            ],
-        ];
+        return [];
     }
 
     /**

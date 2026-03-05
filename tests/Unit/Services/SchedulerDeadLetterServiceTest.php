@@ -36,7 +36,7 @@ final class SchedulerDeadLetterServiceTest extends TestCase
         $this->runTokens[] = $token;
 
         $id = SchedulerDeadLetterService::recordFailure(
-            'notify-expiry',
+            'integration-job',
             $token,
             2,
             2,

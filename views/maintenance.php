@@ -2,8 +2,6 @@
 require_once __DIR__ . '/../app/Support/autoload.php';
 
 use App\Repositories\GuaranteeRepository;
-use App\Services\OperationalAlertService;
-use App\Services\OperationalMetricsService;
 use App\Support\Database;
 use App\Support\Settings;
 use App\Support\ViewPolicy;
@@ -33,20 +31,29 @@ $t = static function (string $key, array $params = []) use ($maintenanceLocale):
     return $value;
 };
 
+$formatMaintenanceTimestamp = static function ($value): string {
+    $raw = trim((string)$value);
+    if ($raw === '') {
+        return '-';
+    }
+    $timestamp = strtotime($raw);
+    if ($timestamp === false) {
+        return $raw;
+    }
+    return date('Y-m-d H:i:s', $timestamp);
+};
+
 // Get statistics
 $stats = $repo->getTestDataStats();
 $realCount = $repo->count();
 $testCount = $repo->count(['test_data_only' => true]);
 $totalCount = $repo->count(['include_test_data' => true]);
-$opsMetrics = OperationalMetricsService::snapshot();
-$opsAlerts = OperationalAlertService::evaluate($opsMetrics);
-$opsCounters = is_array($opsMetrics['counters'] ?? null) ? $opsMetrics['counters'] : [];
-$opsAlertRows = is_array($opsAlerts['alerts'] ?? null) ? $opsAlerts['alerts'] : [];
-$opsTriggered = array_values(array_filter(
-    $opsAlertRows,
-    static fn(array $row): bool => (string)($row['status'] ?? '') === 'triggered'
-));
-$opsGeneratedAt = (string)($opsMetrics['generated_at'] ?? date('c'));
+$ops = $repo->getOperationalStats();
+$countsConsistent =
+    ((int)$ops['absolute_total'] === (int)$totalCount) &&
+    (((int)$ops['open_total'] + (int)$ops['released_total']) === (int)$ops['absolute_total']) &&
+    (((int)$ops['ready_total'] + (int)$ops['pending_total']) === (int)$ops['open_total']) &&
+    ((int)($stats['orphan_test_guarantees'] ?? 0) === 0);
 
 // Handle deletion requests
 $deleteResult = null;
@@ -131,6 +138,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $realCount = $repo->count();
                     $testCount = $repo->count(['test_data_only' => true]);
                     $totalCount = $repo->count(['include_test_data' => true]);
+                    $ops = $repo->getOperationalStats();
+                    $countsConsistent =
+                        ((int)$ops['absolute_total'] === (int)$totalCount) &&
+                        (((int)$ops['open_total'] + (int)$ops['released_total']) === (int)$ops['absolute_total']) &&
+                        (((int)$ops['ready_total'] + (int)$ops['pending_total']) === (int)$ops['open_total']) &&
+                        ((int)($stats['orphan_test_guarantees'] ?? 0) === 0);
                 }
 
             } catch (Exception $e) {
@@ -256,71 +269,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             margin-left: 1rem;
         }
 
-        .ops-section {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
-            padding: 1.25rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .ops-meta {
-            color: #6b7280;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-        }
-
-        .ops-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-            gap: 0.75rem;
-            margin-bottom: 1rem;
-        }
-
-        .ops-card {
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 0.9rem;
-            background: #f9fafb;
-        }
-
-        .ops-card-value {
-            font-size: 1.4rem;
-            font-weight: 800;
-            color: #111827;
-        }
-
-        .ops-card-label {
-            font-size: 0.8rem;
-            color: #6b7280;
-            margin-top: 0.25rem;
-        }
-
-        .ops-alerts {
-            border-top: 1px solid #e5e7eb;
-            padding-top: 0.85rem;
-        }
-
-        .ops-alert-row {
-            display: flex;
-            justify-content: space-between;
-            gap: 0.75rem;
-            padding: 0.5rem 0.65rem;
-            border: 1px solid #ef4444;
-            background: #fef2f2;
-            color: #991b1b;
-            border-radius: 6px;
-            margin-bottom: 0.5rem;
-        }
-
-        .ops-alert-ok {
-            border: 1px solid #10b981;
-            background: #ecfdf5;
-            color: #065f46;
-            border-radius: 6px;
-            padding: 0.65rem;
-        }
-
         .maintenance-container {
             max-width: 1200px;
             margin: 2rem auto;
@@ -334,14 +282,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         .maintenance-subtitle {
             margin: 0.5rem 0 0 0;
             opacity: 0.9;
-        }
-
-        .ops-title {
-            margin-top: 0;
-        }
-
-        .ops-alert-title {
-            margin: 0 0 0.75rem 0;
         }
 
         .delete-result {
@@ -411,54 +351,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <p class="maintenance-subtitle" data-i18n="maintenance.ui.header_subtitle">إدارة بيانات الاختبار وتنظيف قاعدة البيانات</p>
         </div>
 
-        <div class="ops-section">
-            <h2 class="ops-title" data-i18n="maintenance.ui.ops_title">📈 لوحة المراقبة التشغيلية</h2>
-            <div class="ops-meta">
-                <span data-i18n="maintenance.ui.ops_last_update">آخر تحديث:</span>
-                <?= htmlspecialchars(date(DATE_ATOM, strtotime($opsGeneratedAt) ?: time())) ?> |
-                <span data-i18n="maintenance.ui.ops_active_alerts">التنبيهات النشطة:</span>
-                <?= count($opsTriggered) ?>
-            </div>
-            <div class="ops-grid">
-                <div class="ops-card">
-                    <div class="ops-card-value"><?= (int)($opsCounters['open_dead_letters'] ?? 0) ?></div>
-                    <div class="ops-card-label" data-i18n="maintenance.ui.ops_dead_letters_open">Dead Letters مفتوحة</div>
-                </div>
-                <div class="ops-card">
-                    <div class="ops-card-value"><?= (int)($opsCounters['scheduler_failures_24h'] ?? 0) ?></div>
-                    <div class="ops-card-label" data-i18n="maintenance.ui.ops_scheduler_failures_24h">فشل Scheduler (24h)</div>
-                </div>
-                <div class="ops-card">
-                    <div class="ops-card-value"><?= (int)($opsCounters['api_access_denied_24h'] ?? 0) ?></div>
-                    <div class="ops-card-label" data-i18n="maintenance.ui.ops_api_denied_24h">رفض API (24h)</div>
-                </div>
-                <div class="ops-card">
-                    <div class="ops-card-value"><?= (int)($opsCounters['unread_notifications'] ?? 0) ?></div>
-                    <div class="ops-card-label" data-i18n="maintenance.ui.ops_unread_notifications">إشعارات غير مقروءة</div>
-                </div>
-                <div class="ops-card">
-                    <div class="ops-card-value"><?= (int)($opsCounters['pending_undo_requests'] ?? 0) ?></div>
-                    <div class="ops-card-label" data-i18n="maintenance.ui.ops_pending_undo_requests">Undo Requests معلقة</div>
-                </div>
-            </div>
-            <div class="ops-alerts">
-                <h3 class="ops-alert-title" data-i18n="maintenance.ui.ops_alerts_title">🚨 التنبيهات</h3>
-                <?php if (empty($opsTriggered)): ?>
-                    <div class="ops-alert-ok" data-i18n="maintenance.ui.ops_no_active_alerts">لا توجد تنبيهات تشغيلية نشطة حاليًا.</div>
-                <?php else: ?>
-                    <?php foreach ($opsTriggered as $alert): ?>
-                        <div class="ops-alert-row">
-                            <div><?= htmlspecialchars((string)($alert['label'] ?? $t('maintenance.ui.alert_default'))) ?></div>
-                            <div>
-                                <span data-i18n="maintenance.ui.ops_value_label">القيمة:</span> <?= htmlspecialchars((string)($alert['value'] ?? '-')) ?> |
-                                <span data-i18n="maintenance.ui.ops_threshold_label">الحد:</span> <?= htmlspecialchars((string)($alert['threshold'] ?? '-')) ?>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-        </div>
-        
         <?php if ($deleteResult): ?>
             <div class="<?= $deleteResult['success'] ? 'alert-success delete-result delete-result--success' : 'alert-error delete-result delete-result--error' ?>"
                  data-i18n="<?= htmlspecialchars((string)($deleteResult['message_key'] ?? '')) ?>"
@@ -501,12 +393,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 <div class="stat-label" data-i18n="maintenance.ui.stat_test_batches">دفعات اختبار</div>
             </div>
         </div>
+
+        <div class="warning-box <?= $countsConsistent ? 'warning-box--info' : 'warning-box--danger' ?>">
+            <strong data-i18n="<?= $countsConsistent ? 'maintenance.ui.consistency_ok_title' : 'maintenance.ui.consistency_mismatch_title' ?>">
+                <?= $countsConsistent ? '✅ اتساق العدّ: سليم' : '❌ اتساق العدّ: يوجد انحراف' ?>
+            </strong>
+            <div style="margin-top: 0.5rem;">
+                <span data-i18n="maintenance.ui.consistency_formula_label">المعادلة التشغيلية:</span>
+                <code>إجمالي = قيد التشغيل + مفرج عنها</code>
+                |
+                <code>قيد التشغيل = جاهز + يحتاج قرار</code>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <strong data-i18n="maintenance.ui.consistency_operational_label">قيد التشغيل:</strong>
+                <?= (int)$ops['open_total'] ?>
+                |
+                <strong data-i18n="maintenance.ui.consistency_ready_label">جاهز:</strong>
+                <?= (int)$ops['ready_total'] ?>
+                |
+                <strong data-i18n="maintenance.ui.consistency_pending_label">يحتاج قرار:</strong>
+                <?= (int)$ops['pending_total'] ?>
+                |
+                <strong data-i18n="maintenance.ui.consistency_released_label">مفرج عنها:</strong>
+                <?= (int)$ops['released_total'] ?>
+                |
+                <strong data-i18n="maintenance.ui.consistency_total_label">الإجمالي:</strong>
+                <?= (int)$ops['absolute_total'] ?>
+            </div>
+            <?php if ((int)($stats['orphan_test_guarantees'] ?? 0) > 0): ?>
+                <div style="margin-top: 0.5rem;">
+                    <strong data-i18n="maintenance.ui.consistency_orphan_test_label">سجلات اختبار بدون occurrence:</strong>
+                    <?= (int)$stats['orphan_test_guarantees'] ?>
+                </div>
+            <?php endif; ?>
+        </div>
         
         <?php if ($stats['oldest_test_data']): ?>
             <div class="warning-box">
                 <strong data-i18n="maintenance.ui.note_label">⚠️ ملاحظة:</strong> 
-                <span data-i18n="maintenance.ui.note_oldest_test_data">أقدم بيانات اختبار:</span> <?= date(DATE_ATOM, strtotime($stats['oldest_test_data'])) ?> | 
-                <span data-i18n="maintenance.ui.note_newest_test_data">أحدث بيانات اختبار:</span> <?= date(DATE_ATOM, strtotime($stats['newest_test_data'])) ?>
+                <span data-i18n="maintenance.ui.note_oldest_test_data">أقدم بيانات اختبار:</span>
+                <span dir="ltr"><?= htmlspecialchars($formatMaintenanceTimestamp($stats['oldest_test_data']), ENT_QUOTES, 'UTF-8') ?></span>
+                |
+                <span data-i18n="maintenance.ui.note_newest_test_data">أحدث بيانات اختبار:</span>
+                <span dir="ltr"><?= htmlspecialchars($formatMaintenanceTimestamp($stats['newest_test_data']), ENT_QUOTES, 'UTF-8') ?></span>
             </div>
         <?php endif; ?>
         
@@ -554,7 +483,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         <?= wbgl_csrf_input() ?>
                         <input type="hidden" name="action" value="delete_batch">
                         <label>
-                            <span data-i18n="maintenance.ui.batch_id_label">معرف الدفعة</span> (<code>test_batch_id</code>):
+                            <span data-i18n="maintenance.ui.batch_id_label">معرف الدفعة</span> (<code>test_batch_id / import_source</code>):
                             <input type="text" name="batch_id" class="confirmation-input" required>
                         </label>
                         <label>

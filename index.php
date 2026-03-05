@@ -34,6 +34,7 @@ use App\Support\DirectionResolver;
 use App\Support\Guard;
 use App\Support\LocaleResolver;
 use App\Support\Settings;
+use App\Support\TestDataVisibility;
 use App\Services\ActionabilityPolicyService;
 use App\Services\UiSurfacePolicyService;
 use App\Services\Learning\AuthorityFactory;
@@ -42,6 +43,7 @@ use App\Repositories\GuaranteeDecisionRepository;
 // LearningService removed - deprecated in Phase 4
 use App\Repositories\SupplierRepository;
 use App\Repositories\BankRepository;
+use App\Repositories\RoleRepository;
 
 header('Content-Type:' . ' ' . implode(';', ['text/html', 'charset=utf-8']));
 
@@ -79,14 +81,48 @@ $canViewNotes = false;
 $canCreateNotes = false;
 $canViewAttachments = false;
 $canUploadAttachments = false;
+$notesPermissionHintKey = 'index.notes.no_permission_add';
+$attachmentsPermissionHintKey = 'index.attachments.no_permission_upload';
 
 // Get filter parameter for status filtering (Defined EARLY)
-$statusFilter = $_GET['filter'] ?? 'all'; // all, ready, pending
+$requestedStatusFilter = isset($_GET['filter']) ? trim((string)$_GET['filter']) : '';
+$statusFilter = $requestedStatusFilter !== '' ? $requestedStatusFilter : 'all'; // all, ready, pending
 $stageFilter = $_GET['stage'] ?? null;    // specific workflow stage
 $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : null;
+$currentUserRoleSlug = '';
+$isTaskOnlyUser = false;
+$showFiltersForCurrentUser = false;
+$hasFullFilterException = Guard::has('ui_full_filters_view');
+
+// Default landing behavior:
+// Only data_entry and developer can use broad filters.
+// All other roles are task-only (actionable scope).
+{
+    $currentUserForDefault = AuthService::getCurrentUser();
+    if ($currentUserForDefault && $currentUserForDefault->roleId !== null) {
+        try {
+            $roleRepo = new RoleRepository($db);
+            $role = $roleRepo->find((int)$currentUserForDefault->roleId);
+            $currentUserRoleSlug = trim((string)($role->slug ?? ''));
+        } catch (\Throwable) {
+            $currentUserRoleSlug = '';
+        }
+    }
+
+    $showFiltersForCurrentUser = in_array($currentUserRoleSlug, ['data_entry', 'developer'], true)
+        || $hasFullFilterException;
+    $isTaskOnlyUser = !$showFiltersForCurrentUser;
+    if ($isTaskOnlyUser) {
+        // Enforced at UI level too: task-only roles are always actionable.
+        $statusFilter = 'actionable';
+    } elseif ($requestedStatusFilter === '') {
+        $statusFilter = 'all';
+    }
+}
 
 // Production Mode: Auto-exclude test data
 $settings = Settings::getInstance();
+$includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
 $localeInfo = LocaleResolver::resolve(
     AuthService::getCurrentUser(),
     $settings,
@@ -134,10 +170,6 @@ $indexT = static function (string $key, ?string $fallback = null) use ($indexLoc
     }
     return $value;
 };
-if ($settings->isProductionMode()) {
-    $_GET['exclude_test'] = '1'; // Force exclude test data
-}
-
 $guaranteeRepo = new GuaranteeRepository($db);
 $decisionRepo = new GuaranteeDecisionRepository($db);
 
@@ -161,7 +193,8 @@ if ($requestedId) {
         $requestedId,
         $statusFilter,
         $searchTerm,
-        $stageFilter
+        $stageFilter,
+        $includeTestData
     );
 
     if ($idMatchesScope) {
@@ -175,13 +208,14 @@ if (!$currentRecord) {
     // Check for Jump To Index
     if (isset($_GET['jump_to_index'])) {
         $jumpIndex = (int)$_GET['jump_to_index'];
-        $targetId = \App\Services\NavigationService::getIdByIndex($db, $jumpIndex, $statusFilter, $searchTerm, $stageFilter);
+        $targetId = \App\Services\NavigationService::getIdByIndex($db, $jumpIndex, $statusFilter, $searchTerm, $stageFilter, $includeTestData);
 
         // Preserve current filters in redirect
         $queryParams = [];
         if ($statusFilter !== 'all') $queryParams['filter'] = $statusFilter;
         if ($stageFilter) $queryParams['stage'] = $stageFilter;
         if ($searchTerm) $queryParams['search'] = $searchTerm;
+        $queryParams = TestDataVisibility::withQueryFlag($queryParams, $includeTestData);
 
         if ($targetId) {
             $queryParams['id'] = $targetId;
@@ -201,7 +235,8 @@ if (!$currentRecord) {
         1,
         $statusFilter,
         $searchTerm,
-        $stageFilter
+        $stageFilter,
+        $includeTestData
     );
     if ($firstId) {
         $currentRecord = $guaranteeRepo->find($firstId);
@@ -228,7 +263,8 @@ $navInfo = \App\Services\NavigationService::getNavigationInfo(
     $currentRecord ? $currentRecord->id : null,
     $statusFilter,
     $searchTerm, // ✅ Hand off search term to navigation
-    $stageFilter
+    $stageFilter,
+    $includeTestData
 );
 
 $totalRecords = $navInfo['totalRecords'];
@@ -258,9 +294,10 @@ if ($stageFilter !== null && $stageFilter !== '') {
 if ($searchTerm !== null && $searchTerm !== '') {
     $baseNavParams['search'] = $searchTerm;
 }
+$baseNavParams = TestDataVisibility::withQueryFlag($baseNavParams, $includeTestData);
 $prevNavHref = $prevId ? $buildIndexHref(array_merge($baseNavParams, ['id' => $prevId])) : '';
 $nextNavHref = $nextId ? $buildIndexHref(array_merge($baseNavParams, ['id' => $nextId])) : '';
-$buildFilterHref = static function (string $filter, ?string $stage = null) use ($buildIndexHref, $searchTerm): string {
+$buildFilterHref = static function (string $filter, ?string $stage = null) use ($buildIndexHref, $searchTerm, $includeTestData): string {
     $params = ['filter' => $filter];
     if ($stage !== null && $stage !== '') {
         $params['stage'] = $stage;
@@ -268,13 +305,14 @@ $buildFilterHref = static function (string $filter, ?string $stage = null) use (
     if ($searchTerm !== null && $searchTerm !== '') {
         $params['search'] = $searchTerm;
     }
+    $params = TestDataVisibility::withQueryFlag($params, $includeTestData);
     return $buildIndexHref($params);
 };
 
 // Get import statistics (ready vs pending vs released)
 // Note: Stats always show ALL counts regardless of filter
-$importStats = \App\Services\StatsService::getImportStats($db);
-$workflowStats = \App\Services\StatsService::getWorkflowStats($db);
+$importStats = \App\Services\StatsService::getImportStats($db, $includeTestData);
+$workflowStats = \App\Services\StatsService::getWorkflowStats($db, $includeTestData);
 
 // ✅ PHASE 11: Task Guidance - Calculate personally actionable tasks
 $currentUser = \App\Support\AuthService::getCurrentUser();
@@ -282,7 +320,7 @@ $personalTaskCount = 0;
 
 if ($currentUser) {
     // Fetch real-time count from centralized service
-    $personalTaskCount = \App\Services\StatsService::getPersonalTaskCount($db);
+    $personalTaskCount = \App\Services\StatsService::getPersonalTaskCount($db, $includeTestData);
 }
 
 // Keep actionable counter aligned with user-scoped actionable decision.
@@ -290,6 +328,36 @@ $importStats['actionable'] = $personalTaskCount;
 
 // Update total to exclude released for display consistency with filters
 $displayTotal = $importStats['ready'] + $importStats['pending'];
+
+// Sidebar progress must reflect user tasks (actionable scope), not global records.
+$taskTotalRecords = (int)$personalTaskCount;
+$taskCurrentIndex = 0;
+if ($taskTotalRecords > 0 && $currentRecord) {
+    $currentRecordId = (int)$currentRecord->id;
+    $recordInActionableScope = \App\Services\NavigationService::isIdInFilter(
+        $db,
+        $currentRecordId,
+        'actionable',
+        null,
+        null,
+        $includeTestData
+    );
+    if ($recordInActionableScope) {
+        $taskNavInfo = \App\Services\NavigationService::getNavigationInfo(
+            $db,
+            $currentRecordId,
+            'actionable',
+            null,
+            null,
+            $includeTestData
+        );
+        $taskCurrentIndex = (int)($taskNavInfo['currentIndex'] ?? 0);
+    }
+}
+$taskCurrentIndex = max(0, min($taskCurrentIndex, $taskTotalRecords));
+$taskProgressPercent = $taskTotalRecords > 0
+    ? (int)round(($taskCurrentIndex / $taskTotalRecords) * 100)
+    : 0;
 
 
 
@@ -412,6 +480,12 @@ if ($currentRecord) {
     $canCreateNotes = $permissionCanCreateNotes && $recordSurface['can_create_notes'];
     $canViewAttachments = $permissionCanViewAttachments && $recordSurface['can_view_attachments'];
     $canUploadAttachments = $permissionCanUploadAttachments && $recordSurface['can_upload_attachments'];
+    $notesPermissionHintKey = ($permissionCanCreateNotes && !$recordSurface['can_create_notes'])
+        ? 'index.notes.read_only_add'
+        : 'index.notes.no_permission_add';
+    $attachmentsPermissionHintKey = ($permissionCanUploadAttachments && !$recordSurface['can_upload_attachments'])
+        ? 'index.attachments.read_only_upload'
+        : 'index.attachments.no_permission_upload';
 
     // === UI LOGIC PROJECTION: Status Reasons (Phase 1) ===
     // Get WHY status is what it is for user transparency
@@ -718,21 +792,9 @@ $formattedSuppliers = array_map(function ($s) {
         }
 
         .personal-tasks-section {
-            margin-bottom: 24px;
-        }
-
-        .personal-tasks-title {
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--text-muted);
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            margin-bottom: 14px;
+            padding-bottom: 14px;
             border-bottom: 1px solid var(--border-primary);
-            padding-bottom: 8px;
         }
 
         .personal-task-link {
@@ -781,21 +843,8 @@ $formattedSuppliers = array_map(function ($s) {
             color: var(--btn-primary-text);
         }
 
-        .personal-task-summary-link {
-            display: block;
-            text-align: center;
-            font-size: 11px;
-            color: var(--text-muted);
-            text-decoration: none;
-            margin-top: 4px;
-            padding: 4px;
-            border: 1px dashed var(--border-neutral);
-            border-radius: 6px;
-        }
-
-        .personal-task-summary-link.is-active {
-            background: var(--bg-secondary);
-            font-weight: bold;
+        .personal-tasks-section+.input-toolbar {
+            margin-top: 10px;
         }
 
         .import-stats-row {
@@ -1037,7 +1086,11 @@ $formattedSuppliers = array_map(function ($s) {
                         $statusText = $indexT($statusI18nKey);
                         ?>
                         <span class="badge <?= $statusClass ?>" data-i18n="<?= htmlspecialchars($statusI18nKey) ?>"><?= $statusText ?></span>
-                        <?php if ($permissionCanReopenGuarantee && in_array($statusNormalizedForUi, ['ready', 'issued', 'released', 'signed'], true)): ?>
+                        <?php if (
+                            $currentUserRoleSlug === 'data_entry'
+                            && $permissionCanReopenGuarantee
+                            && in_array($statusNormalizedForUi, ['ready', 'issued', 'released', 'signed'], true)
+                        ): ?>
                             <button class="btn btn-ghost btn-xs record-edit-btn"
                                 title=""
                                 data-i18n-title="index.ui.txt_29a85387"
@@ -1223,6 +1276,14 @@ $formattedSuppliers = array_map(function ($s) {
                     <?php
                     $statusForPreview = strtolower(trim((string)($mockRecord['status'] ?? 'pending')));
                     $statusForPreview = $statusForPreview === 'approved' ? 'ready' : $statusForPreview;
+                    $workflowForPreview = strtolower(trim((string)($mockRecord['workflow_step'] ?? 'draft')));
+                    $showPrintButton = (
+                        $currentUserRoleSlug === 'data_entry'
+                        &&
+                        $statusForPreview === 'ready'
+                        && $workflowForPreview === 'signed'
+                        && (bool)($recordSurface['can_execute_actions'] ?? false)
+                    );
                     ?>
                     <?php if (($recordSurface['can_view_preview'] ?? false) && in_array($statusForPreview, ['ready', 'issued', 'released', 'signed'], true)): ?>
                         <div id="preview-section">
@@ -1243,13 +1304,15 @@ $formattedSuppliers = array_map(function ($s) {
 
             <!-- ✅ PHASE 12: Granular Task Breakdown -->
             <?php
-            $personalTaskBreakdown = \App\Services\StatsService::getPersonalTaskBreakdown($db);
-            if (count($personalTaskBreakdown) > 1):
+            $fullPersonalTasksUsernames = ['admin'];
+            $currentUsername = strtolower(trim((string)($currentUser?->username ?? '')));
+            $showFullPersonalTasks = in_array($currentUsername, $fullPersonalTasksUsernames, true);
+            $personalTaskBreakdown = $showFullPersonalTasks
+                ? \App\Services\StatsService::getPersonalTaskBreakdown($db, $includeTestData, true)
+                : [];
+            if ($showFullPersonalTasks && count($personalTaskBreakdown) > 0):
             ?>
                 <div class="personal-tasks-section">
-                    <div class="personal-tasks-title">
-                        <span>🎯</span> <span data-i18n="index.tasks.current_title">مهامي الحالية</span>
-                    </div>
                     <?php foreach ($personalTaskBreakdown as $bucket): ?>
                         <?php
                         $isActive = ($statusFilter === 'actionable' && $stageFilter === $bucket['stage']);
@@ -1262,11 +1325,6 @@ $formattedSuppliers = array_map(function ($s) {
                             </span>
                         </a>
                     <?php endforeach; ?>
-
-                    <a href="<?= htmlspecialchars($buildFilterHref('actionable')) ?>"
-                        class="personal-task-summary-link <?= ($statusFilter === 'actionable' && !$stageFilter) ? 'is-active' : '' ?>">
-                        <span data-i18n="index.tasks.view_all">عرض جميع مهامي</span> (<?= $personalTaskCount ?>)
-                    </a>
                 </div>
             <?php endif; ?>
 
@@ -1275,51 +1333,54 @@ $formattedSuppliers = array_map(function ($s) {
                 <!-- Import Stats (Interactive Filter) -->
                 <?php if (isset($importStats) && ($importStats['total'] > 0)): ?>
                     <div class="import-stats-row">
-                        <a href="<?= htmlspecialchars($buildFilterHref('all')) ?>"
-                            class="status-filter-link status-filter-link--all <?= $statusFilter === 'all' ? 'is-active' : '' ?>">
-                            <span class="status-filter-value">📊 <?= $displayTotal ?? $importStats['total'] ?></span>
-                        </a>
-                        <a href="<?= htmlspecialchars($buildFilterHref('ready')) ?>"
-                            class="status-filter-link status-filter-link--ready <?= $statusFilter === 'ready' ? 'is-active' : '' ?>">
-                            <span class="status-filter-value status-filter-value--ready">✅ <?= $importStats['ready'] ?? 0 ?></span>
-                        </a>
-                        <a href="<?= htmlspecialchars($buildFilterHref('actionable')) ?>"
-                            title=""
-                            data-i18n-title="index.ui.txt_9d784327"
-                            class="status-filter-link status-filter-link--actionable <?= $statusFilter === 'actionable' ? 'is-active' : '' ?>">
-                            <span class="status-filter-value status-filter-value--actionable">⏳ <?= $importStats['actionable'] ?? 0 ?></span>
-                        </a>
-                        <a href="<?= htmlspecialchars($buildFilterHref('pending')) ?>"
-                            class="status-filter-link status-filter-link--pending <?= $statusFilter === 'pending' ? 'is-active' : '' ?>">
-                            <span class="status-filter-value status-filter-value--pending">⚠️ <?= $importStats['pending'] ?? 0 ?></span>
-                        </a>
-                        <a href="<?= htmlspecialchars($buildFilterHref('released')) ?>"
-                            class="status-filter-link status-filter-link--released <?= $statusFilter === 'released' ? 'is-active' : '' ?>">
-                            <span class="status-filter-value status-filter-value--released">🔓 <?= $importStats['released'] ?? 0 ?></span>
-                        </a>
+                        <?php if ($showFiltersForCurrentUser): ?>
+                            <a href="<?= htmlspecialchars($buildFilterHref('all')) ?>"
+                                title=""
+                                data-i18n-title="index.ui.open_workflow_only_title"
+                                class="status-filter-link status-filter-link--all <?= $statusFilter === 'all' ? 'is-active' : '' ?>">
+                                <span class="status-filter-value">📊 <?= $displayTotal ?? $importStats['total'] ?></span>
+                            </a>
+                            <a href="<?= htmlspecialchars($buildFilterHref('ready')) ?>"
+                                class="status-filter-link status-filter-link--ready <?= $statusFilter === 'ready' ? 'is-active' : '' ?>">
+                                <span class="status-filter-value status-filter-value--ready">✅ <?= $importStats['ready'] ?? 0 ?></span>
+                            </a>
+                            <a href="<?= htmlspecialchars($buildFilterHref('actionable')) ?>"
+                                title=""
+                                data-i18n-title="index.ui.txt_9d784327"
+                                class="status-filter-link status-filter-link--actionable <?= $statusFilter === 'actionable' ? 'is-active' : '' ?>">
+                                <span class="status-filter-value status-filter-value--actionable">⏳ <?= $importStats['actionable'] ?? 0 ?></span>
+                            </a>
+                            <a href="<?= htmlspecialchars($buildFilterHref('pending')) ?>"
+                                class="status-filter-link status-filter-link--pending <?= $statusFilter === 'pending' ? 'is-active' : '' ?>">
+                                <span class="status-filter-value status-filter-value--pending">⚠️ <?= $importStats['pending'] ?? 0 ?></span>
+                            </a>
+                            <a href="<?= htmlspecialchars($buildFilterHref('released')) ?>"
+                                class="status-filter-link status-filter-link--released <?= $statusFilter === 'released' ? 'is-active' : '' ?>">
+                                <span class="status-filter-value status-filter-value--released">🔓 <?= $importStats['released'] ?? 0 ?></span>
+                            </a>
+                        <?php else: ?>
+                            <div class="status-filter-value status-filter-value--actionable">
+                                ⏳ <?= $importStats['actionable'] ?? 0 ?>
+                            </div>
+                        <?php endif; ?>
                     </div>
-
                     <!-- ✅ NEW: Test Data Filter Toggle (Phase 1) -->
-                    <?php
-                    $settings = Settings::getInstance();
-                    if (!$settings->isProductionMode()):
-                    ?>
+                    <?php if ($showFiltersForCurrentUser && !$settings->isProductionMode()): ?>
                         <div class="test-data-toggle-section">
                             <div class="test-data-toggle-title" data-i18n="index.ui.txt_44cda22f">بيانات الاختبار</div>
                             <a href="<?php
                                         $currentParams = $_GET;
-                                        if (isset($currentParams['include_test_data'])) {
-                                            unset($currentParams['include_test_data']);
-                                            echo '/?' . http_build_query($currentParams);
+                                        if ($includeTestData) {
+                                            $currentParams['include_test_data'] = '0';
                                         } else {
                                             $currentParams['include_test_data'] = '1';
-                                            echo '/?' . http_build_query($currentParams);
                                         }
+                                        echo '/index.php?' . http_build_query($currentParams);
                                         ?>"
-                                class="test-data-toggle-link <?= isset($_GET['include_test_data']) ? 'is-active' : '' ?>">
-                                <span class="test-data-toggle-icon"><?= isset($_GET['include_test_data']) ? '✅' : '🧪' ?></span>
-                                <span class="test-data-toggle-text <?= isset($_GET['include_test_data']) ? 'is-active' : '' ?>">
-                                    <?= isset($_GET['include_test_data']) ? '<span data-i18n="index.ui.txt_ac952de4">إخفاء التجريبية</span>' : '<span data-i18n="index.ui.txt_8016dd3f">عرض التجريبية</span>' ?>
+                                class="test-data-toggle-link <?= $includeTestData ? 'is-active' : '' ?>">
+                                <span class="test-data-toggle-icon"><?= $includeTestData ? '✅' : '🧪' ?></span>
+                                <span class="test-data-toggle-text <?= $includeTestData ? 'is-active' : '' ?>">
+                                    <?= $includeTestData ? '<span data-i18n="index.ui.txt_ac952de4">إخفاء التجريبية</span>' : '<span data-i18n="index.ui.txt_8016dd3f">عرض التجريبية</span>' ?>
                                 </span>
                             </a>
                         </div>
@@ -1367,11 +1428,11 @@ $formattedSuppliers = array_map(function ($s) {
             <!-- Progress -->
             <div class="progress-container">
                     <div class="progress-bar">
-                        <div class="progress-fill" x-ref="progressFill" x-init="$watch('progress', value => { $refs.progressFill.style.width = value + '%'; }); $refs.progressFill.style.width = progress + '%';"></div>
+                        <div class="progress-fill" style="width: <?= $taskProgressPercent ?>%;"></div>
                     </div>
                 <div class="progress-text">
-                    <span><span data-i18n="index.ui.txt_1e96229a">سجل</span> <span x-text="currentIndex"></span> <span data-i18n="index.ui.txt_aa7099e2">من</span> <span x-text="totalRecords"></span></span>
-                    <span class="progress-percent" x-text="`${progress}%`"></span>
+                    <span><span>مهام</span> <span><?= $taskCurrentIndex ?></span> <span data-i18n="index.ui.txt_aa7099e2">من</span> <span><?= $taskTotalRecords ?></span></span>
+                    <span class="progress-percent"><?= $taskProgressPercent ?>%</span>
                 </div>
             </div>
 
@@ -1423,7 +1484,9 @@ $formattedSuppliers = array_map(function ($s) {
                             </button>
                         <?php else: ?>
                             <div class="sidebar-permission-hint note-hint">
-                                <span data-i18n="index.notes.no_permission_add">ليس لديك صلاحية إضافة الملاحظات</span>
+                                <span data-i18n="<?= htmlspecialchars($notesPermissionHintKey, ENT_QUOTES, 'UTF-8') ?>">
+                                    <?= htmlspecialchars($indexT($notesPermissionHintKey, 'ليس لديك صلاحية إضافة الملاحظات'), ENT_QUOTES, 'UTF-8') ?>
+                                </span>
                             </div>
                         <?php endif; ?>
                     </div>
@@ -1444,7 +1507,9 @@ $formattedSuppliers = array_map(function ($s) {
                             </label>
                         <?php else: ?>
                             <div class="sidebar-permission-hint">
-                                <span data-i18n="index.attachments.no_permission_upload">لا تملك صلاحية رفع المرفقات</span>
+                                <span data-i18n="<?= htmlspecialchars($attachmentsPermissionHintKey, ENT_QUOTES, 'UTF-8') ?>">
+                                    <?= htmlspecialchars($indexT($attachmentsPermissionHintKey, 'لا تملك صلاحية رفع المرفقات'), ENT_QUOTES, 'UTF-8') ?>
+                                </span>
                             </div>
                         <?php endif; ?>
 
@@ -1500,8 +1565,8 @@ $formattedSuppliers = array_map(function ($s) {
                     <div class="released-banner-info">
                         <span class="released-banner-icon">🔒</span>
                         <div>
-                            <div class="released-banner-title">${wbglT('index.ui.txt_0319c78f', '')}</div>
-                            <div class="released-banner-subtitle">${wbglT('index.ui.txt_c4467a4b', '')}</div>
+                            <div class="released-banner-title" data-i18n="index.ui.txt_0319c78f" data-i18n-fallback="ضمان مُفرج عنه">${wbglT('index.ui.txt_0319c78f', 'ضمان مُفرج عنه')}</div>
+                            <div class="released-banner-subtitle" data-i18n="index.ui.txt_c4467a4b" data-i18n-fallback="هذا الضمان خارج التدفق التشغيلي - للعرض فقط">${wbglT('index.ui.txt_c4467a4b', 'هذا الضمان خارج التدفق التشغيلي - للعرض فقط')}</div>
                         </div>
                     </div>
                 </div>
@@ -1510,6 +1575,9 @@ $formattedSuppliers = array_map(function ($s) {
                 const recordForm = document.querySelector('.decision-card, .card');
                 if (recordForm && recordForm.parentNode) {
                     recordForm.parentNode.insertBefore(banner, recordForm);
+                }
+                if (window.WBGLI18n && typeof window.WBGLI18n.applyTranslations === 'function') {
+                    window.WBGLI18n.applyTranslations();
                 }
 
                 // Disable all inputs

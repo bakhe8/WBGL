@@ -27,6 +27,19 @@ final class StatisticsDashboardService
         string $statsNowDateExpr,
         string $statsJsonRawAmountExpr
     ): array {
+        $activeBatchesQuery = $isProd
+            ? "SELECT COUNT(*)
+               FROM batch_metadata bm
+               WHERE bm.status = 'active'
+                 AND EXISTS (
+                    SELECT 1
+                    FROM guarantee_occurrences o
+                    JOIN guarantees g ON o.guarantee_id = g.id
+                    WHERE o.batch_identifier = bm.import_source
+                      AND g.is_test_data = 0
+               )"
+            : "SELECT COUNT(*) FROM batch_metadata WHERE status = 'active'";
+
         $occurrencesQuery = $isProd
             ? "SELECT COUNT(*) FROM guarantee_occurrences o JOIN guarantees g ON o.guarantee_id = g.id WHERE g.is_test_data = 0"
             : "SELECT COUNT(*) FROM guarantee_occurrences o JOIN guarantees g ON o.guarantee_id = g.id";
@@ -36,7 +49,7 @@ final class StatisticsDashboardService
                 (SELECT COUNT(*) FROM guarantees {$whereD}) as total_assets,
                 ({$occurrencesQuery}) as total_occurrences,
                 (SELECT COUNT(*) FROM guarantees WHERE {$statsJsonRawExpiryDateExpr} >= {$statsNowDateExpr} {$andD}) as active_assets,
-                (SELECT COUNT(*) FROM batch_metadata WHERE status='active') as active_batches,
+                ({$activeBatchesQuery}) as active_batches,
                 (SELECT SUM(CAST({$statsJsonRawAmountExpr} AS REAL)) FROM guarantees {$whereD}) as total_amount,
                 (SELECT AVG(CAST({$statsJsonRawAmountExpr} AS REAL)) FROM guarantees {$whereD}) as avg_amount,
                 (SELECT MAX(CAST({$statsJsonRawAmountExpr} AS REAL)) FROM guarantees {$whereD}) as max_amount,

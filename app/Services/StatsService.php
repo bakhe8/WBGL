@@ -26,9 +26,9 @@ class StatsService
      *
      * @return array<string,int>
      */
-    private static function getActionableWorkflowStats(PDO $db): array
+    private static function getActionableWorkflowStats(PDO $db, bool $includeTestData = false): array
     {
-        $filter = NavigationService::buildFilterConditions('actionable', null, null);
+        $filter = NavigationService::buildFilterConditions('actionable', null, null, $includeTestData);
 
         $query = $db->prepare('
             SELECT
@@ -50,6 +50,7 @@ class StatsService
             'analyzed' => (int)($results['analyzed'] ?? 0),
             'supervised' => (int)($results['supervised'] ?? 0),
             'approved' => (int)($results['approved'] ?? 0),
+            'signed' => (int)($results['signed'] ?? 0),
         ];
     }
 
@@ -65,14 +66,14 @@ class StatsService
      * @param PDO $db Database connection
      * @return array Stats: ['total' => int, 'ready' => int, 'pending' => int, 'released' => int]
      */
-    public static function getImportStats(PDO $db): array
+    public static function getImportStats(PDO $db, bool $includeTestData = false): array
     {
         // Canonical counts: rely on the same predicate source used by list/navigation.
-        $total = NavigationService::countByFilter($db, 'all');
-        $ready = NavigationService::countByFilter($db, 'ready');
-        $actionable = NavigationService::countByFilter($db, 'actionable');
-        $pending = NavigationService::countByFilter($db, 'pending');
-        $released = NavigationService::countByFilter($db, 'released');
+        $total = NavigationService::countByFilter($db, 'all', null, null, $includeTestData);
+        $ready = NavigationService::countByFilter($db, 'ready', null, null, $includeTestData);
+        $actionable = NavigationService::countByFilter($db, 'actionable', null, null, $includeTestData);
+        $pending = NavigationService::countByFilter($db, 'pending', null, null, $includeTestData);
+        $released = NavigationService::countByFilter($db, 'released', null, null, $includeTestData);
 
         return [
             'total' => $total,
@@ -87,13 +88,14 @@ class StatsService
      * Get detailed workflow statistics
      * Counts guarantees at each workflow stage
      */
-    public static function getWorkflowStats(PDO $db): array
+    public static function getWorkflowStats(PDO $db, bool $includeTestData = false): array
     {
         $where = ' WHERE 1=1 ';
         $params = [];
 
         $settings = \App\Support\Settings::getInstance();
-        if ($settings->isProductionMode()) {
+        $allowTestData = $includeTestData && !$settings->isProductionMode();
+        if (!$allowTestData) {
             $where .= ' AND g.is_test_data = 0';
         }
         $visibility = GuaranteeVisibilityService::buildSqlFilter('g', 'd');
@@ -128,9 +130,9 @@ class StatsService
     /**
      * Get a single number representing tasks for a specific user
      */
-    public static function getPersonalTaskCount(PDO $db): int
+    public static function getPersonalTaskCount(PDO $db, bool $includeTestData = false): int
     {
-        $stats = self::getActionableWorkflowStats($db);
+        $stats = self::getActionableWorkflowStats($db, $includeTestData);
         $count = 0;
 
         $stagePermissions = [
@@ -139,6 +141,7 @@ class StatsService
             'analyzed' => 'supervise_analysis',
             'supervised' => 'approve_decision',
             'approved' => 'sign_letters',
+            'signed' => 'manage_data',
         ];
 
         foreach ($stagePermissions as $stage => $permission) {
@@ -153,10 +156,12 @@ class StatsService
     /**
      * Get a breakdown of tasks by responsibility
      * Returns array of ['label' => string, 'count' => int, 'stage' => string]
+     *
+     * @param bool $includeEmptyStages When true, include allowed stages even if count is 0
      */
-    public static function getPersonalTaskBreakdown(PDO $db): array
+    public static function getPersonalTaskBreakdown(PDO $db, bool $includeTestData = false, bool $includeEmptyStages = false): array
     {
-        $stats = self::getActionableWorkflowStats($db);
+        $stats = self::getActionableWorkflowStats($db, $includeTestData);
         $breakdown = [];
 
         $stageConfigs = [
@@ -165,12 +170,13 @@ class StatsService
             'analyzed' => ['label' => 'مهام الإشراف', 'permission' => 'supervise_analysis'],
             'supervised' => ['label' => 'مهام الاعتماد', 'permission' => 'approve_decision'],
             'approved' => ['label' => 'مهام التوقيع', 'permission' => 'sign_letters'],
+            'signed' => ['label' => 'مهام الطباعة بعد التوقيع', 'permission' => 'manage_data'],
         ];
 
         foreach ($stageConfigs as $stage => $config) {
             if (\App\Support\Guard::has($config['permission'])) {
                 $count = $stats[$stage] ?? 0;
-                if ($count > 0) {
+                if ($includeEmptyStages || $count > 0) {
                     $breakdown[] = [
                         'label' => $config['label'],
                         'count' => $count,

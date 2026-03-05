@@ -53,12 +53,22 @@
         window.alert(message);
     }
 
-    function t(key, params) {
+    function t(key, fallbackOrParams, maybeParams) {
+        const hasExplicitFallback = typeof fallbackOrParams === 'string';
+        const fallback = hasExplicitFallback ? fallbackOrParams : String(key || '');
+        const params = (!hasExplicitFallback && fallbackOrParams && typeof fallbackOrParams === 'object')
+            ? fallbackOrParams
+            : (maybeParams && typeof maybeParams === 'object' ? maybeParams : undefined);
+
         if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
-            return window.WBGLI18n.t(key, key, params || undefined);
+            const translated = window.WBGLI18n.t(key, fallback, params || undefined);
+            if (typeof translated === 'string' && translated.trim() === String(key || '').trim()) {
+                return fallback;
+            }
+            return translated;
         }
 
-        let output = String(key || '');
+        let output = String(fallback || key || '');
         if (params && typeof params === 'object') {
             Object.keys(params).forEach((token) => {
                 output = output.replace(new RegExp(`{{\\s*${token}\\s*}}`, 'g'), String(params[token]));
@@ -358,7 +368,7 @@
                 <td>${escapeHtml((user.preferred_language || 'ar').toUpperCase())}</td>
                 <td>${escapeHtml((user.preferred_theme || 'system').toUpperCase())}</td>
                 <td>${escapeHtml((user.preferred_direction || 'auto').toUpperCase())}</td>
-                <td class="user-last-login">${escapeHtml(user.last_login || t('users.ui.txt_8ccc58aa'))}</td>
+                <td class="user-last-login">${escapeHtml(user.last_login || t('users.ui.txt_8ccc58aa', 'لم يدخل بعد'))}</td>
                 <td>
                     <div class="users-actions-inline">
                         <button class="btn-action btn-edit"
@@ -912,10 +922,19 @@
     async function init() {
         showLoading(true);
         try {
+            if (window.WBGLI18n && typeof window.WBGLI18n.loadNamespaces === 'function') {
+                await window.WBGLI18n.loadNamespaces(['users']);
+            }
             bindRoleSlugSync();
             bindPermissionFilters();
             bindModalEvents();
             await refreshDashboard();
+            document.addEventListener('wbgl:language-changed', () => {
+                populateDomainFilterOptions();
+                renderRoleSelect();
+                renderUsers(allUsers);
+                renderRoles(rolesData);
+            });
         } catch (error) {
             notify(error.message || t('users.ui.txt_214564ac'), 'error');
         } finally {
