@@ -24,7 +24,7 @@ class NoteRepository
         $stmt->execute([
             'gid' => $data['guarantee_id'],
             'content' => $data['content'],
-            'user' => $data['created_by'] ?? 'system'
+            'user' => $data['created_by'] ?? 'النظام'
         ]);
         
         return (int) $this->db->lastInsertId();

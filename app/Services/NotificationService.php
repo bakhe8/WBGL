@@ -124,4 +124,20 @@ class NotificationService
         $stmt->execute([$username ?? '']);
         return (int)$stmt->rowCount();
     }
+
+    public static function countUnreadForCurrentUser(): int
+    {
+        $user = AuthService::getCurrentUser();
+        $username = $user?->username;
+
+        $db = Database::connect();
+        $stmt = $db->prepare(
+            "SELECT COUNT(*)
+             FROM notifications
+             WHERE is_read = 0
+               AND (recipient_username IS NULL OR recipient_username = ?)"
+        );
+        $stmt->execute([$username ?? '']);
+        return (int)$stmt->fetchColumn();
+    }
 }

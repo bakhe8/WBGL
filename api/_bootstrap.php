@@ -335,7 +335,17 @@ if (!function_exists('wbgl_api_current_user_display')) {
         $email = trim((string)($user->email ?? ''));
         $id = (int)($user->id ?? 0);
 
-        $base = $fullName !== '' ? $fullName : ($username !== '' ? $username : 'مستخدم');
+        if ($fullName !== '') {
+            $base = $fullName;
+        } elseif ($username !== '') {
+            $base = '@' . $username;
+        } elseif ($email !== '') {
+            $base = $email;
+        } elseif ($id > 0) {
+            $base = 'id:' . $id;
+        } else {
+            return 'النظام';
+        }
         $parts = [];
         if ($username !== '') {
             $parts[] = '@' . $username;

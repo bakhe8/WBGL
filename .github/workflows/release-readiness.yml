@@ -2,6 +2,9 @@ name: Release Readiness (WBGL)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -17,6 +20,7 @@ jobs:
       WBGL_DB_USER: wbgl_user
       WBGL_DB_PASS: ${{ secrets.WBGL_CI_DB_PASSWORD }}
       WBGL_DB_SSLMODE: disable
+      WBGL_GOVERNANCE_STRICT: ${{ vars.WBGL_GOVERNANCE_STRICT }}
     services:
       postgres:
         image: postgres:16
@@ -65,7 +69,48 @@ jobs:
       - name: Theme style gate
         run: php app/Scripts/theme-style-audit.php gate
 
+      - name: Run Unit tests
+        run: vendor/bin/phpunit --testsuite Unit
+
+      - name: Run Integration tests
+        run: vendor/bin/phpunit --testsuite Integration
+
+      - name: Run governance reports (strict mode optional)
+        run: |
+          set -euo pipefail
+          STRICT_MODE="${WBGL_GOVERNANCE_STRICT:-0}"
+          if [ "${STRICT_MODE}" = "1" ]; then
+            php app/Scripts/data-integrity-check.php --strict-warn --output-json=storage/logs/data-integrity-report.json --output-md=storage/logs/data-integrity-report.md
+            php app/Scripts/permissions-drift-report.php --strict --output-json=storage/logs/permissions-drift-report.json --output-md=storage/logs/permissions-drift-report.md
+          else
+            php app/Scripts/data-integrity-check.php --output-json=storage/logs/data-integrity-report.json --output-md=storage/logs/data-integrity-report.md
+            php app/Scripts/permissions-drift-report.php --output-json=storage/logs/permissions-drift-report.json --output-md=storage/logs/permissions-drift-report.md
+          fi
+          php app/Scripts/governance-summary.php --drift=storage/logs/permissions-drift-report.json --integrity=storage/logs/data-integrity-report.json --output-md=storage/logs/governance-summary.md
+
+      - name: Release gate (strict)
+        run: php app/Scripts/release-gate.php --integrity=storage/logs/data-integrity-report.json --drift=storage/logs/permissions-drift-report.json
+
+      - name: Seed E2E fixtures
+        run: php app/Scripts/seed-e2e-fixtures.php
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+
+      - name: Run E2E smoke
+        run: npm run test:e2e
+
       - name: Upload readiness artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: wbgl-release-readiness
@@ -73,6 +118,13 @@ jobs:
             Docs/WBGL-EXECUTION-STATE-AR.json
             Docs/WBGL-EXECUTION-LOG-AR.md
             Docs/WBGL-EXECUTION-SEQUENCE-AR.json
+            storage/logs/data-integrity-report.json
+            storage/logs/data-integrity-report.md
+            storage/logs/permissions-drift-report.json
+            storage/logs/permissions-drift-report.md
+            storage/logs/governance-summary.md
+            playwright-report
+          if-no-files-found: warn
 
   pgsql-readiness:
     runs-on: ubuntu-latest
@@ -127,9 +179,12 @@ jobs:
           php app/Scripts/migration-status.php
 
       - name: Upload PostgreSQL readiness artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: wbgl-pgsql-readiness
           path: |
             Docs/WBGL-EXECUTION-STATE-AR.json
             Docs/WBGL-EXECUTION-LOG-AR.md
+            Docs/WBGL-EXECUTION-SEQUENCE-AR.json
+          if-no-files-found: warn

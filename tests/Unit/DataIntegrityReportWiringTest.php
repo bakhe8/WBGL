@@ -25,6 +25,9 @@ final class DataIntegrityReportWiringTest extends TestCase
         $this->assertStringContainsString('--strict-warn', $script);
         $this->assertStringContainsString('DECISION_STATUS_DOMAIN', $script);
         $this->assertStringContainsString('ROLE_PERMISSION_ORPHANS', $script);
+        $this->assertStringContainsString('TIMELINE_GENERIC_ACTOR_LABELS', $script);
+        $this->assertStringContainsString('NOTES_GENERIC_ACTOR_LABELS', $script);
+        $this->assertStringContainsString('ATTACHMENTS_GENERIC_ACTOR_LABELS', $script);
 
         $this->assertStringContainsString('Run governance reports (strict mode optional)', $ci);
         $this->assertStringContainsString('data-integrity-report.json', $ci);

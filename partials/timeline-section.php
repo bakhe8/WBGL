@@ -339,9 +339,6 @@ $eventCount = count($timeline);
                                     'system' => 'timeline.actor.system',
                                     'النظام' => 'timeline.actor.system',
                                     'بواسطة النظام' => 'timeline.actor.system',
-                                    'user' => 'timeline.actor.user',
-                                    'web_user' => 'timeline.actor.user',
-                                    'بواسطة المستخدم' => 'timeline.actor.user',
                                 ];
                                 $actorKey = $actorKeyMap[$displayCreatorRaw] ?? null;
                                 ?>

@@ -118,7 +118,7 @@ class NavigationService
             // Search in directly (Raw Data) AND Linked Official Names
             $searchSql = " AND (
                     g.guarantee_number LIKE :search_any OR
-                    g.raw_data LIKE :search_any OR
+                    g.raw_data::text LIKE :search_any OR
                     s.official_name LIKE :search_any
                 )";
             $params = [

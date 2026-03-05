@@ -847,7 +847,17 @@ class TimelineRecorder
         $email = trim((string)($user->email ?? ''));
         $id = (int)($user->id ?? 0);
 
-        $base = $fullName !== '' ? $fullName : ($username !== '' ? $username : 'مستخدم');
+        if ($fullName !== '') {
+            $base = $fullName;
+        } elseif ($username !== '') {
+            $base = '@' . $username;
+        } elseif ($email !== '') {
+            $base = $email;
+        } elseif ($id > 0) {
+            $base = 'id:' . $id;
+        } else {
+            return self::getSystemActor();
+        }
         $parts = [];
         if ($username !== '') {
             $parts[] = '@' . $username;
@@ -874,7 +884,7 @@ class TimelineRecorder
     private static function normalizeCreator(string $creator): string
     {
         $normalized = strtolower(trim($creator));
-        if ($normalized === '' || in_array($normalized, ['user', 'web_user', 'المستخدم'], true)) {
+        if ($normalized === '' || in_array($normalized, ['user', 'web_user', 'المستخدم', 'بواسطة المستخدم'], true)) {
             return self::getCurrentUser();
         }
         if (in_array($normalized, ['system', 'system ai', 'النظام'], true)) {

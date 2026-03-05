@@ -64,6 +64,7 @@
     "index.supplier.add_and_assign_prefix": "Add \"",
     "index.supplier.add_and_assign_suffix": "\" and assign as supplier for this guarantee",
     "index.tasks.current_title": "My current tasks",
+    "index.tasks.unread_notifications_title": "Unread notifications",
     "index.tasks.view_all": "View all my tasks",
     "index.test_data.batch_label": "Batch:",
     "index.test_data.convert_to_real": "Convert to real",

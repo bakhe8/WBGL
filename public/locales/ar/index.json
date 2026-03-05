@@ -64,6 +64,7 @@
     "index.supplier.add_and_assign_prefix": "إضافة \"",
     "index.supplier.add_and_assign_suffix": "\" وتعيينه كمورد لهذا الضمان",
     "index.tasks.current_title": "مهامي الحالية",
+    "index.tasks.unread_notifications_title": "إشعارات غير مقروءة",
     "index.tasks.view_all": "عرض جميع مهامي",
     "index.test_data.batch_label": "الدفعة:",
     "index.test_data.convert_to_real": "تحويل إلى حقيقي",

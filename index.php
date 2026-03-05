@@ -36,6 +36,7 @@ use App\Support\LocaleResolver;
 use App\Support\Settings;
 use App\Support\TestDataVisibility;
 use App\Services\ActionabilityPolicyService;
+use App\Services\NotificationService;
 use App\Services\UiSurfacePolicyService;
 use App\Services\Learning\AuthorityFactory;
 use App\Repositories\GuaranteeRepository;
@@ -317,10 +318,12 @@ $workflowStats = \App\Services\StatsService::getWorkflowStats($db, $includeTestD
 // ✅ PHASE 11: Task Guidance - Calculate personally actionable tasks
 $currentUser = \App\Support\AuthService::getCurrentUser();
 $personalTaskCount = 0;
+$unreadNotifications = 0;
 
 if ($currentUser) {
     // Fetch real-time count from centralized service
     $personalTaskCount = \App\Services\StatsService::getPersonalTaskCount($db, $includeTestData);
+    $unreadNotifications = NotificationService::countUnreadForCurrentUser();
 }
 
 // Keep actionable counter aligned with user-scoped actionable decision.
@@ -958,6 +961,25 @@ $formattedSuppliers = array_map(function ($s) {
             color: var(--accent-warning-hover);
         }
 
+        .task-notification-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--border-primary);
+            background: var(--bg-secondary);
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .task-notification-badge strong {
+            color: var(--accent-warning);
+            font-size: 12px;
+        }
+
         .empty-state-message {
             text-align: center;
             color: var(--text-light);
@@ -1432,6 +1454,11 @@ $formattedSuppliers = array_map(function ($s) {
                     </div>
                 <div class="progress-text">
                     <span><span>مهام</span> <span><?= $taskCurrentIndex ?></span> <span data-i18n="index.ui.txt_aa7099e2">من</span> <span><?= $taskTotalRecords ?></span></span>
+                    <?php if ($unreadNotifications > 0): ?>
+                        <span class="task-notification-badge" data-i18n-title="index.tasks.unread_notifications_title" title="إشعارات غير مقروءة">
+                            🔔 <strong><?= (int)$unreadNotifications ?></strong>
+                        </span>
+                    <?php endif; ?>
                     <span class="progress-percent"><?= $taskProgressPercent ?>%</span>
                 </div>
             </div>

@@ -415,6 +415,36 @@ try {
             ",
         ],
         [
+            'id' => 'TIMELINE_GENERIC_ACTOR_LABELS',
+            'title' => 'timeline events should avoid generic actor labels',
+            'severity' => 'warn',
+            'sql' => "
+                SELECT COUNT(*) AS c
+                FROM guarantee_history
+                WHERE LOWER(TRIM(COALESCE(created_by, ''))) IN ('user', 'web_user', 'المستخدم', 'بواسطة المستخدم')
+            ",
+        ],
+        [
+            'id' => 'NOTES_GENERIC_ACTOR_LABELS',
+            'title' => 'notes should avoid generic actor labels',
+            'severity' => 'warn',
+            'sql' => "
+                SELECT COUNT(*) AS c
+                FROM guarantee_notes
+                WHERE LOWER(TRIM(COALESCE(created_by, ''))) IN ('user', 'web_user', 'المستخدم', 'بواسطة المستخدم')
+            ",
+        ],
+        [
+            'id' => 'ATTACHMENTS_GENERIC_ACTOR_LABELS',
+            'title' => 'attachments should avoid generic actor labels',
+            'severity' => 'warn',
+            'sql' => "
+                SELECT COUNT(*) AS c
+                FROM guarantee_attachments
+                WHERE LOWER(TRIM(COALESCE(uploaded_by, ''))) IN ('user', 'web_user', 'المستخدم', 'بواسطة المستخدم')
+            ",
+        ],
+        [
             'id' => 'SUSPECT_TEST_DATA_UNFLAGGED',
             'title' => 'records with strong test signatures must be marked is_test_data=1',
             'severity' => 'warn',

@@ -27,7 +27,7 @@ class AttachmentRepository
             'path' => $data['file_path'],
             'size' => $data['file_size'] ?? 0,
             'type' => $data['file_type'] ?? 'unknown',
-            'user' => $data['uploaded_by'] ?? 'system'
+            'user' => $data['uploaded_by'] ?? 'النظام'
         ]);
         
         return (int) $this->db->lastInsertId();

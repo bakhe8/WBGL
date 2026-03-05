@@ -83,6 +83,9 @@ jobs:
           fi
           php app/Scripts/governance-summary.php --drift=storage/logs/permissions-drift-report.json --integrity=storage/logs/data-integrity-report.json --output-md=storage/logs/governance-summary.md
 
+      - name: Release gate (governance status)
+        run: php app/Scripts/release-gate.php --integrity=storage/logs/data-integrity-report.json --drift=storage/logs/permissions-drift-report.json
+
       - name: Upload governance artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -199,6 +202,9 @@ jobs:
 
       - name: Apply migrations
         run: php app/Scripts/migrate.php
+
+      - name: Seed E2E fixtures
+        run: php app/Scripts/seed-e2e-fixtures.php
 
       - name: Setup Node
         uses: actions/setup-node@v4

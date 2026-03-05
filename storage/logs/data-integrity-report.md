@@ -1,10 +1,10 @@
 # WBGL Data Integrity Report
 
-- Generated At: `2026-03-05T01:39:48+00:00`
+- Generated At: `2026-03-05T18:16:41+00:00`
 - Driver: `pgsql`
-- Status: **PASS**
+- Status: **WARN**
 - Fail violations: `0`
-- Warn violations: `0`
+- Warn violations: `673`
 - Strict warn mode: `OFF`
 
 | Check ID | Severity | Status | Violations | Title |
@@ -32,5 +32,8 @@
 | `HISTORY_EMPTY_EVENT_DETAILS` | WARN | OK | 0 | history rows with blank event_details |
 | `PRINT_EVENT_ORPHAN_GUARANTEE` | WARN | OK | 0 | print_events with non-null missing guarantee_id |
 | `NOTIFICATION_EMPTY_RECIPIENT` | WARN | OK | 0 | notifications recipient_username must not be blank when explicitly provided |
+| `TIMELINE_GENERIC_ACTOR_LABELS` | WARN | WARN | 665 | timeline events should avoid generic actor labels |
+| `NOTES_GENERIC_ACTOR_LABELS` | WARN | WARN | 1 | notes should avoid generic actor labels |
+| `ATTACHMENTS_GENERIC_ACTOR_LABELS` | WARN | WARN | 7 | attachments should avoid generic actor labels |
 | `SUSPECT_TEST_DATA_UNFLAGGED` | WARN | OK | 0 | records with strong test signatures must be marked is_test_data=1 |
 

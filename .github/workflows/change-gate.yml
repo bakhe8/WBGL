@@ -20,6 +20,7 @@ jobs:
       WBGL_DB_USER: wbgl_user
       WBGL_DB_PASS: ${{ secrets.WBGL_CI_DB_PASSWORD }}
       WBGL_DB_SSLMODE: disable
+      WBGL_GOVERNANCE_STRICT: ${{ vars.WBGL_GOVERNANCE_STRICT }}
     services:
       postgres:
         image: postgres:16
@@ -189,6 +190,22 @@ jobs:
       - name: Run PHPUnit Integration suite
         run: vendor/bin/phpunit --testsuite Integration
 
+      - name: Run governance reports (strict mode optional)
+        run: |
+          set -euo pipefail
+          STRICT_MODE="${WBGL_GOVERNANCE_STRICT:-0}"
+          if [ "${STRICT_MODE}" = "1" ]; then
+            php app/Scripts/data-integrity-check.php --strict-warn --output-json=storage/logs/data-integrity-report.json --output-md=storage/logs/data-integrity-report.md
+            php app/Scripts/permissions-drift-report.php --strict --output-json=storage/logs/permissions-drift-report.json --output-md=storage/logs/permissions-drift-report.md
+          else
+            php app/Scripts/data-integrity-check.php --output-json=storage/logs/data-integrity-report.json --output-md=storage/logs/data-integrity-report.md
+            php app/Scripts/permissions-drift-report.php --output-json=storage/logs/permissions-drift-report.json --output-md=storage/logs/permissions-drift-report.md
+          fi
+          php app/Scripts/governance-summary.php --drift=storage/logs/permissions-drift-report.json --integrity=storage/logs/data-integrity-report.json --output-md=storage/logs/governance-summary.md
+
+      - name: Release gate (strict)
+        run: php app/Scripts/release-gate.php --integrity=storage/logs/data-integrity-report.json --drift=storage/logs/permissions-drift-report.json
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -200,6 +217,9 @@ jobs:
           set -euo pipefail
           npm ci
           npx playwright install chromium
+
+      - name: Seed E2E fixtures
+        run: php app/Scripts/seed-e2e-fixtures.php
 
       - name: Run Playwright smoke suite
         run: npm run test:e2e

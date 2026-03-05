@@ -56,7 +56,7 @@ class LearningRepository
             SELECT d.supplier_id, COUNT(*) as frequency
             FROM guarantees g
             JOIN guarantee_decisions d ON g.id = d.guarantee_id
-            WHERE g.raw_data LIKE ? 
+            WHERE g.raw_data::text LIKE ? 
             AND d.supplier_id IS NOT NULL
             GROUP BY d.supplier_id
         ");
