@@ -34,6 +34,7 @@ class SaveAndNextApplicationService
         string $supplierName,
         string $decidedBy,
         string $statusFilter,
+        bool $includeTestData,
         array $input,
         array $policyContext,
         array $surface
@@ -69,6 +70,7 @@ class SaveAndNextApplicationService
             $supplierName,
             $decidedBy,
             $statusFilter,
+            $includeTestData,
             $policyContext,
             $surface
         ): array {
@@ -120,6 +122,7 @@ class SaveAndNextApplicationService
                     $db,
                     $guaranteeId,
                     $statusFilter,
+                    $includeTestData,
                     $policyContext,
                     $surface,
                     $meta
@@ -614,6 +617,7 @@ class SaveAndNextApplicationService
         PDO $db,
         int $nextGuaranteeId,
         string $statusFilter,
+        bool $includeTestData,
         array $policyContext,
         array $surface,
         array $meta = []
@@ -653,7 +657,10 @@ class SaveAndNextApplicationService
         $nextNavInfo = NavigationService::getNavigationInfo(
             $db,
             $nextGuaranteeId,
-            $statusFilter
+            $statusFilter,
+            null,
+            null,
+            $includeTestData
         );
 
         $response = [
@@ -686,11 +693,12 @@ class SaveAndNextApplicationService
         PDO $db,
         int $currentGuaranteeId,
         string $statusFilter,
+        bool $includeTestData,
         array $policyContext,
         array $surface,
         array $meta = []
     ): array {
-        $navInfo = NavigationService::getNavigationInfo($db, $currentGuaranteeId, $statusFilter);
+        $navInfo = NavigationService::getNavigationInfo($db, $currentGuaranteeId, $statusFilter, null, null, $includeTestData);
         $nextGuaranteeId = (int)($navInfo['nextId'] ?? 0);
 
         if ($nextGuaranteeId <= 0) {
@@ -701,6 +709,7 @@ class SaveAndNextApplicationService
             $db,
             $nextGuaranteeId,
             $statusFilter,
+            $includeTestData,
             $policyContext,
             $surface,
             $meta

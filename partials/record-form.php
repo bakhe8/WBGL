@@ -38,6 +38,7 @@ $bannerData = $bannerData ?? null; // Should contain ['timestamp' => '...', 'rea
     <!-- Phase 4: Hidden Inputs from DB (Current View) -->
     <input type="hidden" id="decisionStatus" value="<?= htmlspecialchars($record['status'] ?? 'pending') ?>">
     <input type="hidden" id="activeAction" value="<?= htmlspecialchars($record['active_action'] ?? '') ?>">
+    <input type="hidden" id="workflowStep" value="<?= htmlspecialchars($record['workflow_step'] ?? 'draft') ?>">
     <input type="hidden" id="relatedTo" value="<?= htmlspecialchars($record['related_to'] ?? 'contract') ?>">
 
     <!-- Legacy: Keep for backward compatibility during transition -->
@@ -70,7 +71,37 @@ $bannerData = $bannerData ?? null; // Should contain ['timestamp' => '...', 'rea
 // Only allow actions on READY guarantees AND policy executable records.
 $recordStatusNormalized = strtolower(trim((string)($record['status'] ?? 'pending')));
 $isReady = in_array($recordStatusNormalized, ['ready', 'approved'], true);
-$canMutateRecord = $isReady && (bool)$recordCanExecuteActions;
+$recordWorkflowStep = strtolower(trim((string)($record['workflow_step'] ?? 'draft')));
+$recordActiveAction = strtolower(trim((string)($record['active_action'] ?? '')));
+
+// Resolve role slug (index passes $currentUserRoleSlug; API fallback resolves from current session user).
+$effectiveRoleSlug = strtolower(trim((string)($currentUserRoleSlug ?? '')));
+if ($effectiveRoleSlug === '') {
+    try {
+        $currentUserForRole = \App\Support\AuthService::getCurrentUser();
+        if ($currentUserForRole && $currentUserForRole->roleId !== null) {
+            $roleRepo = new \App\Repositories\RoleRepository(\App\Support\Database::connect());
+            $role = $roleRepo->find((int)$currentUserForRole->roleId);
+            $effectiveRoleSlug = strtolower(trim((string)($role->slug ?? '')));
+        }
+    } catch (\Throwable) {
+        $effectiveRoleSlug = '';
+    }
+}
+$isDataEntryRole = ($effectiveRoleSlug === 'data_entry');
+
+// Finalized operationally: released + signed -> read-only archive.
+$isFinalizedReleasedSigned = ($recordStatusNormalized === 'released' && $recordWorkflowStep === 'signed');
+
+// Data-entry can start a new lifecycle action when record is ready and has no active action.
+$canStartLifecycleAction = $isDataEntryRole
+    && $isReady
+    && !$isFinalizedReleasedSigned
+    && $recordActiveAction === '';
+
+// Lifecycle mutation buttons are a data-entry surface only.
+$showLifecycleMutationButtons = $isDataEntryRole;
+$canMutateRecord = $canStartLifecycleAction;
 $saveDisabledAttr = !$recordCanExecuteActions ? 'disabled' : '';
 $saveDisabledClass = !$recordCanExecuteActions ? ' record-action-disabled' : '';
 $disabledAttr = !$canMutateRecord ? 'disabled' : '';
@@ -92,37 +123,39 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
             </button>
             <div class="record-actions-divider"></div>
 
-            <!-- ⚠️ Actions disabled if not ready -->
-            <button class="btn btn-secondary btn-sm<?= $disabledClass ?>"
-                data-action="extend"
-                data-authorize-resource="guarantee"
-                data-authorize-action="extend"
-                data-authorize-mode="disable"
-                data-authorize-denied-key="index.permissions.denied.extend"
-                <?= $disabledAttr ?>
-                <?= $disabledTitle ?>>
-                <span data-i18n="index.actions.extend">🔄 تمديد</span>
-            </button>
-            <button class="btn btn-secondary btn-sm<?= $disabledClass ?>"
-                data-action="reduce"
-                data-authorize-resource="guarantee"
-                data-authorize-action="reduce"
-                data-authorize-mode="disable"
-                data-authorize-denied-key="index.permissions.denied.reduce"
-                <?= $disabledAttr ?>
-                <?= $disabledTitle ?>>
-                <span data-i18n="index.actions.reduce">📉 تخفيض</span>
-            </button>
-            <button class="btn btn-secondary btn-sm<?= $disabledClass ?>"
-                data-action="release"
-                data-authorize-resource="guarantee"
-                data-authorize-action="release"
-                data-authorize-mode="disable"
-                data-authorize-denied-key="index.permissions.denied.release"
-                <?= $disabledAttr ?>
-                <?= $disabledTitle ?>>
-                <span data-i18n="index.actions.release">📤 إفراج</span>
-            </button>
+            <!-- Lifecycle actions are started by data-entry only -->
+            <?php if ($showLifecycleMutationButtons): ?>
+                <button class="btn btn-secondary btn-sm<?= $disabledClass ?>"
+                    data-action="extend"
+                    data-authorize-resource="guarantee"
+                    data-authorize-action="extend"
+                    data-authorize-mode="disable"
+                    data-authorize-denied-key="index.permissions.denied.extend"
+                    <?= $disabledAttr ?>
+                    <?= $disabledTitle ?>>
+                    <span data-i18n="index.actions.extend">🔄 تمديد</span>
+                </button>
+                <button class="btn btn-secondary btn-sm<?= $disabledClass ?>"
+                    data-action="reduce"
+                    data-authorize-resource="guarantee"
+                    data-authorize-action="reduce"
+                    data-authorize-mode="disable"
+                    data-authorize-denied-key="index.permissions.denied.reduce"
+                    <?= $disabledAttr ?>
+                    <?= $disabledTitle ?>>
+                    <span data-i18n="index.actions.reduce">📉 تخفيض</span>
+                </button>
+                <button class="btn btn-secondary btn-sm<?= $disabledClass ?>"
+                    data-action="release"
+                    data-authorize-resource="guarantee"
+                    data-authorize-action="release"
+                    data-authorize-mode="disable"
+                    data-authorize-denied-key="index.permissions.denied.release"
+                    <?= $disabledAttr ?>
+                    <?= $disabledTitle ?>>
+                    <span data-i18n="index.actions.release">📤 إفراج</span>
+                </button>
+            <?php endif; ?>
 
             <!-- Phase 3: Workflow Action Button -->
             <?php
@@ -135,13 +168,41 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
             $decisionModel = new GuaranteeDecision(
                 id: null,
                 guaranteeId: (int)($record['id'] ?? 0),
+                status: (string)($record['status'] ?? 'pending'),
+                isLocked: (bool)($record['is_locked'] ?? false),
+                activeAction: trim((string)($record['active_action'] ?? '')) !== '' ? (string)$record['active_action'] : null,
                 workflowStep: $record['workflow_step'] ?? 'draft',
                 signaturesReceived: $record['signatures_received'] ?? 0
             );
 
             $canAdvance = WorkflowService::canAdvance($decisionModel);
+            $canReject = WorkflowService::canReject($decisionModel);
             $actionLabel = WorkflowService::getActionLabel($record['workflow_step'] ?? 'draft');
-            $workflowStep = $record['workflow_step'] ?? 'draft';
+            $workflowStep = trim((string)($record['workflow_step'] ?? 'draft'));
+            if ($workflowStep === '') {
+                $workflowStep = 'draft';
+            }
+            $workflowStepI18nMap = [
+                'draft' => 'index.workflow.step.draft',
+                'audited' => 'index.workflow.step.audited',
+                'analyzed' => 'index.workflow.step.analyzed',
+                'supervised' => 'index.workflow.step.supervised',
+                'approved' => 'index.workflow.step.approved',
+                'signed' => 'index.workflow.step.signed',
+            ];
+            $workflowStepLabelMap = [
+                'draft' => 'مسودة',
+                'audited' => 'تم التدقيق',
+                'analyzed' => 'تم التحليل',
+                'supervised' => 'تم الإشراف',
+                'approved' => 'تم الاعتماد',
+                'signed' => 'تم التوقيع',
+            ];
+            $workflowStepI18nKey = $workflowStepI18nMap[$workflowStep] ?? null;
+            $workflowStepLabel = $workflowStepLabelMap[$workflowStep] ?? $workflowStep;
+            // Operational UI default: hide raw workflow-step badge to reduce noise.
+            // Can be enabled explicitly by setting $showWorkflowStagePill = true before including this partial.
+            $showWorkflowStagePill = isset($showWorkflowStagePill) ? (bool)$showWorkflowStagePill : false;
 
             // ✅ PHASE 12: Contextual Role Reinforcement
             $stagePermissionsMap = [
@@ -155,10 +216,15 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
             $requiredWorkflowPermission = $req['p'] ?? '';
             ?>
             <div class="workflow-controls">
-                <div class="workflow-stage-pill" title="" data-i18n-title="index.workflow.current_stage_title">
-                    <span data-i18n="index.workflow.stage_label">المرحلة:</span>
-                    <span class="workflow-stage-value"><?= htmlspecialchars($workflowStep) ?></span>
-                </div>
+                <?php if ($showWorkflowStagePill): ?>
+                    <div class="workflow-stage-pill" title="" data-i18n-title="index.workflow.current_stage_title">
+                        <span data-i18n="index.workflow.stage_label">المرحلة:</span>
+                        <span class="workflow-stage-value"
+                            <?= $workflowStepI18nKey ? 'data-i18n="' . htmlspecialchars($workflowStepI18nKey, ENT_QUOTES, 'UTF-8') . '"' : '' ?>>
+                            <?= htmlspecialchars($workflowStepLabel) ?>
+                        </span>
+                    </div>
+                <?php endif; ?>
 
                 <?php if ($canAdvance && $recordCanExecuteActions): ?>
                     <button class="btn btn-secondary btn-sm workflow-action-btn"
@@ -169,6 +235,16 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
                         title=""
                         data-i18n-title="index.workflow.execute_next_step">
                         ⚡ <?= $actionLabel ?>
+                    </button>
+                <?php endif; ?>
+                <?php if ($canReject && $recordCanExecuteActions): ?>
+                    <button class="btn btn-secondary btn-sm workflow-action-btn"
+                        data-action="workflow-reject"
+                        data-step="<?= $workflowStep ?>"
+                        data-authorize-permission="<?= htmlspecialchars($requiredWorkflowPermission, ENT_QUOTES, 'UTF-8') ?>"
+                        data-authorize-mode="hide"
+                        title="يرفض المرحلة الحالية ويعيد السجل لمدخل البيانات">
+                        ⛔ رفض
                     </button>
                 <?php endif; ?>
             </div>

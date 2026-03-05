@@ -41,7 +41,7 @@ try {
         $currentStep = (string)($stepStmt->fetchColumn() ?: 'unknown');
 
         wbgl_api_compat_fail(403, 'Permission Denied', [
-            'message' => 'ليس لديك صلاحية إضافة ملاحظة على هذا السجل في حالته الحالية.',
+            'message' => 'إضافة الملاحظات غير متاحة على هذا السجل في حالته الحالية.',
             'required_permission' => 'notes_create',
             'current_step' => $currentStep,
             'reason_code' => 'SURFACE_NOT_GRANTED_NOTES_CREATE',

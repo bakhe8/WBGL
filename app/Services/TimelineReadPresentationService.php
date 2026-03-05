@@ -25,14 +25,16 @@ class TimelineReadPresentationService
         int $index,
         string $statusFilter,
         ?string $searchTerm,
-        ?string $stageFilter
+        ?string $stageFilter,
+        bool $includeTestData = false
     ): array {
         $guaranteeId = NavigationService::getIdByIndex(
             $this->db,
             $index,
             $statusFilter,
             $searchTerm,
-            $stageFilter
+            $stageFilter,
+            $includeTestData
         );
 
         $timeline = [];
@@ -245,4 +247,3 @@ class TimelineReadPresentationService
         return is_string($html) ? $html : '';
     }
 }
-

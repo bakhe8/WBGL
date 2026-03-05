@@ -17,13 +17,14 @@ namespace App\Services;
 class LetterBuilder
 {
     /**
-     * Build complete letter data structure from guarantee
+     * Build complete letter data structure from guarantee.
      *
      * @param array $guaranteeData Full guarantee data including relations
      * @param string $action 'extension', 'reduction', 'release', etc.
+     * @param array{show_print_button?:bool} $options
      * @return array Structured data ready for template rendering
      */
-    public static function prepare(array $guaranteeData, string $action): array
+    public static function prepare(array $guaranteeData, string $action, array $options = []): array
     {
         // Extract related_to (contract or purchase_order)
         $relatedTo = $guaranteeData['related_to'] ?? 'contract';
@@ -37,6 +38,7 @@ class LetterBuilder
             'cc' => self::buildCC($guaranteeData, $action, $relatedTo),
             'action' => $action,
             'relatedTo' => $relatedTo,
+            'show_print_button' => (bool)($options['show_print_button'] ?? false),
         ];
     }
 

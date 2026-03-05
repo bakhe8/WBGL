@@ -209,6 +209,9 @@ if (!window.TimelineController) {
 
             // Ensure legacy/current print button markup always renders the same shape/style.
             this.normalizePreviewPrintButton();
+            if (window.recordsController && typeof window.recordsController.syncPreviewPrintButtonVisibility === 'function') {
+                window.recordsController.syncPreviewPrintButtonVisibility();
+            }
         }
 
         normalizePreviewPrintButton() {
@@ -529,6 +532,9 @@ if (!window.TimelineController) {
                 }
 
                 this.normalizePreviewPrintButton();
+                if (window.recordsController && typeof window.recordsController.syncPreviewPrintButtonVisibility === 'function') {
+                    window.recordsController.syncPreviewPrintButtonVisibility();
+                }
 
                 // Hide historical banner (this is Current State)
                 this.removeHistoricalBanner();

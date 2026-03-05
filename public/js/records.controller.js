@@ -102,6 +102,7 @@ if (!window.RecordsController) {
                 this.syncSuggestionVisibility();
                 BglLogger.debug('records.guarantee_updated');
                 this.updatePreviewFromDOM();
+                this.syncPreviewPrintButtonVisibility();
 
                 // ✨ Apply formatting AFTER refresh (fix race condition)
                 if (window.PreviewFormatter) {
@@ -181,6 +182,32 @@ if (!window.RecordsController) {
             return shouldHide;
         }
 
+        syncPreviewPrintButtonVisibility() {
+            const previewSection = document.getElementById('preview-section');
+            if (!(previewSection instanceof HTMLElement)) {
+                return;
+            }
+
+            const printButtons = previewSection.querySelectorAll('button.btn-print-overlay');
+            if (printButtons.length === 0) {
+                return;
+            }
+
+            const decisionStatusInput = document.getElementById('decisionStatus');
+            const workflowStepInput = document.getElementById('workflowStep');
+            const statusValue = this.normalizeDecisionStatus(decisionStatusInput ? decisionStatusInput.value : '');
+            const workflowStep = String(workflowStepInput ? workflowStepInput.value : '').trim().toLowerCase();
+
+            const section = document.getElementById('record-form-section');
+            const canExecute = String(section?.getAttribute('data-surface-can-execute-actions') || '0') === '1';
+
+            const canShowPrint = statusValue === 'ready' && workflowStep === 'signed' && canExecute;
+            printButtons.forEach((button) => {
+                button.style.display = canShowPrint ? '' : 'none';
+                button.setAttribute('aria-hidden', canShowPrint ? 'false' : 'true');
+            });
+        }
+
         // UI Actions
         // UI Actions
         togglePreview() {
@@ -202,6 +229,7 @@ if (!window.RecordsController) {
 
                 if (isPending) {
                     BglLogger.debug('records.preview_blocked_pending');
+                    this.syncPreviewPrintButtonVisibility();
                     return; // Exit early - no preview update
                 }
             }
@@ -214,6 +242,7 @@ if (!window.RecordsController) {
             if (!hasAction) {
                 BglLogger.debug('records.preview_blocked_no_action');
                 this.showNoActionState();
+                this.syncPreviewPrintButtonVisibility();
                 return; // Exit early - no preview without action
             }
             // =========================================
@@ -332,6 +361,7 @@ if (!window.RecordsController) {
             if (window.PreviewFormatter) {
                 window.PreviewFormatter.applyFormatting();
             }
+            this.syncPreviewPrintButtonVisibility();
         }
 
         // Standard helpers
@@ -508,13 +538,15 @@ if (!window.RecordsController) {
             // Get current status filter from URL
             const urlParams = new URLSearchParams(window.location.search);
             const statusFilter = urlParams.get('filter') || 'all';
+            const includeTestData = urlParams.get('include_test_data') || '';
 
             const payload = {
                 guarantee_id: recordIdEl.dataset.recordId,
                 supplier_id: document.getElementById('supplierIdHidden')?.value || null,
                 supplier_name: document.getElementById('supplierInput')?.value || '',
                 current_index: document.querySelector('[data-record-index]')?.dataset.recordIndex || 1,
-                status_filter: statusFilter
+                status_filter: statusFilter,
+                include_test_data: includeTestData
             };
 
 
@@ -537,15 +569,28 @@ if (!window.RecordsController) {
 
                         // ✅ FIX: Redirect to clear the current record from view and show next or empty state
                         setTimeout(() => {
-                            window.location.href = `?filter=${statusFilter}`;
+                            const nextParams = new URLSearchParams(window.location.search);
+                            nextParams.delete('id');
+                            if (statusFilter === 'all') {
+                                nextParams.delete('filter');
+                            } else {
+                                nextParams.set('filter', statusFilter);
+                            }
+                            window.location.href = `?${nextParams.toString()}`;
                         }, 1000);
                         return;
                     }
 
                     // Reload page with next record, preserving filter
                     if (data.record && data.record.id) {
-                        const filter = statusFilter !== 'all' ? `&filter=${statusFilter}` : '';
-                        window.location.href = `?id=${data.record.id}${filter}`;
+                        const nextParams = new URLSearchParams(window.location.search);
+                        nextParams.set('id', String(data.record.id));
+                        if (statusFilter === 'all') {
+                            nextParams.delete('filter');
+                        } else {
+                            nextParams.set('filter', statusFilter);
+                        }
+                        window.location.href = `?${nextParams.toString()}`;
                     } else {
                         window.location.reload();
                     }
@@ -756,22 +801,18 @@ if (!window.RecordsController) {
         previousRecord(target) {
             const prevId = target.dataset.id;
             if (prevId) {
-                // Preserve filter parameter when navigating
-                const urlParams = new URLSearchParams(window.location.search);
-                const filter = urlParams.get('filter');
-                const url = filter ? `?id=${prevId}&filter=${filter}` : `?id=${prevId}`;
-                window.location.href = url;
+                const nextParams = new URLSearchParams(window.location.search);
+                nextParams.set('id', String(prevId));
+                window.location.href = `?${nextParams.toString()}`;
             }
         }
 
         nextRecord(target) {
             const nextId = target.dataset.id;
             if (nextId) {
-                // Preserve filter parameter when navigating
-                const urlParams = new URLSearchParams(window.location.search);
-                const filter = urlParams.get('filter');
-                const url = filter ? `?id=${nextId}&filter=${filter}` : `?id=${nextId}`;
-                window.location.href = url;
+                const nextParams = new URLSearchParams(window.location.search);
+                nextParams.set('id', String(nextId));
+                window.location.href = `?${nextParams.toString()}`;
             }
         }
 
@@ -980,6 +1021,7 @@ if (!window.RecordsController) {
                     historicalBannerContainer.hidden = true;
                     historicalBannerContainer.classList.add('u-hidden');
                 }
+                this.syncPreviewPrintButtonVisibility();
                 return;
             }
 
@@ -998,6 +1040,7 @@ if (!window.RecordsController) {
                     previewSection.classList.add('u-hidden');
                 }
             }
+            this.syncPreviewPrintButtonVisibility();
         }
 
         // Navigation Implementation
@@ -1017,6 +1060,11 @@ if (!window.RecordsController) {
                 const stageFilter = urlParams.get('stage');
                 if (stageFilter && stageFilter.trim() !== '') {
                     query.set('stage', stageFilter);
+                }
+
+                const includeTestData = urlParams.get('include_test_data');
+                if (includeTestData && includeTestData.trim() !== '') {
+                    query.set('include_test_data', includeTestData);
                 }
 
                 // Fetch Record HTML
@@ -1072,6 +1120,11 @@ if (!window.RecordsController) {
                 const stageFilter = urlParams.get('stage');
                 if (stageFilter && stageFilter.trim() !== '') {
                     query.set('stage', stageFilter);
+                }
+
+                const includeTestData = urlParams.get('include_test_data');
+                if (includeTestData && includeTestData.trim() !== '') {
+                    query.set('include_test_data', includeTestData);
                 }
 
                 const res = await fetch(`/api/get-timeline.php?${query.toString()}`);

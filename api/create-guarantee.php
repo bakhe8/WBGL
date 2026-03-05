@@ -46,6 +46,7 @@ try {
     $repo = new GuaranteeRepository($db);
     $decisionRepo = new GuaranteeDecisionRepository($db);
     $supplierRepo = new SupplierRepository();
+    $actor = wbgl_api_current_user_display();
 
     $guaranteeNumber = Input::string($input, 'guarantee_number', '');
     $supplier = Input::string($input, 'supplier', '');
@@ -75,59 +76,72 @@ try {
         'related_to' => $relatedTo, // 🔥 NEW
     ];
 
-    // 2. Create Guarantee Record
-    // Check duplication first
-    if ($repo->findByNumber($guaranteeNumber)) {
-        throw new \RuntimeException("رقم الضمان موجود بالفعل: " . $guaranteeNumber);
-    }
-
-    // Create Model Instance
-    // ✅ BATCH LOGIC: Daily Separated Batches (Real vs Test)
+    // 2. Create Guarantee Record (atomically with occurrence ledger write)
     $isTestData = !empty($input['is_test_data']);
     $batchPrefix = $isTestData ? 'test_paste_' : 'manual_paste_';
-    $batchId = $batchPrefix . date('Ymd');
+    $baseBatchId = $batchPrefix . date('Ymd');
+    $guaranteeId = 0;
+    $savedGuarantee = null;
 
-    $guaranteeModel = new Guarantee(
-        id: null,
-        guaranteeNumber: $guaranteeNumber,
-        rawData: $rawData,
-        importSource: $batchId,
-        importedAt: date('Y-m-d H:i:s'),
-        importedBy: 'Web User'
-    );
+    $db->beginTransaction();
+    try {
+        // Check duplication in the same transaction window.
+        if ($repo->findByNumber($guaranteeNumber)) {
+            throw new \RuntimeException("رقم الضمان موجود بالفعل: " . $guaranteeNumber);
+        }
 
-    // ✅ ARABIC NAME LOGIC
-    $arabicName = $isTestData 
-        ? 'دفعة اختبار: إدخال/لصق (' . date('Y/m/d') . ')' 
-        : 'دفعة إدخال يدوي/ذكي (' . date('Y/m/d') . ')';
+        // Resolve a batch identifier that cannot mix test/real records.
+        $batchId = ImportService::resolveCompatibleBatchIdentifier($db, $baseBatchId, $isTestData);
 
-    // Ensure metadata exists
-    $metaRepo = new BatchMetadataRepository($repo->getDb());
-    $metaRepo->ensureBatchName($batchId, $arabicName);
-
-    $savedGuarantee = $repo->create($guaranteeModel);
-    $guaranteeId = $savedGuarantee->id;
-
-    // Record occurrence through the shared schema-aware contract path.
-    ImportService::recordOccurrence($guaranteeId, $batchId, 'manual');
-    
-    // ✅ NEW: Handle test data marking (Phase 1)
-    if (!empty($input['is_test_data'])) {
-        $repo->markAsTestData(
-            $guaranteeId,
-            $input['test_batch_id'] ?? null,
-            $input['test_note'] ?? null
+        $guaranteeModel = new Guarantee(
+            id: null,
+            guaranteeNumber: $guaranteeNumber,
+            rawData: $rawData,
+            importSource: $batchId,
+            importedAt: date('Y-m-d H:i:s'),
+            importedBy: $actor
         );
+
+        // ✅ ARABIC NAME LOGIC
+        $arabicName = $isTestData
+            ? 'دفعة اختبار: إدخال/لصق (' . date('Y/m/d') . ')'
+            : 'دفعة إدخال يدوي/ذكي (' . date('Y/m/d') . ')';
+
+        // Ensure metadata exists
+        $metaRepo = new BatchMetadataRepository($repo->getDb());
+        $metaRepo->ensureBatchName($batchId, $arabicName);
+
+        $savedGuarantee = $repo->create($guaranteeModel);
+        $guaranteeId = (int)$savedGuarantee->id;
+
+        // Record occurrence through the shared schema-aware contract path.
+        ImportService::recordOccurrence($guaranteeId, $batchId, 'manual', null, $db);
+
+        // ✅ NEW: Handle test data marking (Phase 1)
+        if ($isTestData) {
+            $repo->markAsTestData(
+                $guaranteeId,
+                $input['test_batch_id'] ?? null,
+                $input['test_note'] ?? null
+            );
+        }
+
+        // Record History Event (SmartProcessingService will handle all matching & decision creation!)
+        $snapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
+        // ✅ ARCHITECTURAL ENFORCEMENT: Use $savedGuarantee->rawData (Post-Persist State)
+        \App\Services\TimelineRecorder::recordImportEvent($guaranteeId, 'manual', $savedGuarantee->rawData);
+
+        $db->commit();
+    } catch (\Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        throw $e;
     }
-    
-    // Record History Event (SmartProcessingService will handle all matching & decision creation!)
-    $snapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
-    // ✅ ARCHITECTURAL ENFORCEMENT: Use $savedGuarantee->rawData (Post-Persist State)
-    \App\Services\TimelineRecorder::recordImportEvent($guaranteeId, 'manual', $savedGuarantee->rawData);
 
     // ✨ AUTO-MATCHING: Apply Smart Processing
     try {
-        $processor = new \App\Services\SmartProcessingService('manual', 'web_user');
+        $processor = new \App\Services\SmartProcessingService('manual', $actor);
         $autoMatchStats = $processor->processNewGuarantees(1);
         
         if ($autoMatchStats['auto_matched'] > 0) {

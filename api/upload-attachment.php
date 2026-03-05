@@ -38,7 +38,7 @@ try {
         $currentStep = (string)($stepStmt->fetchColumn() ?: 'unknown');
 
         wbgl_api_compat_fail(403, 'Permission Denied', [
-            'message' => 'ليس لديك صلاحية رفع مرفقات على هذا السجل في حالته الحالية.',
+            'message' => 'رفع المرفقات غير متاح على هذا السجل في حالته الحالية (عرض فقط).',
             'required_permission' => 'attachments_upload',
             'current_step' => $currentStep,
             'reason_code' => 'SURFACE_NOT_GRANTED_ATTACHMENTS_UPLOAD',

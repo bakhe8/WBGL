@@ -25,7 +25,7 @@ try {
     }
     
     $guaranteeId = Input::int($input, 'guarantee_id');
-    $decidedBy = Input::string($input, 'decided_by', 'web_user');
+    $decidedBy = Input::string($input, 'decided_by', wbgl_api_current_user_display());
     
     if (!$guaranteeId) {
         throw new \RuntimeException('Missing guarantee_id');
@@ -124,7 +124,9 @@ try {
         $actionStmt = $db->prepare("
             UPDATE guarantee_decisions
             SET active_action = 'extension',
-                active_action_set_at = CURRENT_TIMESTAMP
+                active_action_set_at = CURRENT_TIMESTAMP,
+                workflow_step = 'draft',
+                signatures_received = 0
             WHERE guarantee_id = ?
         ");
         $actionStmt->execute([$guaranteeId]);

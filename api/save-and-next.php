@@ -10,6 +10,7 @@ require_once __DIR__ . '/_bootstrap.php';
 use App\Support\Database;
 use App\Services\SaveAndNextApplicationService;
 use App\Support\Input;
+use App\Support\Settings;
 
 header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_login();
@@ -42,6 +43,11 @@ try {
 
     $decidedBy = Input::string($input, 'decided_by', wbgl_api_current_user_display());
     $statusFilter = Input::string($input, 'status_filter', 'all');
+    $includeTestDataRaw = strtolower(trim(Input::string($input, 'include_test_data', '')));
+    $includeTestData = in_array($includeTestDataRaw, ['1', 'true', 'yes', 'on'], true);
+    if (Settings::getInstance()->isProductionMode()) {
+        $includeTestData = false;
+    }
 
     $result = SaveAndNextApplicationService::executeSaveAndNext(
         $db,
@@ -50,6 +56,7 @@ try {
         $supplierName,
         $decidedBy,
         $statusFilter,
+        $includeTestData,
         $input,
         is_array($policyContext) ? $policyContext : [],
         is_array($surface) ? $surface : []

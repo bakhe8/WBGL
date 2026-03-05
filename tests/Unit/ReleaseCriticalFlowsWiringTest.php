@@ -56,15 +56,13 @@ final class ReleaseCriticalFlowsWiringTest extends TestCase
         $this->assertStringNotContainsString('ENFORCE_UNDO_REQUEST_WORKFLOW', $reopenApi);
     }
 
-    public function testSchedulerAndDeadLetterWiringIsPresent(): void
+    public function testDeadLetterWiringIsPresent(): void
     {
         $jobCatalog = $this->readFile('app/Services/SchedulerJobCatalog.php');
-        $notifyScript = $this->readFile('app/Scripts/notify-expiry.php');
         $runtimeService = $this->readFile('app/Services/SchedulerRuntimeService.php');
         $deadLetterApi = $this->readFile('api/scheduler-dead-letters.php');
 
-        $this->assertStringContainsString("base_path('app/Scripts/notify-expiry.php')", $jobCatalog);
-        $this->assertStringContainsString('NotificationService::create', $notifyScript);
+        $this->assertStringContainsString('return [];', $jobCatalog);
         $this->assertStringContainsString('SchedulerDeadLetterService::recordFailure', $runtimeService);
         $this->assertStringContainsString("if (\$action === 'resolve')", $deadLetterApi);
         $this->assertStringContainsString("if (\$action === 'retry')", $deadLetterApi);

@@ -207,8 +207,7 @@ class TimelineRecorder
             'action_id' => $actionId
         ]];
 
-        $currentUser = \App\Support\AuthService::getCurrentUser();
-        $creatorName = $currentUser ? $currentUser->fullName : 'المستخدم';
+        $creatorName = self::getCurrentUser();
 
         $afterSnapshot = self::createSnapshot($guaranteeId);
         return self::recordEvent($guaranteeId, 'modified', $oldSnapshot, $changes, $creatorName, [], 'extension', $letterSnapshot, $afterSnapshot);
@@ -245,8 +244,7 @@ class TimelineRecorder
             'trigger' => 'reduction_action'
         ]];
 
-        $currentUser = \App\Support\AuthService::getCurrentUser();
-        $creatorName = $currentUser ? $currentUser->fullName : 'المستخدم';
+        $creatorName = self::getCurrentUser();
 
         $afterSnapshot = self::createSnapshot($guaranteeId);
         return self::recordEvent($guaranteeId, 'modified', $oldSnapshot, $changes, $creatorName, [], 'reduction', $letterSnapshot, $afterSnapshot);
@@ -278,8 +276,7 @@ class TimelineRecorder
         // Add reason to event details if present
         $extraDetails = $reason ? ['reason_text' => $reason] : [];
 
-        $currentUser = \App\Support\AuthService::getCurrentUser();
-        $creatorName = $currentUser ? $currentUser->fullName : 'المستخدم';
+        $creatorName = self::getCurrentUser();
 
         $afterSnapshot = self::createSnapshot($guaranteeId);
         return self::recordEvent($guaranteeId, 'release', $oldSnapshot, $changes, $creatorName, $extraDetails, 'release', $letterSnapshot, $afterSnapshot);
@@ -325,10 +322,9 @@ class TimelineRecorder
             return false;
         }
 
-        $creator = 'System';
+        $creator = self::getSystemActor();
         if (!$isAuto) {
-            $currentUser = \App\Support\AuthService::getCurrentUser();
-            $creator = $currentUser ? $currentUser->fullName : 'المستخدم';
+            $creator = self::getCurrentUser();
         }
 
         $extra = $confidence ? ['confidence' => $confidence] : [];
@@ -485,12 +481,7 @@ class TimelineRecorder
             'changes' => $changes
         ], $details);
 
-        // Map Creator to Display Text (If it's a known generic/internal ID, map it, otherwise use it)
-        $creatorText = match ($creator) {
-            'User', 'user', 'web_user' => 'بواسطة المستخدم',
-            'System', 'system', 'System AI' => 'بواسطة النظام',
-            default => 'بواسطة ' . $creator
-        };
+        $creatorText = self::normalizeCreator((string)$creator);
 
         error_log("🔍 recording event: Type=$type Subtype=$subtype GID=$guaranteeId");
 
@@ -670,7 +661,7 @@ class TimelineRecorder
             'import',
             $snapshot,
             [],
-            'النظام',
+            self::getCurrentUser(),
             $eventDetails,
             $source
         );
@@ -717,7 +708,7 @@ class TimelineRecorder
             'import',
             $snapshot,
             [],  // no changes
-            'النظام',
+            self::getCurrentUser(),
             $eventDetails,
             'duplicate_' . $source  // event_subtype (duplicate_excel/duplicate_smart_paste)
         );
@@ -742,7 +733,7 @@ class TimelineRecorder
         // Metadata (Conflict is Reason, NOT Event)
         $extra = ['reason' => $reason];
 
-        return self::recordEvent($guaranteeId, 'status_change', $oldSnapshot, $changes, 'System', $extra, 'status_change', null, $currentSnapshot);
+        return self::recordEvent($guaranteeId, 'status_change', $oldSnapshot, $changes, self::getSystemActor(), $extra, 'status_change', null, $currentSnapshot);
     }
 
     /**
@@ -757,7 +748,7 @@ class TimelineRecorder
             'reimport',
             $snapshot,
             [],
-            'النظام',
+            self::getCurrentUser(),
             $eventDetails,
             (string)$source,
             null,
@@ -847,7 +838,50 @@ class TimelineRecorder
     private static function getCurrentUser(): string
     {
         $user = \App\Support\AuthService::getCurrentUser();
-        return $user ? $user->fullName : 'المستخدم';
+        if (!$user) {
+            return self::getSystemActor();
+        }
+
+        $fullName = trim((string)$user->fullName);
+        $username = trim((string)$user->username);
+        $email = trim((string)($user->email ?? ''));
+        $id = (int)($user->id ?? 0);
+
+        $base = $fullName !== '' ? $fullName : ($username !== '' ? $username : 'مستخدم');
+        $parts = [];
+        if ($username !== '') {
+            $parts[] = '@' . $username;
+        }
+        if ($id > 0) {
+            $parts[] = 'id:' . $id;
+        }
+        if ($email !== '') {
+            $parts[] = $email;
+        }
+
+        if (empty($parts)) {
+            return $base;
+        }
+
+        return $base . ' (' . implode(' | ', $parts) . ')';
+    }
+
+    private static function getSystemActor(): string
+    {
+        return 'النظام';
+    }
+
+    private static function normalizeCreator(string $creator): string
+    {
+        $normalized = strtolower(trim($creator));
+        if ($normalized === '' || in_array($normalized, ['user', 'web_user', 'المستخدم'], true)) {
+            return self::getCurrentUser();
+        }
+        if (in_array($normalized, ['system', 'system ai', 'النظام'], true)) {
+            return self::getSystemActor();
+        }
+
+        return $creator;
     }
 
     private static function resolveEventTimestamp($value): string

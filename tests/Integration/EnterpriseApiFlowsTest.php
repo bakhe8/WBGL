@@ -59,6 +59,8 @@ final class EnterpriseApiFlowsTest extends TestCase
         self::$db = Database::connect();
         self::$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         self::$db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        self::purgeLeakedIntegrationUsers();
+        self::quarantineLeakedIntegrationGuarantees();
 
         self::bootstrapUsersAndTokens();
         self::startServer();
@@ -123,6 +125,9 @@ final class EnterpriseApiFlowsTest extends TestCase
                 $stmt->execute($fixtureIds);
 
                 $stmt = self::$db->prepare("DELETE FROM guarantee_decisions WHERE guarantee_id IN ({$in})");
+                $stmt->execute($fixtureIds);
+
+                $stmt = self::$db->prepare("DELETE FROM guarantee_occurrences WHERE guarantee_id IN ({$in})");
                 $stmt->execute($fixtureIds);
 
                 $stmt = self::$db->prepare("DELETE FROM guarantees WHERE id IN ({$in})");
@@ -2478,6 +2483,10 @@ final class EnterpriseApiFlowsTest extends TestCase
         $rawAfterExtend = self::rawDataForGuarantee($guaranteeId);
         $expectedExpiry = date('Y-m-d', strtotime($oldExpiry . ' +1 year'));
         $this->assertSame($expectedExpiry, (string)($rawAfterExtend['expiry_date'] ?? ''), json_encode($rawAfterExtend, JSON_UNESCAPED_UNICODE));
+        $extendDecision = self::decisionStateForGuarantee($guaranteeId);
+        $this->assertSame('extension', (string)($extendDecision['active_action'] ?? ''), json_encode($extendDecision, JSON_UNESCAPED_UNICODE));
+        $this->assertSame('draft', (string)($extendDecision['workflow_step'] ?? ''), json_encode($extendDecision, JSON_UNESCAPED_UNICODE));
+        $this->assertSame(0, (int)($extendDecision['signatures_received'] ?? -1), json_encode($extendDecision, JSON_UNESCAPED_UNICODE));
 
         $reduce = self::request('POST', '/api/reduce.php', [
             'Accept: application/json',
@@ -2497,6 +2506,10 @@ final class EnterpriseApiFlowsTest extends TestCase
 
         $rawAfterReduce = self::rawDataForGuarantee($guaranteeId);
         $this->assertSame((float)$newAmount, (float)($rawAfterReduce['amount'] ?? 0.0), json_encode($rawAfterReduce, JSON_UNESCAPED_UNICODE));
+        $reduceDecision = self::decisionStateForGuarantee($guaranteeId);
+        $this->assertSame('reduction', (string)($reduceDecision['active_action'] ?? ''), json_encode($reduceDecision, JSON_UNESCAPED_UNICODE));
+        $this->assertSame('draft', (string)($reduceDecision['workflow_step'] ?? ''), json_encode($reduceDecision, JSON_UNESCAPED_UNICODE));
+        $this->assertSame(0, (int)($reduceDecision['signatures_received'] ?? -1), json_encode($reduceDecision, JSON_UNESCAPED_UNICODE));
 
         $release = self::request('POST', '/api/release.php', [
             'Accept: application/json',
@@ -2581,6 +2594,88 @@ final class EnterpriseApiFlowsTest extends TestCase
             $this->assertSame(1, (int)($row['is_anchor'] ?? 0), json_encode($row, JSON_UNESCAPED_UNICODE));
             $this->assertNotSame('', trim((string)($row['anchor_snapshot'] ?? '')), json_encode($row, JSON_UNESCAPED_UNICODE));
         }
+    }
+
+    public function testRoleBasedWorkflowChainFromDataEntryToSigned(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            $this->fail('Database handle is not available');
+        }
+
+        $fixture = self::createLifecycleFixture();
+        $guaranteeId = (int)$fixture['guarantee_id'];
+
+        $auditor = self::provisionUserForRole('data_auditor', 'integration_auditor_', 'Integration Auditor', 'integration-auditor-token');
+        $analyst = self::provisionUserForRole('analyst', 'integration_analyst_', 'Integration Analyst', 'integration-analyst-token');
+        $signatory = self::provisionUserForRole('signatory', 'integration_signatory_', 'Integration Signatory', 'integration-signatory-token');
+
+        $startAction = self::request('POST', '/api/extend.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$operatorToken, // data_entry
+        ], [
+            'guarantee_id' => $guaranteeId,
+            'decided_by' => self::$operatorUsername !== '' ? self::$operatorUsername : 'integration_operator',
+        ]);
+        $this->assertSame(200, $startAction['status'], $startAction['body']);
+        $startPayload = json_decode($startAction['body'], true);
+        $this->assertIsArray($startPayload);
+        $this->assertTrue((bool)($startPayload['success'] ?? false), $startAction['body']);
+
+        $decision = self::decisionStateForGuarantee($guaranteeId);
+        $this->assertSame('ready', (string)($decision['status'] ?? ''));
+        $this->assertSame('extension', (string)($decision['active_action'] ?? ''));
+        $this->assertSame('draft', (string)($decision['workflow_step'] ?? ''));
+        $this->assertSame(0, (int)($decision['signatures_received'] ?? -1));
+
+        $auditorAdvance = self::request('POST', '/api/workflow-advance.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . (string)$auditor['token'],
+        ], ['guarantee_id' => $guaranteeId]);
+        $this->assertSame(200, $auditorAdvance['status'], $auditorAdvance['body']);
+        $auditorPayload = json_decode($auditorAdvance['body'], true);
+        $this->assertTrue((bool)($auditorPayload['success'] ?? false), $auditorAdvance['body']);
+        $this->assertSame('audited', (string)($auditorPayload['data']['workflow_step'] ?? ''), $auditorAdvance['body']);
+
+        $analystAdvance = self::request('POST', '/api/workflow-advance.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . (string)$analyst['token'],
+        ], ['guarantee_id' => $guaranteeId]);
+        $this->assertSame(200, $analystAdvance['status'], $analystAdvance['body']);
+        $analystPayload = json_decode($analystAdvance['body'], true);
+        $this->assertTrue((bool)($analystPayload['success'] ?? false), $analystAdvance['body']);
+        $this->assertSame('analyzed', (string)($analystPayload['data']['workflow_step'] ?? ''), $analystAdvance['body']);
+
+        $supervisorAdvance = self::request('POST', '/api/workflow-advance.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$supervisorToken,
+        ], ['guarantee_id' => $guaranteeId]);
+        $this->assertSame(200, $supervisorAdvance['status'], $supervisorAdvance['body']);
+        $supervisorPayload = json_decode($supervisorAdvance['body'], true);
+        $this->assertTrue((bool)($supervisorPayload['success'] ?? false), $supervisorAdvance['body']);
+        $this->assertSame('supervised', (string)($supervisorPayload['data']['workflow_step'] ?? ''), $supervisorAdvance['body']);
+
+        $approverAdvance = self::request('POST', '/api/workflow-advance.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . self::$approverToken,
+        ], ['guarantee_id' => $guaranteeId]);
+        $this->assertSame(200, $approverAdvance['status'], $approverAdvance['body']);
+        $approverPayload = json_decode($approverAdvance['body'], true);
+        $this->assertTrue((bool)($approverPayload['success'] ?? false), $approverAdvance['body']);
+        $this->assertSame('approved', (string)($approverPayload['data']['workflow_step'] ?? ''), $approverAdvance['body']);
+
+        $signatoryAdvance = self::request('POST', '/api/workflow-advance.php', [
+            'Accept: application/json',
+            'Authorization: Bearer ' . (string)$signatory['token'],
+        ], ['guarantee_id' => $guaranteeId]);
+        $this->assertSame(200, $signatoryAdvance['status'], $signatoryAdvance['body']);
+        $signatoryPayload = json_decode($signatoryAdvance['body'], true);
+        $this->assertTrue((bool)($signatoryPayload['success'] ?? false), $signatoryAdvance['body']);
+        $this->assertSame('signed', (string)($signatoryPayload['data']['workflow_step'] ?? ''), $signatoryAdvance['body']);
+
+        $finalDecision = self::decisionStateForGuarantee($guaranteeId);
+        $this->assertSame('ready', (string)($finalDecision['status'] ?? ''));
+        $this->assertSame('extension', (string)($finalDecision['active_action'] ?? ''));
+        $this->assertSame('signed', (string)($finalDecision['workflow_step'] ?? ''));
     }
 
     public function testSaveImportUsesUnifiedEnvelope(): void
@@ -2712,6 +2807,7 @@ final class EnterpriseApiFlowsTest extends TestCase
         if (!(self::$db instanceof PDO)) {
             $this->fail('Database handle is not available');
         }
+        self::grantUserPermissionBySlug(self::$supervisorUserId, 'batch_full_operations_override');
 
         $importSource = 'integration_batch_reopen_' . bin2hex(random_bytes(4));
         self::$batchImportSources[] = $importSource;
@@ -2765,7 +2861,7 @@ final class EnterpriseApiFlowsTest extends TestCase
              VALUES (?, ?, ?, ?, ?, ?, ?, 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
         );
         $stmt->execute([
-            'notify-expiry.php',
+            'integration-job',
             $runToken,
             3,
             3,
@@ -3217,6 +3313,63 @@ final class EnterpriseApiFlowsTest extends TestCase
         self::$approverToken = (string)$approver['token'];
     }
 
+    private static function purgeLeakedIntegrationUsers(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            return;
+        }
+
+        $ids = self::$db
+            ->query("SELECT id FROM users WHERE username LIKE 'integration_%'")
+            ?->fetchAll(PDO::FETCH_COLUMN);
+        if (!is_array($ids) || $ids === []) {
+            return;
+        }
+
+        $userIds = array_values(array_map('intval', $ids));
+        $in = implode(',', array_fill(0, count($userIds), '?'));
+
+        // Best-effort cleanup for leaked rows from interrupted test runs.
+        try {
+            $stmt = self::$db->prepare("DELETE FROM api_access_tokens WHERE user_id IN ({$in})");
+            $stmt->execute($userIds);
+        } catch (Throwable $e) {
+            // Non-blocking (table may not exist on partial schemas).
+        }
+
+        try {
+            $stmt = self::$db->prepare("DELETE FROM user_permissions WHERE user_id IN ({$in})");
+            $stmt->execute($userIds);
+        } catch (Throwable $e) {
+            // Non-blocking.
+        }
+
+        $stmt = self::$db->prepare("DELETE FROM users WHERE id IN ({$in})");
+        $stmt->execute($userIds);
+    }
+
+    private static function quarantineLeakedIntegrationGuarantees(): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            return;
+        }
+
+        // If a previous integration run was interrupted, guarantees created by
+        // testCreateGuaranteeAndConvertToRealUseCompatEnvelope can leak as real rows.
+        // Reclassify them as test data before the suite starts.
+        $quarantineBatch = 'integration_quarantine_' . gmdate('Ymd_His');
+        $stmt = self::$db->prepare(
+            "UPDATE guarantees
+             SET is_test_data = 1,
+                 test_batch_id = ?,
+                 test_note = 'auto-quarantined leaked integration artifact'
+             WHERE COALESCE(is_test_data, 0) = 0
+               AND guarantee_number LIKE 'INT-G-%'
+               AND CAST(raw_data AS TEXT) LIKE '%integration create guarantee flow%'"
+        );
+        $stmt->execute([$quarantineBatch]);
+    }
+
     /**
      * @return array{user_id:int,username:string,token:string}
      */
@@ -3249,6 +3402,7 @@ final class EnterpriseApiFlowsTest extends TestCase
         ]);
 
         $userId = (int)self::$db->lastInsertId();
+        self::$createdUserIds[] = $userId;
         $issued = ApiTokenService::issueToken($userId, $tokenName, 2, ['*']);
 
         return [
@@ -3277,6 +3431,59 @@ final class EnterpriseApiFlowsTest extends TestCase
         }
 
         throw new RuntimeException('No role found for integration bootstrap: ' . $roleSlug);
+    }
+
+    private static function grantUserPermissionBySlug(int $userId, string $permissionSlug): void
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+        if ($userId <= 0) {
+            throw new RuntimeException('Invalid user id while granting permission: ' . $permissionSlug);
+        }
+
+        $permissionId = self::resolvePermissionId($permissionSlug);
+
+        $delete = self::$db->prepare('DELETE FROM user_permissions WHERE user_id = ? AND permission_id = ?');
+        $delete->execute([$userId, $permissionId]);
+
+        $insert = self::$db->prepare(
+            "INSERT INTO user_permissions (user_id, permission_id, override_type) VALUES (?, ?, 'allow')"
+        );
+        $insert->execute([$userId, $permissionId]);
+    }
+
+    private static function resolvePermissionId(string $permissionSlug): int
+    {
+        if (!(self::$db instanceof PDO)) {
+            throw new RuntimeException('Database handle is not available');
+        }
+
+        $stmt = self::$db->prepare('SELECT id FROM permissions WHERE slug = ? LIMIT 1');
+        $stmt->execute([$permissionSlug]);
+        $permissionId = $stmt->fetchColumn();
+        if ($permissionId) {
+            return (int)$permissionId;
+        }
+
+        if ($permissionSlug === 'batch_full_operations_override') {
+            $insert = self::$db->prepare(
+                'INSERT INTO permissions (name, slug, description) VALUES (?, ?, ?) ON CONFLICT (slug) DO NOTHING'
+            );
+            $insert->execute([
+                'استثناء عمليات الدفعات الكاملة',
+                'batch_full_operations_override',
+                'Allow non-default roles to access full batch operation surfaces',
+            ]);
+            $stmt = self::$db->prepare('SELECT id FROM permissions WHERE slug = ? LIMIT 1');
+            $stmt->execute([$permissionSlug]);
+            $permissionId = $stmt->fetchColumn();
+            if ($permissionId) {
+                return (int)$permissionId;
+            }
+        }
+
+        throw new RuntimeException('Permission slug not found for integration bootstrap: ' . $permissionSlug);
     }
 
     private static function startServer(): void
@@ -3862,7 +4069,7 @@ final class EnterpriseApiFlowsTest extends TestCase
         }
 
         $stmt = self::$db->prepare(
-            'SELECT status, is_locked, locked_reason, active_action
+            'SELECT status, is_locked, locked_reason, active_action, workflow_step, signatures_received
              FROM guarantee_decisions
              WHERE guarantee_id = ?
              LIMIT 1'

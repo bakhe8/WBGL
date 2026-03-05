@@ -75,6 +75,10 @@ class TimelineEventCatalog
             return 'تحديث المرحلة';
         }
 
+        if ($hasTrigger('workflow_reject')) {
+            return 'رفض وإرجاع';
+        }
+
         if ($subtype !== '') {
             return match ($subtype) {
                 'excel', 'manual', 'smart_paste', 'smart_paste_multi' => 'استيراد',
@@ -91,6 +95,7 @@ class TimelineEventCatalog
                 'reopened' => 'إعادة فتح',
                 'correction' => 'تصحيح بيانات',
                 'workflow_advance' => 'تحديث مسار العمل',
+                'workflow_reject' => 'رفض وإرجاع',
                 default => 'تحديث'
             };
         }
@@ -156,8 +161,8 @@ class TimelineEventCatalog
             'تم الإشراف' => '🛂',
             'تم الاعتماد' => '✅',
             'تم التوقيع' => '✒️',
+            'رفض وإرجاع' => '⛔',
             default => '📝'
         };
     }
 }
-

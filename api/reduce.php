@@ -24,7 +24,7 @@ try {
     }
     
     $guaranteeId = Input::int($input, 'guarantee_id');
-    $decidedBy = Input::string($input, 'decided_by', 'web_user');
+    $decidedBy = Input::string($input, 'decided_by', wbgl_api_current_user_display());
     $newAmountRaw = Input::string($input, 'new_amount', '');
     $newAmount = is_numeric($newAmountRaw) ? (float) $newAmountRaw : null;
     
@@ -143,6 +143,16 @@ try {
         $previousAmount = $raw['amount'] ?? 0;
         $raw['amount'] = (float)$newAmount;
         $guaranteeRepo->updateRawData($guaranteeId, json_encode($raw));
+
+        $actionStmt = $db->prepare("
+            UPDATE guarantee_decisions
+            SET active_action = 'reduction',
+                active_action_set_at = CURRENT_TIMESTAMP,
+                workflow_step = 'draft',
+                signatures_received = 0
+            WHERE guarantee_id = ?
+        ");
+        $actionStmt->execute([$guaranteeId]);
 
         $decisionUpdate = $db->prepare("
             UPDATE guarantee_decisions

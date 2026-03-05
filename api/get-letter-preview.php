@@ -119,6 +119,7 @@ try {
     
     // Use letter-renderer partial (same as batch-print)
     $showPlaceholder = false;
+    $showPrintButton = false;
     include __DIR__ . '/../partials/letter-renderer.php';
     
 } catch (Exception $e) {

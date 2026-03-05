@@ -14,6 +14,7 @@
  * @var array|null $cc - CC recipients (null if not applicable)
  * @var string $action - Action type (extension, release, etc.)
  * @var int|null $guarantee_id - Current guarantee id (if available)
+ * @var bool $show_print_button - Overlay print button visibility
  */
  $signatureMarginTop = trim((string)($signature['margin_top'] ?? '3em'));
  if ($signatureMarginTop === '') {
@@ -35,10 +36,12 @@
                 ? window.WBGLPrintAudit.handleOverlayPrint(this)
                 : (window.print(), false)"
             class="btn-print-overlay"
+            data-print-overlay="1"
             title=""
             aria-label=""
             data-i18n-title="timeline.ui.print_letter"
-            data-i18n-aria-label="timeline.ui.print_letter">
+            data-i18n-aria-label="timeline.ui.print_letter"
+            style="<?= !empty($show_print_button) ? '' : 'display:none;' ?>">
             🖨️
         </button>
         <style>

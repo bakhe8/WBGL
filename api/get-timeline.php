@@ -7,6 +7,8 @@
 require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
+use App\Support\Settings;
+use App\Support\TestDataVisibility;
 use App\Services\TimelineReadPresentationService;
 
 header('Content-Type: text/html; charset=utf-8');
@@ -29,12 +31,15 @@ try {
     }
 
     $db = Database::connect();
+    $settings = Settings::getInstance();
+    $includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
     $timelineService = new TimelineReadPresentationService($db);
     $result = $timelineService->renderTimelineByIndex(
         $index,
         $statusFilter,
         $searchTerm,
-        $stageFilter
+        $stageFilter,
+        $includeTestData
     );
 
     if ($result['forbidden']) {

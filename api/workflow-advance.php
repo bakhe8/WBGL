@@ -60,13 +60,15 @@ try {
         ]);
     }
 
-    // 4. Permission & Logical Check via WorkflowService
-    if (!WorkflowService::canAdvance($decision)) {
+    // 4. Permission & Domain Guard Check via WorkflowService
+    $advancePolicy = WorkflowService::canAdvanceWithReasons($decision);
+    if (!($advancePolicy['allowed'] ?? false)) {
         wbgl_api_compat_fail(403, 'Permission Denied', [
             'message' => 'ليس لديك الصلاحية لاعتماد هذه المرحلة أو أن الضمان ليس في الحالة الصحيحة.',
             'required_permission' => 'workflow_advance',
             'current_step' => $currentStep,
             'reason_code' => 'WORKFLOW_ADVANCE_DENIED',
+            'workflow_reasons' => $advancePolicy['reasons'] ?? [],
             'policy' => $policy,
             'surface' => $surface,
             'reasons' => $policy['reasons'] ?? [],

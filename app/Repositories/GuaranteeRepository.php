@@ -172,10 +172,10 @@ class GuaranteeRepository
         // NEW: Handle test data filtering with correct priority
         if (isset($filters['test_data_only']) && $filters['test_data_only'] === true) {
             // ONLY test data
-            $where[] = 'is_test_data = 1';
+            $where[] = 'COALESCE(is_test_data, 0) = 1';
         } elseif (!isset($filters['include_test_data']) || $filters['include_test_data'] === false) {
             // Default: exclude test data.
-            $where[] = 'is_test_data = 0';
+            $where[] = 'COALESCE(is_test_data, 0) = 0';
         }
         // If include_test_data = true, don't add any filter (show all)
         
@@ -248,15 +248,77 @@ class GuaranteeRepository
      */
     public function convertToReal(int $id): bool
     {
-        $stmt = $this->db->prepare('
-            UPDATE guarantees 
-            SET is_test_data = 0,
-                test_batch_id = NULL,
-                test_note = NULL
-            WHERE id = ?
-        ');
-        
-        return $stmt->execute([$id]);
+        $this->db->beginTransaction();
+        try {
+            // When converting a single record from a test-only batch that contains
+            // multiple guarantees, move this record to an isolated real batch first.
+            // This preserves batch-purity guarantees (no mixed test/real batches).
+            $moveCandidates = $this->db->prepare('
+                SELECT
+                    o.id AS occurrence_id,
+                    o.batch_identifier,
+                    stats.guarantee_count
+                FROM guarantee_occurrences o
+                JOIN (
+                    SELECT batch_identifier, COUNT(DISTINCT guarantee_id) AS guarantee_count
+                    FROM guarantee_occurrences
+                    GROUP BY batch_identifier
+                ) stats ON stats.batch_identifier = o.batch_identifier
+                WHERE o.guarantee_id = ?
+            ');
+            $moveCandidates->execute([$id]);
+            $rows = $moveCandidates->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($rows as $row) {
+                $occurrenceId = (int)($row['occurrence_id'] ?? 0);
+                $batchIdentifier = (string)($row['batch_identifier'] ?? '');
+                $batchCount = (int)($row['guarantee_count'] ?? 0);
+                if ($occurrenceId <= 0 || $batchIdentifier === '' || $batchCount <= 1) {
+                    continue;
+                }
+
+                $suffix = substr(sha1($batchIdentifier . '|' . $id), 0, 10);
+                $isolatedBatch = 'realized_' . $id . '_' . $suffix;
+
+                $updateOccurrence = $this->db->prepare('
+                    UPDATE guarantee_occurrences
+                    SET batch_identifier = ?,
+                        batch_type = ?
+                    WHERE id = ?
+                ');
+                $updateOccurrence->execute([$isolatedBatch, 'manual_realization', $occurrenceId]);
+
+                $upsertMetadata = $this->db->prepare('
+                    INSERT INTO batch_metadata (import_source, batch_name, batch_notes, status)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT (import_source) DO NOTHING
+                ');
+                $upsertMetadata->execute([
+                    $isolatedBatch,
+                    'دفعة تحويل إلى حقيقي',
+                    'Generated automatically while converting test guarantee to real data',
+                    'completed',
+                ]);
+            }
+
+            $stmt = $this->db->prepare('
+                UPDATE guarantees
+                SET is_test_data = 0,
+                    test_batch_id = NULL,
+                    test_note = NULL
+                WHERE id = ?
+            ');
+            $stmt->execute([$id]);
+            $updated = $stmt->rowCount() > 0;
+
+            $this->db->commit();
+            return $updated;
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
     }
     
     /**
@@ -272,7 +334,8 @@ class GuaranteeRepository
         $params = [];
         
         if ($batchId !== null) {
-            $where[] = 'test_batch_id = ?';
+            $where[] = '(test_batch_id = ? OR import_source = ?)';
+            $params[] = $batchId;
             $params[] = $batchId;
         }
         
@@ -379,18 +442,86 @@ class GuaranteeRepository
         $stmt = $this->db->query('
             SELECT 
                 COUNT(*) as total_test_guarantees,
-                COUNT(DISTINCT test_batch_id) as unique_batches,
+                (
+                    SELECT COUNT(*) FROM (
+                        SELECT o.batch_identifier
+                        FROM guarantee_occurrences o
+                        JOIN guarantees g2 ON g2.id = o.guarantee_id
+                        GROUP BY o.batch_identifier
+                        HAVING COUNT(DISTINCT CASE WHEN COALESCE(g2.is_test_data, 0) = 1 THEN o.guarantee_id END) > 0
+                    ) test_batches
+                ) as unique_batches,
+                COUNT(*) FILTER (
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM guarantee_occurrences o2
+                        WHERE o2.guarantee_id = guarantees.id
+                    )
+                ) as orphan_test_guarantees,
                 MIN(imported_at) as oldest_test_data,
                 MAX(imported_at) as newest_test_data
             FROM guarantees
-            WHERE is_test_data = 1
+            WHERE COALESCE(is_test_data, 0) = 1
         ');
         
         return $stmt->fetch(PDO::FETCH_ASSOC) ?: [
             'total_test_guarantees' => 0,
             'unique_batches' => 0,
+            'orphan_test_guarantees' => 0,
             'oldest_test_data' => null,
             'newest_test_data' => null
+        ];
+    }
+
+    /**
+     * Get system-wide operational counts using the same workflow semantics as index navigation:
+     * - open_total: not released
+     * - ready_total: open + ready
+     * - pending_total: open + pending or no decision
+     * - released_total: locked/released
+     * - absolute_total: all guarantees
+     *
+     * @return array<string,int>
+     */
+    public function getOperationalStats(): array
+    {
+        $stmt = $this->db->query('
+            SELECT
+                COUNT(*) AS absolute_total,
+                COUNT(*) FILTER (
+                    WHERE (d.is_locked IS NULL OR d.is_locked = FALSE)
+                ) AS open_total,
+                COUNT(*) FILTER (
+                    WHERE (d.is_locked IS NULL OR d.is_locked = FALSE) AND d.status = \'ready\'
+                ) AS ready_total,
+                COUNT(*) FILTER (
+                    WHERE (d.is_locked IS NULL OR d.is_locked = FALSE)
+                      AND (d.id IS NULL OR d.status = \'pending\')
+                ) AS pending_total,
+                COUNT(*) FILTER (
+                    WHERE d.is_locked = TRUE
+                ) AS released_total
+            FROM guarantees g
+            LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
+        ');
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row)) {
+            return [
+                'absolute_total' => 0,
+                'open_total' => 0,
+                'ready_total' => 0,
+                'pending_total' => 0,
+                'released_total' => 0,
+            ];
+        }
+
+        return [
+            'absolute_total' => (int)($row['absolute_total'] ?? 0),
+            'open_total' => (int)($row['open_total'] ?? 0),
+            'ready_total' => (int)($row['ready_total'] ?? 0),
+            'pending_total' => (int)($row['pending_total'] ?? 0),
+            'released_total' => (int)($row['released_total'] ?? 0),
         ];
     }
 

@@ -26,7 +26,7 @@ try {
     
     $guaranteeId = Input::int($input, 'guarantee_id');
     $reason = Input::string($input, 'reason', '') ?: null; // Optional
-    $decidedBy = Input::string($input, 'decided_by', 'web_user');
+    $decidedBy = Input::string($input, 'decided_by', wbgl_api_current_user_display());
     
     if (!$guaranteeId) {
         throw new \RuntimeException('Missing guarantee_id');

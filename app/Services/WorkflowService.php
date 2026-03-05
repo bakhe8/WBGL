@@ -40,6 +40,24 @@ class WorkflowService
         self::STAGE_SIGNED => 'sign_letters',
     ];
 
+    // Permission required to act on the current stage (advance/reject).
+    private const STAGE_OWNER_PERMISSIONS = [
+        self::STAGE_DRAFT => 'audit_data',
+        self::STAGE_AUDITED => 'analyze_guarantee',
+        self::STAGE_ANALYZED => 'supervise_analysis',
+        self::STAGE_SUPERVISED => 'approve_decision',
+        self::STAGE_APPROVED => 'sign_letters',
+        self::STAGE_SIGNED => 'manage_data',
+    ];
+
+    private const REJECTABLE_STAGES = [
+        self::STAGE_DRAFT,
+        self::STAGE_AUDITED,
+        self::STAGE_ANALYZED,
+        self::STAGE_SUPERVISED,
+        self::STAGE_APPROVED,
+    ];
+
     /**
      * Get the next stage for a decision
      */
@@ -57,17 +75,101 @@ class WorkflowService
      */
     public static function canAdvance(GuaranteeDecision $decision): bool
     {
+        $result = self::canAdvanceWithReasons($decision);
+        return $result['allowed'];
+    }
+
+    /**
+     * @return array{allowed:bool,reasons:array<int,string>,next_stage:?string}
+     */
+    public static function canAdvanceWithReasons(GuaranteeDecision $decision): array
+    {
+        $reasons = self::validateRecordGuards($decision);
         $nextStage = self::getNextStage($decision->workflowStep);
         if (!$nextStage) {
-            return false;
+            $reasons[] = 'NO_NEXT_STAGE';
+            return [
+                'allowed' => false,
+                'reasons' => array_values(array_unique($reasons)),
+                'next_stage' => null,
+            ];
         }
 
         $requiredPermission = self::TRANSITION_PERMISSIONS[$nextStage] ?? null;
         if (!$requiredPermission) {
-            return false;
+            $reasons[] = 'NEXT_STAGE_PERMISSION_NOT_MAPPED';
+            return [
+                'allowed' => false,
+                'reasons' => array_values(array_unique($reasons)),
+                'next_stage' => $nextStage,
+            ];
         }
 
-        return Guard::has($requiredPermission);
+        if (!Guard::has($requiredPermission)) {
+            $reasons[] = 'MISSING_PERMISSION_' . strtoupper($requiredPermission);
+        }
+
+        return [
+            'allowed' => empty($reasons),
+            'reasons' => array_values(array_unique($reasons)),
+            'next_stage' => $nextStage,
+        ];
+    }
+
+    public static function requiredPermissionForStage(string $stage): ?string
+    {
+        return self::STAGE_OWNER_PERMISSIONS[$stage] ?? null;
+    }
+
+    public static function canReject(GuaranteeDecision $decision): bool
+    {
+        $result = self::canRejectWithReasons($decision);
+        return $result['allowed'];
+    }
+
+    /**
+     * @return array{allowed:bool,reasons:array<int,string>}
+     */
+    public static function canRejectWithReasons(GuaranteeDecision $decision): array
+    {
+        $reasons = self::validateRecordGuards($decision);
+
+        if (!in_array($decision->workflowStep, self::REJECTABLE_STAGES, true)) {
+            $reasons[] = 'STAGE_NOT_REJECTABLE';
+        }
+
+        $requiredPermission = self::requiredPermissionForStage($decision->workflowStep);
+        if ($requiredPermission === null) {
+            $reasons[] = 'STAGE_PERMISSION_NOT_MAPPED';
+        } elseif (!Guard::has($requiredPermission)) {
+            $reasons[] = 'MISSING_PERMISSION_' . strtoupper($requiredPermission);
+        }
+
+        return [
+            'allowed' => empty($reasons),
+            'reasons' => array_values(array_unique($reasons)),
+        ];
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private static function validateRecordGuards(GuaranteeDecision $decision): array
+    {
+        $reasons = [];
+        if ($decision->isLocked) {
+            $reasons[] = 'LOCKED_RECORD';
+        }
+        if (trim($decision->status) !== 'ready') {
+            $reasons[] = 'STATUS_NOT_READY';
+        }
+        if (trim((string)$decision->activeAction) === '') {
+            $reasons[] = 'ACTIVE_ACTION_NOT_SET';
+        }
+        if (trim($decision->workflowStep) === '') {
+            $reasons[] = 'WORKFLOW_STEP_EMPTY';
+        }
+        return $reasons;
     }
 
     /**

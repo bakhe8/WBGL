@@ -104,7 +104,10 @@ class GetRecordPresentationService
     private function loadLastDecision(int $guaranteeId): ?array
     {
         $stmt = $this->db->prepare(
-            'SELECT status, supplier_id, bank_id, active_action FROM guarantee_decisions WHERE guarantee_id = ? LIMIT 1'
+            'SELECT status, supplier_id, bank_id, active_action, workflow_step, signatures_received
+             FROM guarantee_decisions
+             WHERE guarantee_id = ?
+             LIMIT 1'
         );
         $stmt->execute([$guaranteeId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -134,6 +137,8 @@ class GetRecordPresentationService
             'related_to' => $raw['related_to'] ?? 'contract',
             'active_action' => null,
             'status' => 'pending',
+            'workflow_step' => 'draft',
+            'signatures_received' => 0,
         ];
 
         if ($lastDecision === null) {
@@ -144,6 +149,8 @@ class GetRecordPresentationService
         $record['bank_id'] = $lastDecision['bank_id'];
         $record['supplier_id'] = $lastDecision['supplier_id'];
         $record['active_action'] = $lastDecision['active_action'];
+        $record['workflow_step'] = $lastDecision['workflow_step'] ?? 'draft';
+        $record['signatures_received'] = (int)($lastDecision['signatures_received'] ?? 0);
 
         if (!empty($record['supplier_id'])) {
             $supplierStmt = $this->db->prepare('SELECT official_name FROM suppliers WHERE id = ?');
@@ -313,4 +320,3 @@ class GetRecordPresentationService
             . '</div>';
     }
 }
-

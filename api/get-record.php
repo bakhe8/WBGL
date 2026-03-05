@@ -7,6 +7,8 @@
 require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
+use App\Support\Settings;
+use App\Support\TestDataVisibility;
 use App\Services\GetRecordPresentationService;
 use App\Services\NavigationService;
 
@@ -30,6 +32,8 @@ try {
     }
 
     $db = Database::connect();
+    $settings = Settings::getInstance();
+    $includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
     $renderer = new GetRecordPresentationService($db);
 
     $guaranteeId = NavigationService::getIdByIndex(
@@ -37,7 +41,8 @@ try {
         $index,
         $statusFilter,
         $searchTerm,
-        $stageFilter
+        $stageFilter,
+        $includeTestData
     );
 
     if (!$guaranteeId) {
