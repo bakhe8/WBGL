@@ -46,7 +46,8 @@ final class UiSurfacePolicyService
             'can_view_identity' => $canViewRecord,
             'can_view_timeline' => $canViewRecord && self::has($normalizedPermissions, 'timeline_view'),
             'can_view_notes' => $canViewRecord && self::has($normalizedPermissions, 'notes_view'),
-            'can_create_notes' => $canExecuteActions && self::has($normalizedPermissions, 'notes_create'),
+            // Notes are audit annotations and remain allowed on visible read-only records.
+            'can_create_notes' => $canViewRecord && self::has($normalizedPermissions, 'notes_create'),
             'can_view_attachments' => $canViewRecord && self::has($normalizedPermissions, 'attachments_view'),
             'can_upload_attachments' => $canExecuteActions && self::has($normalizedPermissions, 'attachments_upload'),
             'can_execute_actions' => $canExecuteActions,

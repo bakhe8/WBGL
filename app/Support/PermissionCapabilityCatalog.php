@@ -155,6 +155,18 @@ class PermissionCapabilityCatalog
                 'surface' => 'زر المظهر + API تفضيلات المستخدم',
                 'behavior' => 'السماح بتغيير ثيم الواجهة',
             ],
+            'ui_full_filters_view' => [
+                'domain' => 'تفضيلات الواجهة',
+                'control_scope' => 'رؤية + استثناء نطاق',
+                'surface' => 'شريط فلاتر الصفحة الرئيسية (all/ready/actionable/pending/released)',
+                'behavior' => 'استثناء يسمح بعرض الفلاتر الكاملة والخروج من نمط المهام فقط',
+            ],
+            'batch_full_operations_override' => [
+                'domain' => 'الحوكمة',
+                'control_scope' => 'رؤية + تنفيذ استثنائي',
+                'surface' => 'صفحات/APIs الدفعات (batches, batch-detail, batch-print)',
+                'behavior' => 'استثناء يفتح عمليات الدفعات لدور غير data_entry/developer',
+            ],
             'timeline_view' => [
                 'domain' => 'العرض والتتبع',
                 'control_scope' => 'رؤية',

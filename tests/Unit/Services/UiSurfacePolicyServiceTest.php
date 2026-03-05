@@ -44,7 +44,7 @@ final class UiSurfacePolicyServiceTest extends TestCase
         $this->assertTrue($grants['can_view_timeline']);
         $this->assertTrue($grants['can_view_notes']);
         $this->assertTrue($grants['can_view_attachments']);
-        $this->assertFalse($grants['can_create_notes']);
+        $this->assertTrue($grants['can_create_notes']);
         $this->assertFalse($grants['can_upload_attachments']);
         $this->assertFalse($grants['can_execute_actions']);
         $this->assertFalse($grants['can_view_preview']);
@@ -69,7 +69,7 @@ final class UiSurfacePolicyServiceTest extends TestCase
         $this->assertTrue($grants['can_view_timeline']);
         $this->assertTrue($grants['can_view_notes']);
         $this->assertTrue($grants['can_view_attachments']);
-        $this->assertFalse($grants['can_create_notes']);
+        $this->assertTrue($grants['can_create_notes']);
         $this->assertFalse($grants['can_upload_attachments']);
         $this->assertFalse($grants['can_execute_actions']);
         $this->assertTrue($grants['can_view_preview']);

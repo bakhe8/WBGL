@@ -25,6 +25,9 @@ class ActionabilityPolicyService
         'analyzed' => 'supervise_analysis',
         'supervised' => 'approve_decision',
         'approved' => 'sign_letters',
+        // Post-sign operational handoff:
+        // signed records return to data-entry operations (printing/follow-up).
+        'signed' => 'manage_data',
     ];
 
     /**
@@ -35,12 +38,6 @@ class ActionabilityPolicyService
     {
         $effectivePermissions = self::normalizePermissions($permissions ?? Guard::permissions());
         if (in_array('*', $effectivePermissions, true)) {
-            return array_keys(self::STAGE_PERMISSION_MAP);
-        }
-
-        // Backward-compatible admin/operational override:
-        // manage_data historically implied full operational workflow access.
-        if (in_array('manage_data', $effectivePermissions, true)) {
             return array_keys(self::STAGE_PERMISSION_MAP);
         }
 
@@ -86,7 +83,7 @@ class ActionabilityPolicyService
         }
 
         $sql = " AND {$decisionAlias}.status = 'ready'"
-            . " AND ({$decisionAlias}.active_action IS NULL OR {$decisionAlias}.active_action = '')"
+            . " AND ({$decisionAlias}.active_action IS NOT NULL AND {$decisionAlias}.active_action <> '')"
             . " AND {$decisionAlias}.workflow_step IN (" . implode(',', $stagePlaceholders) . ')';
 
         $reasons = [];
@@ -143,9 +140,9 @@ class ActionabilityPolicyService
             $actionable = false;
             $reasons[] = 'STATUS_NOT_READY';
         }
-        if ($activeAction !== '') {
+        if ($activeAction === '') {
             $actionable = false;
-            $reasons[] = 'ACTIVE_ACTION_SET';
+            $reasons[] = 'ACTIVE_ACTION_NOT_SET';
         }
         if ($stage === '' || !in_array($stage, $allowedStages, true)) {
             $actionable = false;

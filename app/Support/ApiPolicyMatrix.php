@@ -77,6 +77,7 @@ class ApiPolicyMatrix
             'api/users/list.php' => ['auth' => 'permission', 'permission' => 'manage_users'],
             'api/users/update.php' => ['auth' => 'permission', 'permission' => 'manage_users'],
             'api/workflow-advance.php' => ['auth' => 'login', 'permission' => null],
+            'api/workflow-reject.php' => ['auth' => 'login', 'permission' => null],
         ];
     }
 }

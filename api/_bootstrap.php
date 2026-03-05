@@ -330,7 +330,55 @@ if (!function_exists('wbgl_api_current_user_display')) {
         if (!$user) {
             return 'النظام';
         }
-        return $user->fullName ?: $user->username;
+        $fullName = trim((string)$user->fullName);
+        $username = trim((string)$user->username);
+        $email = trim((string)($user->email ?? ''));
+        $id = (int)($user->id ?? 0);
+
+        $base = $fullName !== '' ? $fullName : ($username !== '' ? $username : 'مستخدم');
+        $parts = [];
+        if ($username !== '') {
+            $parts[] = '@' . $username;
+        }
+        if ($id > 0) {
+            $parts[] = 'id:' . $id;
+        }
+        if ($email !== '') {
+            $parts[] = $email;
+        }
+
+        if (empty($parts)) {
+            return $base;
+        }
+
+        return $base . ' (' . implode(' | ', $parts) . ')';
+    }
+}
+
+if (!function_exists('wbgl_api_current_user_actor')) {
+    /**
+     * @return array{id:?int,username:string,full_name:string,email:string,display:string}
+     */
+    function wbgl_api_current_user_actor(): array
+    {
+        $user = AuthService::getCurrentUser();
+        if (!$user) {
+            return [
+                'id' => null,
+                'username' => 'system',
+                'full_name' => 'النظام',
+                'email' => '',
+                'display' => 'النظام',
+            ];
+        }
+
+        return [
+            'id' => $user->id,
+            'username' => (string)$user->username,
+            'full_name' => (string)$user->fullName,
+            'email' => (string)($user->email ?? ''),
+            'display' => wbgl_api_current_user_display(),
+        ];
     }
 }
 

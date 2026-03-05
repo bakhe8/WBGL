@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Services\BatchAccessPolicyService;
 use App\Repositories\RoleRepository;
 
 class ViewPolicy
@@ -27,6 +28,18 @@ class ViewPolicy
      */
     private const DEVELOPER_ONLY_VIEWS = [
         'confidence-demo.php',
+    ];
+
+    /**
+     * Batch operation views are role-scoped by policy:
+     * default (data_entry/developer) + explicit override permission.
+     *
+     * @var string[]
+     */
+    private const BATCH_OPERATION_VIEWS = [
+        'batches.php',
+        'batch-detail.php',
+        'batch-print.php',
     ];
 
     public static function requireLogin(string $redirect = '/views/login.php'): void
@@ -86,6 +99,13 @@ class ViewPolicy
         string $forbiddenRedirect = '/index.php'
     ): void {
         self::requireLogin($loginRedirect);
+
+        $normalized = strtolower(trim(basename($viewFile)));
+        if (in_array($normalized, self::BATCH_OPERATION_VIEWS, true) && !BatchAccessPolicyService::canAccessBatchSurfaces()) {
+            header('Location: ' . $forbiddenRedirect);
+            exit;
+        }
+
         if (self::isDeveloperOnlyView($viewFile) && !self::isCurrentUserDeveloper()) {
             header('Location: ' . $forbiddenRedirect);
             exit;

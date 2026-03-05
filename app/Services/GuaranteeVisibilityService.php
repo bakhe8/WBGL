@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Repositories\RoleRepository;
 use App\Support\AuthService;
 use App\Support\Database;
 use App\Support\Guard;
@@ -30,66 +31,56 @@ class GuaranteeVisibilityService
             return ['sql' => ' AND 1=0', 'params' => []];
         }
 
-        // Keep broad operational/admin permissions unrestricted.
-        if (Guard::has('manage_data') || Guard::has('manage_users')) {
-            return ['sql' => '', 'params' => []];
+        if (self::shouldForceTaskOnlyScope()) {
+            $predicate = ActionabilityPolicyService::buildActionableSqlPredicate(
+                $dAlias,
+                null,
+                null,
+                'vis_actionable_stage'
+            );
+
+            return [
+                'sql' => " AND ({$dAlias}.is_locked IS NULL OR {$dAlias}.is_locked = FALSE)" . $predicate['sql'],
+                'params' => $predicate['params'],
+            ];
         }
 
-        $conditions = [];
-        $params = [];
+        // Default broad scope only for roles explicitly allowed to use full filters
+        // (data_entry/developer or permission override). All other roles are task-only.
+        return ['sql' => '', 'params' => []];
+    }
 
-        // Stage-based visibility according to workflow permissions.
-        $stageMap = [
-            'audit_data' => ['draft'],
-            'analyze_guarantee' => ['audited'],
-            'supervise_analysis' => ['analyzed'],
-            'approve_decision' => ['supervised'],
-            'sign_letters' => ['approved', 'signed'],
-        ];
-
-        $stageIndex = 0;
-        foreach ($stageMap as $permission => $stages) {
-            if (!Guard::has($permission)) {
-                continue;
-            }
-
-            foreach ($stages as $stage) {
-                $key = 'vis_stage_' . $stageIndex++;
-                $conditions[] = "{$dAlias}.workflow_step = :{$key}";
-                $params[$key] = $stage;
-            }
+    private static function shouldForceTaskOnlyScope(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
         }
 
-        // Ownership-based fallback visibility.
-        $identifiers = array_values(array_unique(array_filter([
-            trim($user->username),
-            trim($user->fullName),
-        ], static fn(string $v): bool => $v !== '')));
-
-        $ownerIndex = 0;
-        foreach ($identifiers as $identifier) {
-            $k1 = 'vis_owner_imported_' . $ownerIndex;
-            $k2 = 'vis_owner_decided_' . $ownerIndex;
-            $k3 = 'vis_owner_modified_' . $ownerIndex;
-
-            $conditions[] = "{$gAlias}.imported_by = :{$k1}";
-            $conditions[] = "{$dAlias}.decided_by = :{$k2}";
-            $conditions[] = "{$dAlias}.last_modified_by = :{$k3}";
-
-            $params[$k1] = $identifier;
-            $params[$k2] = $identifier;
-            $params[$k3] = $identifier;
-            $ownerIndex++;
+        // Permission-based exception:
+        // allows specific role/user overrides from Users/Roles management UI.
+        if (Guard::has('ui_full_filters_view')) {
+            $cached = false;
+            return $cached;
         }
 
-        if (empty($conditions)) {
-            return ['sql' => ' AND 1=0', 'params' => []];
+        $user = AuthService::getCurrentUser();
+        if ($user === null || $user->roleId === null) {
+            $cached = false;
+            return $cached;
         }
 
-        return [
-            'sql' => ' AND (' . implode(' OR ', $conditions) . ')',
-            'params' => $params,
-        ];
+        try {
+            $db = Database::connect();
+            $roleRepo = new RoleRepository($db);
+            $role = $roleRepo->find((int)$user->roleId);
+            $roleSlug = trim((string)($role->slug ?? ''));
+            $cached = !in_array($roleSlug, ['data_entry', 'developer'], true);
+        } catch (\Throwable) {
+            $cached = false;
+        }
+
+        return $cached;
     }
 
     public static function canAccessGuarantee(int $guaranteeId): bool

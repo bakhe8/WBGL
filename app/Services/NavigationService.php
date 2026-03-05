@@ -3,6 +3,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Repositories\RoleRepository;
+use App\Support\AuthService;
+use App\Support\Guard;
 use PDO;
 
 /**
@@ -29,9 +32,10 @@ class NavigationService
         ?int $currentId,
         string $statusFilter = 'all',
         ?string $searchTerm = null,
-        ?string $stageFilter = null
+        ?string $stageFilter = null,
+        bool $includeTestData = false
     ): array {
-        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter);
+        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter, $includeTestData);
 
         // Get total count
         $totalRecords = self::getTotalCount($db, $filter);
@@ -70,9 +74,10 @@ class NavigationService
         PDO $db,
         string $statusFilter = 'all',
         ?string $searchTerm = null,
-        ?string $stageFilter = null
+        ?string $stageFilter = null,
+        bool $includeTestData = false
     ): int {
-        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter);
+        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter, $includeTestData);
         return self::getTotalCount($db, $filter);
     }
 
@@ -82,17 +87,27 @@ class NavigationService
     public static function buildFilterConditions(
         string $filter,
         ?string $searchTerm = null,
-        ?string $stageFilter = null
+        ?string $stageFilter = null,
+        bool $includeTestData = false
     ): array
     {
         $visibility = GuaranteeVisibilityService::buildSqlFilter('g', 'd');
         $expiryDateExpr = "(g.raw_data::jsonb ->> 'expiry_date')";
+        $forceActionableScope = self::shouldForceActionableScope();
 
-        // Production Mode: Check if we should exclude test data
         $settings = \App\Support\Settings::getInstance();
-        $testDataFilter = '';
-        if ($settings->isProductionMode()) {
-            $testDataFilter = ' AND g.is_test_data = 0';
+        $allowTestData = $includeTestData && !$settings->isProductionMode();
+        $testDataFilter = $allowTestData ? '' : ' AND g.is_test_data = 0';
+
+        // Role clamp: any role except data_entry/developer must stay in actionable scope only.
+        if ($forceActionableScope) {
+            if ($filter === 'released') {
+                return [
+                    'sql' => ' AND 1=0',
+                    'params' => [],
+                ];
+            }
+            $filter = 'actionable';
         }
 
         // ✅ Search Mode: Overrides standard status filters
@@ -101,19 +116,44 @@ class NavigationService
             $searchAny = '%' . $searchSafe . '%';
 
             // Search in directly (Raw Data) AND Linked Official Names
-            return [
-                'sql' => " AND (
+            $searchSql = " AND (
                     g.guarantee_number LIKE :search_any OR
                     g.raw_data LIKE :search_any OR
                     s.official_name LIKE :search_any
-                )" . $testDataFilter . $visibility['sql'],
-                'params' => array_merge([
-                    'search_any' => $searchAny,
-                ], $visibility['params']),
+                )";
+            $params = [
+                'search_any' => $searchAny,
+            ];
+
+            // When actionable clamp is forced, search must stay inside actionable predicate.
+            if ($forceActionableScope) {
+                $predicate = ActionabilityPolicyService::buildActionableSqlPredicate(
+                    'd',
+                    $stageFilter,
+                    null,
+                    'actionable_stage_nav'
+                );
+                $searchSql = ' AND (d.is_locked IS NULL OR d.is_locked = FALSE)' . $predicate['sql'] . $searchSql;
+                $params = array_merge($params, $predicate['params']);
+            }
+
+            return [
+                'sql' => $searchSql . $testDataFilter . $visibility['sql'],
+                'params' => array_merge($params, $visibility['params']),
             ];
         }
 
         if ($filter === 'released') {
+            $canViewReleased = Guard::has('reopen_guarantee')
+                || Guard::has('manage_data')
+                || Guard::has('manage_users');
+            if (!$canViewReleased) {
+                return [
+                    'sql' => ' AND 1=0',
+                    'params' => [],
+                ];
+            }
+
             // Show only released
             return [
                 'sql' => ' AND d.is_locked = TRUE' . $testDataFilter . $visibility['sql'],
@@ -149,6 +189,39 @@ class NavigationService
                 'sql' => $conditions . $testDataFilter . $visibility['sql'],
                 'params' => $params,
             ];
+        }
+    }
+
+    private static function shouldForceActionableScope(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        // Permission-based exception:
+        // allows specific role/user overrides from Users/Roles management UI.
+        if (Guard::has('ui_full_filters_view')) {
+            $cached = false;
+            return $cached;
+        }
+
+        $user = AuthService::getCurrentUser();
+        if ($user === null || $user->roleId === null) {
+            $cached = false;
+            return $cached;
+        }
+
+        try {
+            $db = \App\Support\Database::connect();
+            $roleRepo = new RoleRepository($db);
+            $role = $roleRepo->find((int)$user->roleId);
+            $roleSlug = trim((string)($role->slug ?? ''));
+            $cached = !in_array($roleSlug, ['data_entry', 'developer'], true);
+            return $cached;
+        } catch (\Throwable) {
+            $cached = false;
+            return $cached;
         }
     }
 
@@ -252,12 +325,13 @@ class NavigationService
         int $index,
         string $statusFilter = 'all',
         ?string $searchTerm = null,
-        ?string $stageFilter = null
+        ?string $stageFilter = null,
+        bool $includeTestData = false
     ): ?int {
         if ($index < 1)
             return null;
 
-        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter);
+        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter, $includeTestData);
 
         try {
             // Offset is index - 1
@@ -291,9 +365,10 @@ class NavigationService
         int $id,
         string $statusFilter = 'all',
         ?string $searchTerm = null,
-        ?string $stageFilter = null
+        ?string $stageFilter = null,
+        bool $includeTestData = false
     ): bool {
-        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter);
+        $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter, $includeTestData);
 
         $query = '
             SELECT 1

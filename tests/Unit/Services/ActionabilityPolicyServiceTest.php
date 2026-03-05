@@ -11,18 +11,15 @@ final class ActionabilityPolicyServiceTest extends TestCase
     {
         $allowed = ActionabilityPolicyService::allowedStages(['*']);
         $this->assertSame(
-            ['draft', 'audited', 'analyzed', 'supervised', 'approved'],
+            ['draft', 'audited', 'analyzed', 'supervised', 'approved', 'signed'],
             $allowed
         );
     }
 
-    public function testAllowedStagesSupportsManageDataOverride(): void
+    public function testAllowedStagesSupportsManageDataSignedHandoffOnly(): void
     {
         $allowed = ActionabilityPolicyService::allowedStages(['manage_data']);
-        $this->assertSame(
-            ['draft', 'audited', 'analyzed', 'supervised', 'approved'],
-            $allowed
-        );
+        $this->assertSame(['signed'], $allowed);
     }
 
     public function testBuildActionableSqlPredicateDeniesWhenNoStagePermission(): void
@@ -48,6 +45,8 @@ final class ActionabilityPolicyServiceTest extends TestCase
         );
 
         $this->assertStringContainsString("d.status = 'ready'", $predicate['sql']);
+        $this->assertStringContainsString("d.active_action IS NOT NULL", $predicate['sql']);
+        $this->assertStringContainsString("d.active_action <> ''", $predicate['sql']);
         $this->assertStringContainsString('d.workflow_step IN (:test_stage_0)', $predicate['sql']);
         $this->assertStringContainsString('d.workflow_step = :test_stage_filter', $predicate['sql']);
         $this->assertSame('draft', $predicate['params']['test_stage_0']);
@@ -59,7 +58,7 @@ final class ActionabilityPolicyServiceTest extends TestCase
         $decision = [
             'workflow_step' => 'draft',
             'status' => 'ready',
-            'active_action' => null,
+            'active_action' => 'release',
             'is_locked' => false,
         ];
 
@@ -76,7 +75,7 @@ final class ActionabilityPolicyServiceTest extends TestCase
         $decision = [
             'workflow_step' => 'approved',
             'status' => 'pending',
-            'active_action' => 'release',
+            'active_action' => '',
             'is_locked' => true,
         ];
 
@@ -87,7 +86,7 @@ final class ActionabilityPolicyServiceTest extends TestCase
         $this->assertFalse($result->executable);
         $this->assertContains('LOCKED_RECORD', $result->reasonCodes);
         $this->assertContains('STATUS_NOT_READY', $result->reasonCodes);
-        $this->assertContains('ACTIVE_ACTION_SET', $result->reasonCodes);
+        $this->assertContains('ACTIVE_ACTION_NOT_SET', $result->reasonCodes);
         $this->assertContains('STAGE_NOT_ALLOWED', $result->reasonCodes);
     }
 }

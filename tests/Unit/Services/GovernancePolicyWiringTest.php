@@ -19,8 +19,13 @@ final class GovernancePolicyWiringTest extends TestCase
         $batchService = $this->readFile('app/Services/BatchService.php');
 
         $this->assertStringContainsString('wbgl_api_require_login();', $batchApi);
-        $this->assertStringContainsString("if (\$action !== 'reopen')", $batchApi);
-        $this->assertStringContainsString("wbgl_api_require_permission('manage_data');", $batchApi);
+        $this->assertStringContainsString('BatchAccessPolicyService::canAccessBatchSurfaces()', $batchApi);
+        $this->assertStringContainsString('batch_access_denied', $batchApi);
+        $this->assertStringContainsString('BatchAuditService::record(', $batchApi);
+        $this->assertStringContainsString("wbgl_api_require_permission('guarantee_extend');", $batchApi);
+        $this->assertStringContainsString("wbgl_api_require_permission('guarantee_reduce');", $batchApi);
+        $this->assertStringContainsString("wbgl_api_require_permission('guarantee_release');", $batchApi);
+        $this->assertStringNotContainsString("wbgl_api_require_permission('manage_data');", $batchApi);
         $this->assertStringContainsString('wbgl_api_require_guarantee_visibility', $batchApi);
         $this->assertStringContainsString("Guard::has('reopen_batch')", $batchApi);
         $this->assertStringContainsString('سبب إعادة فتح الدفعة مطلوب', $batchApi);
@@ -67,6 +72,18 @@ final class GovernancePolicyWiringTest extends TestCase
             'save-and-next policy evaluation wiring is missing'
         );
         $this->assertStringContainsString('GuaranteeMutationPolicyService::evaluate', $uploadAttachmentApi);
+        $this->assertStringContainsString("workflow_step = 'draft'", $extendApi);
+        $this->assertStringContainsString("signatures_received = 0", $extendApi);
+        $this->assertStringContainsString("workflow_step = 'draft'", $reduceApi);
+        $this->assertStringContainsString("signatures_received = 0", $reduceApi);
+    }
+
+    public function testRecordFormWorkflowDecisionModelUsesActualStatusAndActiveAction(): void
+    {
+        $recordForm = $this->readFile('partials/record-form.php');
+        $this->assertStringContainsString("status: (string)(\$record['status'] ?? 'pending')", $recordForm);
+        $this->assertStringContainsString("activeAction: trim((string)(\$record['active_action'] ?? '')) !== '' ? (string)\$record['active_action'] : null", $recordForm);
+        $this->assertStringContainsString('WorkflowService::canReject($decisionModel)', $recordForm);
     }
 
     public function testObjectLevelVisibilityWiringIsPresentForLoginOnlyMutations(): void
@@ -128,8 +145,25 @@ final class GovernancePolicyWiringTest extends TestCase
     public function testBatchServiceEnforcesObjectVisibilityBeforeMutations(): void
     {
         $batchService = $this->readFile('app/Services/BatchService.php');
+        $batchAccessPolicy = $this->readFile('app/Services/BatchAccessPolicyService.php');
         $this->assertStringContainsString('GuaranteeVisibilityService::canAccessGuarantee', $batchService);
-        $this->assertStringContainsString("Guard::has('manage_data')", $batchService);
+        $this->assertStringNotContainsString("Guard::has('manage_data')", $batchService);
+        $this->assertStringContainsString("private const DEFAULT_ALLOWED_ROLES = ['data_entry'];", $batchAccessPolicy);
+    }
+
+    public function testWorkflowRejectWiringIsPresent(): void
+    {
+        $workflowRejectApi = $this->readFile('api/workflow-reject.php');
+        $apiPolicyMatrix = $this->readFile('app/Support/ApiPolicyMatrix.php');
+
+        $this->assertStringContainsString('wbgl_api_require_login();', $workflowRejectApi);
+        $this->assertStringContainsString('سبب الرفض مطلوب', $workflowRejectApi);
+        $this->assertStringContainsString('WorkflowService::canRejectWithReasons', $workflowRejectApi);
+        $this->assertStringContainsString('NoteRepository', $workflowRejectApi);
+        $this->assertStringContainsString("status_change", $workflowRejectApi);
+        $this->assertStringContainsString("workflow_reject", $workflowRejectApi);
+
+        $this->assertStringContainsString("'api/workflow-reject.php' => ['auth' => 'login', 'permission' => null]", $apiPolicyMatrix);
     }
 
     public function testImportAndParsePathsEnforceVisibilityOnExistingGuarantees(): void
@@ -142,6 +176,15 @@ final class GovernancePolicyWiringTest extends TestCase
         $this->assertStringContainsString('wbgl_api_require_guarantee_visibility', $parsePasteV2Api);
         $this->assertStringContainsString('GuaranteeVisibilityService::canAccessGuarantee', $parseCoordinator);
         $this->assertStringContainsString('Permission Denied', $parseCoordinator);
+        $this->assertStringNotContainsString("importedBy: 'Web User'", $parseCoordinator);
+        $this->assertStringContainsString('importedBy: (string)($options[\'actor_display\'] ?? self::resolveActorDisplay())', $parseCoordinator);
+    }
+
+    public function testIndexSystemEditButtonIsRestrictedToDataEntry(): void
+    {
+        $indexPage = $this->readFile('index.php');
+        $this->assertStringContainsString('$currentUserRoleSlug === \'data_entry\'', $indexPage);
+        $this->assertStringContainsString('record-edit-btn', $indexPage);
     }
 
     public function testIndexForcedIdUsesScopeFirstBeforeFullRecordLoad(): void
@@ -218,23 +261,23 @@ final class GovernancePolicyWiringTest extends TestCase
         $navigationService = $this->readFile('app/Services/NavigationService.php');
 
         $this->assertStringContainsString(
-            "NavigationService::countByFilter(\$db, 'all')",
+            "NavigationService::countByFilter(\$db, 'all'",
             $statsService
         );
         $this->assertStringContainsString(
-            "NavigationService::countByFilter(\$db, 'ready')",
+            "NavigationService::countByFilter(\$db, 'ready'",
             $statsService
         );
         $this->assertStringContainsString(
-            "NavigationService::countByFilter(\$db, 'actionable')",
+            "NavigationService::countByFilter(\$db, 'actionable'",
             $statsService
         );
         $this->assertStringContainsString(
-            "NavigationService::countByFilter(\$db, 'pending')",
+            "NavigationService::countByFilter(\$db, 'pending'",
             $statsService
         );
         $this->assertStringContainsString(
-            "NavigationService::countByFilter(\$db, 'released')",
+            "NavigationService::countByFilter(\$db, 'released'",
             $statsService
         );
 
