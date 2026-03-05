@@ -7,6 +7,7 @@ use PDO;
 use App\Services\ImportService;
 use App\Repositories\GuaranteeRepository;
 use App\Models\Guarantee;
+use App\Support\AuthService;
 use App\Support\TypeNormalizer;
 use App\Services\GuaranteeVisibilityService;
 use App\Services\SmartPaste\ConfidenceCalculator;  // ✅ NEW (Phase 2)
@@ -45,6 +46,10 @@ class ParseCoordinatorService
      */
     public static function parseText(string $text, PDO $db, array $options = []): array
     {
+        if (!isset($options['actor_display']) || trim((string)$options['actor_display']) === '') {
+            $options['actor_display'] = self::resolveActorDisplay();
+        }
+
         // Try table detection first
         $tableRows = TableDetectionService::detectTable($text);
         
@@ -95,7 +100,7 @@ class ParseCoordinatorService
         }
         
         // Trigger auto-matching for all new guarantees
-        self::triggerAutoMatching($results);
+        self::triggerAutoMatching($results, (string)($options['actor_display'] ?? 'system'));
         
         return [
             'success' => true,
@@ -287,7 +292,7 @@ class ParseCoordinatorService
         
         // Trigger auto-matching for single guarantee
         if (!$result['exists_before']) {
-            self::triggerAutoMatching([$result]);
+            self::triggerAutoMatching([$result], (string)($options['actor_display'] ?? 'system'));
         }
         
         return [
@@ -431,6 +436,8 @@ class ParseCoordinatorService
         $isTestData = !empty($options['is_test_data']);
         $batchPrefix = $isTestData ? 'test_paste_' : 'manual_paste_';
         $batchId = $batchPrefix . date('Ymd');
+        $db = $repo->getDb();
+        $batchId = ImportService::resolveCompatibleBatchIdentifier($db, $batchId, $isTestData);
         
         // Create new
         $rawData = [
@@ -453,28 +460,52 @@ class ParseCoordinatorService
             rawData: $rawData,
             importSource: $batchId,
             importedAt: date('Y-m-d H:i:s'),
-            importedBy: 'Web User'
+            importedBy: (string)($options['actor_display'] ?? self::resolveActorDisplay())
         );
         
-        $saved = $repo->create($guaranteeModel);
-
         // ✅ ARABIC NAME LOGIC
-        $arabicName = $isTestData 
-            ? 'دفعة اختبار: إدخال/لصق (' . date('Y/m/d') . ')' 
+        $arabicName = $isTestData
+            ? 'دفعة اختبار: إدخال/لصق (' . date('Y/m/d') . ')'
             : 'دفعة إدخال يدوي/ذكي (' . date('Y/m/d') . ')';
 
         // Ensure metadata exists
-        $metaRepo = new BatchMetadataRepository($repo->getDb());
+        $metaRepo = new BatchMetadataRepository($db);
         $metaRepo->ensureBatchName($batchId, $arabicName);
 
-        // ✅ Record Occurrence
-        ImportService::recordOccurrence($saved->id, $batchId, 'smart_paste');
-        
-        // Record history event
+        $ownsTransaction = !$db->inTransaction();
+        if ($ownsTransaction) {
+            $db->beginTransaction();
+        }
+
         try {
-            \App\Services\TimelineRecorder::recordImportEvent($saved->id, $source, $saved->rawData);
-        } catch (\Throwable $t) {
-            error_log("Failed to record history: " . $t->getMessage());
+            $saved = $repo->create($guaranteeModel);
+
+            if ($isTestData) {
+                $repo->markAsTestData(
+                    (int)$saved->id,
+                    isset($options['test_batch_id']) ? (string)$options['test_batch_id'] : null,
+                    isset($options['test_note']) ? (string)$options['test_note'] : null
+                );
+            }
+
+            // ✅ Record Occurrence
+            ImportService::recordOccurrence((int)$saved->id, $batchId, 'smart_paste', null, $db);
+
+            // Record history event
+            try {
+                \App\Services\TimelineRecorder::recordImportEvent((int)$saved->id, $source, $saved->rawData);
+            } catch (\Throwable $t) {
+                error_log("Failed to record history: " . $t->getMessage());
+            }
+
+            if ($ownsTransaction) {
+                $db->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($ownsTransaction && $db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
         }
         
         return [
@@ -520,6 +551,8 @@ class ParseCoordinatorService
         $isTestData = !empty($options['is_test_data']);
         $batchPrefix = $isTestData ? 'test_paste_' : 'manual_paste_';
         $batchId = $batchPrefix . date('Ymd');
+        $db = $repo->getDb();
+        $batchId = ImportService::resolveCompatibleBatchIdentifier($db, $batchId, $isTestData);
 
         // Create new
         $rawData = [
@@ -546,28 +579,52 @@ class ParseCoordinatorService
             rawData: $rawData,
             importSource: $batchId,
             importedAt: date('Y-m-d H:i:s'),
-            importedBy: 'Web User'
+            importedBy: (string)($options['actor_display'] ?? self::resolveActorDisplay())
         );
         
-        $saved = $repo->create($guaranteeModel);
-
         // ✅ ARABIC NAME LOGIC
-        $arabicName = $isTestData 
-            ? 'دفعة اختبار: إدخال/لصق (' . date('Y/m/d') . ')' 
+        $arabicName = $isTestData
+            ? 'دفعة اختبار: إدخال/لصق (' . date('Y/m/d') . ')'
             : 'دفعة إدخال يدوي/ذكي (' . date('Y/m/d') . ')';
 
         // Ensure metadata exists
-        $metaRepo = new BatchMetadataRepository($repo->getDb());
+        $metaRepo = new BatchMetadataRepository($db);
         $metaRepo->ensureBatchName($batchId, $arabicName);
 
-        // ✅ Record Occurrence
-        ImportService::recordOccurrence($saved->id, $batchId, 'smart_paste');
-        
-        // Record history
+        $ownsTransaction = !$db->inTransaction();
+        if ($ownsTransaction) {
+            $db->beginTransaction();
+        }
+
         try {
-            \App\Services\TimelineRecorder::recordImportEvent($saved->id, 'smart_paste');
-        } catch (\Throwable $t) {
-            error_log("Failed to record history: " . $t->getMessage());
+            $saved = $repo->create($guaranteeModel);
+
+            if ($isTestData) {
+                $repo->markAsTestData(
+                    (int)$saved->id,
+                    isset($options['test_batch_id']) ? (string)$options['test_batch_id'] : null,
+                    isset($options['test_note']) ? (string)$options['test_note'] : null
+                );
+            }
+
+            // ✅ Record Occurrence
+            ImportService::recordOccurrence((int)$saved->id, $batchId, 'smart_paste', null, $db);
+
+            // Record history
+            try {
+                \App\Services\TimelineRecorder::recordImportEvent((int)$saved->id, 'smart_paste');
+            } catch (\Throwable $t) {
+                error_log("Failed to record history: " . $t->getMessage());
+            }
+
+            if ($ownsTransaction) {
+                $db->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($ownsTransaction && $db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
         }
         
         return [
@@ -579,7 +636,7 @@ class ParseCoordinatorService
     /**
      * Trigger auto-matching for created guarantees
      */
-    private static function triggerAutoMatching(array $results): void
+    private static function triggerAutoMatching(array $results, string $actorDisplay = 'system'): void
     {
         try {
             $newCount = count(array_filter($results, function($r) {
@@ -587,13 +644,40 @@ class ParseCoordinatorService
             }));
             
             if ($newCount > 0) {
-                $processor = new \App\Services\SmartProcessingService('manual', 'web_user');
+                $actor = trim($actorDisplay) !== '' ? trim($actorDisplay) : self::resolveActorDisplay();
+                $processor = new \App\Services\SmartProcessingService('manual', $actor);
                 $autoMatchStats = $processor->processNewGuarantees($newCount);
                 error_log("✅ Smart Paste auto-matched: {$autoMatchStats['auto_matched']} out of {$newCount}");
             }
         } catch (\Throwable $e) {
             error_log("Auto-matching failed (non-critical): " . $e->getMessage());
         }
+    }
+
+    private static function resolveActorDisplay(): string
+    {
+        $user = AuthService::getCurrentUser();
+        if ($user === null) {
+            return 'system';
+        }
+
+        $fullName = trim((string)($user->fullName ?? ''));
+        $username = trim((string)($user->username ?? ''));
+        $email = trim((string)($user->email ?? ''));
+
+        $parts = [];
+        if ($fullName !== '') {
+            $parts[] = $fullName;
+        }
+        if ($username !== '') {
+            $parts[] = '@' . $username;
+        }
+        if ($email !== '') {
+            $parts[] = $email;
+        }
+        $parts[] = 'id:' . (string)$user->id;
+
+        return implode(' | ', $parts);
     }
     
     /**

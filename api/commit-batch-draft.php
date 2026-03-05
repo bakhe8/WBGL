@@ -22,6 +22,7 @@ try {
 
     $repo = new GuaranteeRepository($db);
     $attachRepo = new AttachmentRepository($db);
+    $actor = wbgl_api_current_user_display();
     $sourceDraftId = (int)$input['draft_id'];
     $sourceGuarantees = $input['guarantees'];
 
@@ -72,7 +73,7 @@ try {
                 rawData: $rawData,
                 importSource: 'workstation_batch_' . date('Ymd'),
                 importedAt: date('Y-m-d H:i:s'),
-                importedBy: 'Web User'
+                importedBy: $actor
             );
             
             $saved = $repo->create($model);

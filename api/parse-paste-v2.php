@@ -49,8 +49,14 @@ try {
     $testBatchId = Input::string($input, 'test_batch_id', null);
     $testNote = Input::string($input, 'test_note', null);
     
+    $options = [
+        'is_test_data' => $isTestData,
+        'test_batch_id' => $testBatchId,
+        'test_note' => $testNote,
+    ];
+
     // Parse text using ParseCoordinatorService
-    $result = ParseCoordinatorService::parseText($text, $db);
+    $result = ParseCoordinatorService::parseText($text, $db, $options);
 
     // Defense-in-depth: when parse resolves to an existing guarantee,
     // enforce object-level visibility before returning its id/details.
@@ -119,12 +125,6 @@ try {
         // Calculate overall confidence (average of all field confidences)
         $scores = array_column($confidence, 'confidence');
         $result['overall_confidence'] = !empty($scores) ? round(array_sum($scores) / count($scores)) : 0;
-    }
-    
-    // ✅ NEW: If successful and marked as test data, mark the guarantee
-    if ($result['success'] && $isTestData && !empty($result['id'])) {
-        $repo = new \App\Repositories\GuaranteeRepository($db);
-        $repo->markAsTestData($result['id'], $testBatchId, $testNote);
     }
     
     // ✅ NEW (Phase 2): Log confidence scores in timeline metadata

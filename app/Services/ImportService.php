@@ -105,6 +105,8 @@ class ImportService
         // ✅ BATCH LOGIC: Separated Excel Batches (Real vs Test)
         $batchPrefix = $isTestData ? 'test_excel_' : 'excel_';
         $batchIdentifier = $batchPrefix . date('Ymd_His') . $filenamePart;
+        $db = Database::connect();
+        $batchIdentifier = self::resolveCompatibleBatchIdentifier($db, $batchIdentifier, $isTestData);
 
         // ✅ ARABIC NAME LOGIC
         // "دفعة إكسل: {filename} (DD/MM/YYYY)"
@@ -117,7 +119,6 @@ class ImportService
             : "دفعة إكسل: {$displayFilename} ({$dateStr})";
 
         // Create metadata immediately
-        $db = Database::connect();
         $metaRepo = new BatchMetadataRepository($db);
         $metaRepo->ensureBatchName($batchIdentifier, $arabicName);
 
@@ -183,7 +184,7 @@ class ImportService
                 try {
                     $created = $this->guaranteeRepo->create($guarantee);
                     // ✅ [NEW] Record First Occurrence
-                    $this->recordOccurrence($created->id, $batchIdentifier, 'excel');
+                    $this->recordOccurrence($created->id, $batchIdentifier, 'excel', null, $db);
 
                     // ✅ ARCHITECTURAL ENFORCEMENT: Use Post-Persist State from Repository Object
                     $importedIdsWithData[] = ['id' => $created->id, 'raw_data' => $created->rawData]; 
@@ -197,7 +198,7 @@ class ImportService
                         
                         if ($existing) {
                             // ✅ [NEW] Record Re-Occurrence (The core of Batch-as-Context)
-                            $this->recordOccurrence($existing->id, $batchIdentifier, 'excel');
+                            $this->recordOccurrence($existing->id, $batchIdentifier, 'excel', null, $db);
 
                             // Record duplicate import event in timeline
                             \App\Services\TimelineRecorder::recordDuplicateImportEvent($existing->id, 'excel');
@@ -272,8 +273,12 @@ class ImportService
             'related_to' => $data['related_to'] ?? 'contract', // 🔥 NEW
         ];
 
+        $db = $this->guaranteeRepo->getDb();
+        $isTestData = !empty($data['is_test_data']);
+
         // Decision #11: Daily batch for manual & paste entry (unified)
         $batchIdentifier = 'manual_paste_' . date('Ymd');  // Daily batch
+        $batchIdentifier = self::resolveCompatibleBatchIdentifier($db, $batchIdentifier, $isTestData);
 
         $guarantee = new Guarantee(
             id: null,
@@ -284,21 +289,43 @@ class ImportService
             importedBy: $createdBy
         );
 
-        $created = $this->guaranteeRepo->create($guarantee);
-        
-        // ✅ NEW: Handle test data marking (Phase 1)
-        if (!empty($data['is_test_data'])) {
-            $this->guaranteeRepo->markAsTestData(
-                $created->id,
-                $data['test_batch_id'] ?? null,
-                $data['test_note'] ?? null
-            );
-        }
-        
-        // ✅ [NEW] Record Occurrence for manual entry
-        $this->recordOccurrence($created->id, $batchIdentifier, 'manual');
+        $metaRepo = new BatchMetadataRepository($db);
+        $metaRepo->ensureBatchName(
+            $batchIdentifier,
+            $isTestData ? 'دفعة اختبار: إدخال/لصق (' . date('Y/m/d') . ')' : 'دفعة إدخال يدوي/ذكي (' . date('Y/m/d') . ')'
+        );
 
-        return $created->id;
+        $ownsTransaction = !$db->inTransaction();
+        if ($ownsTransaction) {
+            $db->beginTransaction();
+        }
+
+        try {
+            $created = $this->guaranteeRepo->create($guarantee);
+
+            // ✅ NEW: Handle test data marking (Phase 1)
+            if ($isTestData) {
+                $this->guaranteeRepo->markAsTestData(
+                    $created->id,
+                    $data['test_batch_id'] ?? null,
+                    $data['test_note'] ?? null
+                );
+            }
+
+            // ✅ [NEW] Record Occurrence for manual entry
+            $this->recordOccurrence($created->id, $batchIdentifier, 'manual', null, $db);
+
+            if ($ownsTransaction) {
+                $db->commit();
+            }
+
+            return $created->id;
+        } catch (\Throwable $e) {
+            if ($ownsTransaction && $db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -566,9 +593,15 @@ class ImportService
      * Record a physical occurrence of a guarantee in a batch
      * This is the "Batch as Context" enabler.
      */
-    public static function recordOccurrence(int $guaranteeId, string $batchIdentifier, string $type): void
+    public static function recordOccurrence(
+        int $guaranteeId,
+        string $batchIdentifier,
+        string $type,
+        ?string $occurredAt = null,
+        ?PDO $db = null
+    ): void
     {
-        $db = Database::connect();
+        $db = $db ?? Database::connect();
         // Check if already exists in this batch (idempotency within same batch)
         $stmt = $db->prepare("SELECT id FROM guarantee_occurrences WHERE guarantee_id = ? AND batch_identifier = ?");
         $stmt->execute([$guaranteeId, $batchIdentifier]);
@@ -580,8 +613,76 @@ class ImportService
                  VALUES (?, ?, ?, ?)',
                 $typeColumn
             ));
-            $insert->execute([$guaranteeId, $batchIdentifier, $type, date('Y-m-d H:i:s')]);
+            $occurredAtValue = trim((string)$occurredAt);
+            if ($occurredAtValue === '') {
+                $occurredAtValue = date('Y-m-d H:i:s');
+            }
+            $insert->execute([$guaranteeId, $batchIdentifier, $type, $occurredAtValue]);
         }
+    }
+
+    /**
+     * Ensure the selected batch identifier cannot mix real and test guarantees.
+     * If the preferred identifier is already used by the opposite data class,
+     * an isolated suffix is appended.
+     */
+    public static function resolveCompatibleBatchIdentifier(PDO $db, string $preferredBatchIdentifier, bool $isTestData): string
+    {
+        $base = trim($preferredBatchIdentifier);
+        if ($base === '') {
+            $base = ($isTestData ? 'test_paste_' : 'manual_paste_') . date('Ymd_His');
+        }
+
+        $composition = self::fetchBatchComposition($db, $base);
+        if (!self::hasBatchConflict($composition, $isTestData)) {
+            return $base;
+        }
+
+        $suffixBase = $base . '_' . ($isTestData ? 'test' : 'real');
+        $candidate = $suffixBase;
+        for ($i = 1; $i <= 50; $i++) {
+            $composition = self::fetchBatchComposition($db, $candidate);
+            if (!self::hasBatchConflict($composition, $isTestData)) {
+                return $candidate;
+            }
+            $candidate = $suffixBase . '_' . $i;
+        }
+
+        throw new RuntimeException('Unable to resolve a non-mixed batch identifier');
+    }
+
+    /**
+     * @return array{test_count:int,real_count:int}
+     */
+    private static function fetchBatchComposition(PDO $db, string $batchIdentifier): array
+    {
+        $stmt = $db->prepare(
+            'SELECT
+                COUNT(DISTINCT CASE WHEN COALESCE(g.is_test_data, 0) = 1 THEN o.guarantee_id END) AS test_count,
+                COUNT(DISTINCT CASE WHEN COALESCE(g.is_test_data, 0) = 0 THEN o.guarantee_id END) AS real_count
+             FROM guarantee_occurrences o
+             JOIN guarantees g ON g.id = o.guarantee_id
+             WHERE o.batch_identifier = ?'
+        );
+        $stmt->execute([$batchIdentifier]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return [
+            'test_count' => (int)($row['test_count'] ?? 0),
+            'real_count' => (int)($row['real_count'] ?? 0),
+        ];
+    }
+
+    /**
+     * @param array{test_count:int,real_count:int} $composition
+     */
+    private static function hasBatchConflict(array $composition, bool $isTestData): bool
+    {
+        if ($isTestData) {
+            return $composition['real_count'] > 0;
+        }
+
+        return $composition['test_count'] > 0;
     }
 
     private static function resolveOccurrenceTypeColumn(PDO $db): string

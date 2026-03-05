@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Support\Database;
-use App\Support\Guard;
 use App\Support\Logger;
 use PDO;
 
@@ -78,12 +77,7 @@ class BatchService
         $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Defense-in-depth: keep object-level visibility enforcement centralized.
-        // For broad admin operators this remains unrestricted.
-        if (Guard::has('manage_data') || Guard::has('manage_users')) {
-            return $rows;
-        }
-
+        // Defense-in-depth: always enforce object-level visibility for selected guarantees.
         return array_values(array_filter(
             $rows,
             static fn(array $row): bool => GuaranteeVisibilityService::canAccessGuarantee((int)($row['id'] ?? 0))
@@ -216,7 +210,9 @@ class BatchService
                     $actionStmt = $this->db->prepare("
                         UPDATE guarantee_decisions
                         SET active_action = 'extension',
-                            active_action_set_at = CURRENT_TIMESTAMP
+                            active_action_set_at = CURRENT_TIMESTAMP,
+                            workflow_step = 'draft',
+                            signatures_received = 0
                         WHERE guarantee_id = ?
                     ");
                     $actionStmt->execute([$g['id']]);
@@ -553,7 +549,15 @@ class BatchService
                     $raw['amount'] = (float)$targetAmount;
                     $guaranteeRepo->updateRawData($g['id'], json_encode($raw));
 
-                    // Locked action setter removed per user request
+                    $actionStmt = $this->db->prepare("
+                        UPDATE guarantee_decisions
+                        SET active_action = 'reduction',
+                            active_action_set_at = CURRENT_TIMESTAMP,
+                            workflow_step = 'draft',
+                            signatures_received = 0
+                        WHERE guarantee_id = ?
+                    ");
+                    $actionStmt->execute([$g['id']]);
 
                     $decisionUpdate = $this->db->prepare("
                         UPDATE guarantee_decisions

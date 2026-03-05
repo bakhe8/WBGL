@@ -72,7 +72,8 @@ try {
         // Import using service
         $service = new ImportService();
         $isTestData = !empty($_POST['is_test_data']);
-        $result = $service->importFromExcel($tempPath, $_POST['imported_by'] ?? 'web_user', $filename, $isTestData);
+        $actor = wbgl_api_current_user_display();
+        $result = $service->importFromExcel($tempPath, $_POST['imported_by'] ?? $actor, $filename, $isTestData);
         $importedRecords = is_array($result['imported_records'] ?? null) ? $result['imported_records'] : [];
         $importedCount = count($importedRecords);
 
@@ -109,7 +110,7 @@ try {
         $autoMatchStats = ['processed' => 0, 'auto_matched' => 0];
         try {
             // "Smart Processing" applies to any new guarantees, regardless of source (Excel, Manual, Paste)
-            $importedBy = $_POST['imported_by'] ?? 'web_user';
+            $importedBy = $_POST['imported_by'] ?? $actor;
             $processor = new \App\Services\SmartProcessingService('manual', $importedBy);
             $autoMatchStats = $processor->processNewGuarantees($importedCount);
         } catch (\Throwable $e) { /* Ignore automation errors, keep import success */ }

@@ -10,6 +10,7 @@ use App\Support\Database;
 use App\Support\DirectionResolver;
 use App\Support\LocaleResolver;
 use App\Support\Settings;
+use App\Support\TestDataVisibility;
 use App\Support\ViewPolicy;
 
 ViewPolicy::guardView('batches.php');
@@ -20,6 +21,7 @@ $importedByAggregate = $driver === 'pgsql'
     ? "STRING_AGG(DISTINCT g.imported_by, ', ')"
     : 'GROUP_CONCAT(DISTINCT g.imported_by)';
 $settings = Settings::getInstance();
+$includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
 $currentUser = AuthService::getCurrentUser();
 $localeInfo = LocaleResolver::resolve(
     $currentUser,
@@ -77,7 +79,9 @@ $batches = $db->query("
         COALESCE(MAX(bm.batch_name), '{$batchesPrefixMarker}' || SUBSTR(o.batch_identifier, 1, 25)) as batch_name,
         COALESCE(MAX(bm.status), 'active') as status,
         COALESCE(MAX(bm.batch_notes), '') as batch_notes,
-        COUNT(DISTINCT o.guarantee_id) as guarantee_count,
+        COUNT(DISTINCT o.guarantee_id) as guarantee_count_total,
+        COUNT(DISTINCT CASE WHEN COALESCE(g.is_test_data, 0) = 0 THEN o.guarantee_id END) as guarantee_count_non_test,
+        COUNT(DISTINCT CASE WHEN COALESCE(g.is_test_data, 0) = 1 THEN o.guarantee_id END) as guarantee_count_test,
         MIN(o.occurred_at) as created_at,
         {$importedByAggregate} as imported_by
     FROM guarantee_occurrences o
@@ -87,36 +91,25 @@ $batches = $db->query("
     ORDER BY MIN(o.occurred_at) DESC
 ")->fetchAll(PDO::FETCH_ASSOC);
 
-// Production Mode: Filter out test batches
-if ($settings->isProductionMode()) {
-    // Filter by import_source prefix AND by checking if batch has non-test guarantees
-    $filteredBatches = [];
-    foreach ($batches as $batch) {
-        // Skip test batches by name
-        if (str_starts_with($batch['import_source'], 'test_')) {
-            continue;
-        }
-        
-        // Check if this batch has any non-test guarantees
-        $stmt = $db->prepare("
-            SELECT COUNT(*) as count 
-            FROM guarantee_occurrences o
-            JOIN guarantees g ON g.id = o.guarantee_id
-            WHERE o.batch_identifier = ?
-            AND g.is_test_data = 0
-        ");
-        $stmt->execute([$batch['import_source']]);
-        $nonTestCount = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
-        
-        // Only include batch if it has non-test guarantees
-        if ($nonTestCount > 0) {
-            // Update guarantee_count to reflect only non-test guarantees
-            $batch['guarantee_count'] = $nonTestCount;
-            $filteredBatches[] = $batch;
-        }
+$filteredBatches = [];
+foreach ($batches as $batch) {
+    $nonTestCount = (int)($batch['guarantee_count_non_test'] ?? 0);
+    $testCount = (int)($batch['guarantee_count_test'] ?? 0);
+    $totalCount = (int)($batch['guarantee_count_total'] ?? 0);
+    $isTestOnly = $nonTestCount === 0 && $testCount > 0;
+    $hasTestData = $testCount > 0;
+
+    // Default mode: hide pure test batches everywhere (prod + non-prod).
+    if (!$includeTestData && $nonTestCount <= 0) {
+        continue;
     }
-    $batches = $filteredBatches;
+
+    $batch['is_test_only'] = $isTestOnly;
+    $batch['has_test_data'] = $hasTestData;
+    $batch['guarantee_count'] = $includeTestData ? $totalCount : $nonTestCount;
+    $filteredBatches[] = $batch;
 }
+$batches = $filteredBatches;
 foreach ($batches as &$batch) {
     $batchName = (string)($batch['batch_name'] ?? '');
     if (str_starts_with($batchName, $batchesPrefixMarker)) {
@@ -300,6 +293,25 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
         
         <div class="page-title" data-i18n="batches.ui.txt_8ea08ec4">الدفعات</div>
         <p class="page-subtitle" data-i18n="batches.ui.txt_c31dea35">إدارة مجموعات الضمانات للعمل الجماعي</p>
+        <?php if (!$settings->isProductionMode()): ?>
+            <?php
+            $toggleParams = $_GET;
+            if ($includeTestData) {
+                $toggleParams['include_test_data'] = '0';
+            } else {
+                $toggleParams['include_test_data'] = '1';
+            }
+            $toggleHref = '/views/batches.php';
+            if (!empty($toggleParams)) {
+                $toggleHref .= '?' . http_build_query($toggleParams);
+            }
+            ?>
+            <p class="page-subtitle">
+                <a href="<?= htmlspecialchars($toggleHref, ENT_QUOTES, 'UTF-8') ?>">
+                    <?= $includeTestData ? 'إخفاء الدفعات التجريبية' : 'عرض الدفعات التجريبية' ?>
+                </a>
+            </p>
+        <?php endif; ?>
         
         <!-- Active Batches -->
         <section class="mb-5">
@@ -319,6 +331,9 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
                     <?php foreach ($active as $batch): 
                         $isExcel = strpos($batch['import_source'], 'excel_') === 0;
                         $typeIcon = $isExcel ? '📄' : '📝';
+                        $batchLinkParams = ['import_source' => $batch['import_source']];
+                        $batchLinkParams = TestDataVisibility::withQueryFlag($batchLinkParams, $includeTestData);
+                        $batchDetailHref = '/views/batch-detail.php?' . http_build_query($batchLinkParams);
                     ?>
                     <div class="batch-card active">
                         <div>
@@ -326,6 +341,11 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
                                 <h3 class="batch-card-title">
                                     <?= htmlspecialchars($batch['batch_name']) ?>
                                 </h3>
+                                <?php if (!empty($batch['is_test_only'])): ?>
+                                    <span class="badge badge-warning">🧪 اختبار</span>
+                                <?php elseif (!empty($batch['has_test_data'])): ?>
+                                    <span class="badge badge-warning">🧪 مختلطة</span>
+                                <?php endif; ?>
                                 <span class="batch-type-icon" title="<?= $isExcel ? 'ملف Excel' : 'إدخال يدووي/لصق' ?>">
                                     <?= $typeIcon ?>
                                 </span>
@@ -347,7 +367,7 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
                                 <?php endif; ?>
                             </div>
                         </div>
-                        <a href="/views/batch-detail.php?import_source=<?= urlencode($batch['import_source']) ?>" 
+                        <a href="<?= htmlspecialchars($batchDetailHref, ENT_QUOTES, 'UTF-8') ?>" 
                            class="btn btn-primary btn-sm w-full">
                             <span data-i18n="batches.ui.txt_80e2ef88">فتح الدفعة</span>
                         </a>
@@ -375,6 +395,9 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
                     <?php foreach ($completed as $batch): 
                         $isExcel = strpos($batch['import_source'], 'excel_') === 0;
                         $typeIcon = $isExcel ? '📄' : '📝';
+                        $batchLinkParams = ['import_source' => $batch['import_source']];
+                        $batchLinkParams = TestDataVisibility::withQueryFlag($batchLinkParams, $includeTestData);
+                        $batchDetailHref = '/views/batch-detail.php?' . http_build_query($batchLinkParams);
                     ?>
                     <div class="batch-card completed">
                         <div>
@@ -382,6 +405,11 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
                                 <h3 class="batch-card-title text-muted">
                                     <?= htmlspecialchars($batch['batch_name']) ?>
                                 </h3>
+                                <?php if (!empty($batch['is_test_only'])): ?>
+                                    <span class="badge badge-warning">🧪 اختبار</span>
+                                <?php elseif (!empty($batch['has_test_data'])): ?>
+                                    <span class="badge badge-warning">🧪 مختلطة</span>
+                                <?php endif; ?>
                                 <span class="batch-type-icon batch-type-icon-muted">
                                     <?= $typeIcon ?>
                                 </span>
@@ -395,7 +423,7 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
                                 </div>
                             </div>
                         </div>
-                        <a href="/views/batch-detail.php?import_source=<?= urlencode($batch['import_source']) ?>" 
+                        <a href="<?= htmlspecialchars($batchDetailHref, ENT_QUOTES, 'UTF-8') ?>" 
                            class="btn btn-secondary btn-sm w-full">
                             <span data-i18n="batches.ui.txt_85b89ef7">عرض التفاصيل</span>
                         </a>
@@ -406,8 +434,15 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
         </section>
         
         <!-- Back to home -->
+        <?php
+        $backParams = TestDataVisibility::withQueryFlag([], $includeTestData);
+        $backHref = '/index.php';
+        if (!empty($backParams)) {
+            $backHref .= '?' . http_build_query($backParams);
+        }
+        ?>
         <div class="batches-back-link-wrap">
-            <a href="/index.php" class="back-link" data-i18n="batches.ui.txt_188a63a9">← العودة للصفحة الرئيسية</a>
+            <a href="<?= htmlspecialchars($backHref, ENT_QUOTES, 'UTF-8') ?>" class="back-link" data-i18n="batches.ui.txt_188a63a9">← العودة للصفحة الرئيسية</a>
         </div>
     </div>
 </body>

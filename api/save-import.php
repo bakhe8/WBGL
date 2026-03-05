@@ -4,6 +4,7 @@
 require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
+use App\Services\ImportService;
 
 wbgl_api_require_permission('import_excel');
 
@@ -26,6 +27,11 @@ try {
 
     $evidenceFiles = $input['evidence_files'] ?? [];
     $savedCount = 0;
+    $batchIdentifier = trim((string)($input['import_id'] ?? ''));
+    if ($batchIdentifier === '') {
+        $batchIdentifier = 'email_import_' . date('Ymd_His');
+    }
+    $batchIdentifier = ImportService::resolveCompatibleBatchIdentifier($pdo, $batchIdentifier, $autoMarkTestData);
 
     foreach ($input['guarantees'] as $g) {
         $gNo = $g['guarantee_number'];
@@ -82,6 +88,11 @@ try {
             $guaranteeId = $pdo->lastInsertId();
         }
 
+        if ($guaranteeId !== null) {
+            // Keep batch ledger consistent for both create and update flows.
+            ImportService::recordOccurrence((int)$guaranteeId, $batchIdentifier, 'email', null, $pdo);
+        }
+
         // 2. Handle Attachments
         foreach ($evidenceFiles as $type => $tempRelPath) {
             if (!$tempRelPath) continue;
@@ -132,6 +143,8 @@ try {
         $stmtInsert = $pdo->prepare("INSERT INTO guarantees (guarantee_number, raw_data, import_source, imported_at, is_test_data) VALUES (?, ?, 'email_import_draft', CURRENT_TIMESTAMP, ?)");
         $stmtInsert->execute([$draftNo, json_encode($rawData), $isTestDataFlag]);
         $guaranteeId = $pdo->lastInsertId();
+
+        ImportService::recordOccurrence((int)$guaranteeId, $batchIdentifier, 'email', null, $pdo);
         
         // Attach files to this draft
         foreach ($evidenceFiles as $type => $tempRelPath) {

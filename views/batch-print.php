@@ -9,6 +9,7 @@ require_once __DIR__ . '/../app/Support/autoload.php';
 use App\Support\Database;
 use App\Support\ViewPolicy;
 use App\Support\Settings;
+use App\Support\TestDataVisibility;
 use App\Repositories\GuaranteeRepository;
 use App\Repositories\BankRepository;
 use App\Repositories\SupplierRepository;
@@ -29,6 +30,7 @@ $idsParam = $_GET['ids'] ?? '';
 $batchIdentifier = isset($_GET['batch_identifier']) ? trim((string)$_GET['batch_identifier']) : '';
 $batchIdentifier = $batchIdentifier !== '' ? $batchIdentifier : null;
 $settings = Settings::getInstance();
+$includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
 $batchPrintLocaleCode = strtolower((string)$settings->get('DEFAULT_LOCALE', 'ar'));
 if (!in_array($batchPrintLocaleCode, ['ar', 'en'], true)) {
     $batchPrintLocaleCode = 'ar';
@@ -86,9 +88,8 @@ if (empty($guaranteeIds)) {
 
 $db = Database::connect();
 
-// Production Mode: Filter out test guarantees
-$settings = Settings::getInstance();
-if ($settings->isProductionMode() && !empty($guaranteeIds)) {
+// Default mode: filter out test guarantees unless explicitly requested.
+if (!$includeTestData && !empty($guaranteeIds)) {
     $placeholders = implode(',', array_fill(0, count($guaranteeIds), '?'));
     $stmt = $db->prepare("
         SELECT id FROM guarantees 

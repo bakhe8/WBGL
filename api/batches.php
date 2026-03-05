@@ -7,21 +7,57 @@
 require_once __DIR__ . '/_bootstrap.php';
 
 use App\Services\BatchService;
+use App\Services\BatchAccessPolicyService;
+use App\Services\BatchAuditService;
 use App\Support\Input;
 use App\Support\Guard;
 use App\Services\BreakGlassService;
 
 header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_login();
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$rawBody = file_get_contents('php://input');
+$jsonInput = json_decode($rawBody, true);
+$requestBody = array_merge($_POST, is_array($jsonInput) ? $jsonInput : []);
+$requestAction = Input::string($requestBody, 'action', '');
+$requestImportSource = Input::string(
+    $requestBody,
+    'import_source',
+    Input::string($_GET, 'import_source', '')
+);
 
-$method = $_SERVER['REQUEST_METHOD'];
+if (!BatchAccessPolicyService::canAccessBatchSurfaces()) {
+    $deniedActor = wbgl_api_current_user_display();
+    if ($requestImportSource !== '') {
+        try {
+            BatchAuditService::record(
+                $requestImportSource,
+                'batch_access_denied',
+                $deniedActor,
+                'BATCH_SURFACE_ACCESS_DENIED',
+                [
+                    'method' => $method,
+                    'action' => $requestAction,
+                    'reason_code' => 'BATCH_SURFACE_ACCESS_DENIED',
+                ]
+            );
+        } catch (\Throwable) {
+            // Access denial must still return immediately even if audit insert fails.
+        }
+    }
+
+    wbgl_api_compat_fail(403, 'Permission Denied', [
+        'message' => 'الوصول إلى عمليات الدفعات غير متاح لهذا الدور.',
+        'reason_code' => 'BATCH_SURFACE_ACCESS_DENIED',
+    ], 'permission');
+}
+
 $service = new BatchService();
 
 try {
     if ($method === 'POST') {
-        $rawBody = file_get_contents('php://input');
-        $jsonInput = json_decode($rawBody, true);
-        $input = array_merge($_POST, is_array($jsonInput) ? $jsonInput : []);
+        $input = $requestBody;
+        $actor = wbgl_api_current_user_display();
 
         $action = Input::string($input, 'action', '');
         $importSource = Input::string($input, 'import_source', '');
@@ -39,34 +75,33 @@ try {
             }
         }
 
-        if ($action !== 'reopen') {
-            wbgl_api_require_permission('manage_data');
-        }
-        
         switch ($action) {
             case 'extend':
+                wbgl_api_require_permission('guarantee_extend');
                 $newExpiry = Input::string($input, 'new_expiry', '');
                 $newExpiry = $newExpiry !== '' ? $newExpiry : null;
                 $result = $service->extendBatch(
                     $importSource,
                     $newExpiry,
-                    Input::string($input, 'user_id', 'web_user'),
+                    Input::string($input, 'user_id', $actor),
                     Input::array($input, 'guarantee_ids', null)
                 );
                 break;
                 
             case 'release':
+                wbgl_api_require_permission('guarantee_release');
                 $reason = Input::string($input, 'reason', '');
                 $reason = $reason !== '' ? $reason : null;
                 $result = $service->releaseBatch(
                     $importSource,
                     $reason,
-                    Input::string($input, 'user_id', 'web_user'),
+                    Input::string($input, 'user_id', $actor),
                     Input::array($input, 'guarantee_ids', null)
                 );
                 break;
 
             case 'reduce':
+                wbgl_api_require_permission('guarantee_reduce');
                 $reductionsRaw = Input::array($input, 'reductions', null);
                 $reductions = [];
                 if (is_array($reductionsRaw) && !empty($reductionsRaw)) {
@@ -106,7 +141,7 @@ try {
                 $result = $service->reduceBatch(
                     $importSource,
                     $newAmount,
-                    Input::string($input, 'user_id', 'web_user'),
+                    Input::string($input, 'user_id', $actor),
                     Input::array($input, 'guarantee_ids', null),
                     !empty($reductions) ? $reductions : null
                 );
@@ -185,7 +220,6 @@ try {
         wbgl_api_compat_success(is_array($result) ? $result : []);
         
     } elseif ($method === 'GET') {
-        wbgl_api_require_permission('manage_data');
         // Get batch summary
         $importSource = $_GET['import_source'] ?? '';
         

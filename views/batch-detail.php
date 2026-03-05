@@ -8,6 +8,7 @@
 require_once __DIR__ . '/../app/Support/autoload.php';
 use App\Support\Database;
 use App\Support\Settings;
+use App\Support\TestDataVisibility;
 use App\Support\ViewPolicy;
 
 ViewPolicy::guardView('batch-detail.php');
@@ -15,6 +16,7 @@ ViewPolicy::guardView('batch-detail.php');
 $db = Database::connect();
 $importSource = $_GET['import_source'] ?? '';
 $settings = Settings::getInstance();
+$includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
 $batchDetailLocaleCode = strtolower((string)$settings->get('DEFAULT_LOCALE', 'ar'));
 if (!in_array($batchDetailLocaleCode, ['ar', 'en'], true)) {
     $batchDetailLocaleCode = 'ar';
@@ -83,9 +85,16 @@ $stmt = $db->prepare("
                ELSE NULL
            END as last_action,
            h.created_at as last_action_at,
-           o.occurred_at as occurrence_date
-    FROM guarantee_occurrences o
-    JOIN guarantees g ON g.id = o.guarantee_id
+           o_latest.occurred_at as occurrence_date
+    FROM (
+        SELECT
+            o.guarantee_id,
+            MAX(o.occurred_at) AS occurred_at
+        FROM guarantee_occurrences o
+        WHERE o.batch_identifier = ?
+        GROUP BY o.guarantee_id
+    ) o_latest
+    JOIN guarantees g ON g.id = o_latest.guarantee_id
     
     -- 1. Decision row (single-row per guarantee)
     LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
@@ -108,14 +117,14 @@ $stmt = $db->prepare("
          
     LEFT JOIN banks b ON {$rawBankExpr} = b.english_name 
          OR {$rawBankExpr} = b.arabic_name
-    WHERE o.batch_identifier = ?
+    WHERE 1=1
     ORDER BY g.id ASC
 ");
 $stmt->execute([$importSource]);
 $guarantees = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Production Mode: Filter out test guarantees
-if ($settings->isProductionMode()) {
+// Default mode: hide test guarantees unless explicitly requested.
+if (!$includeTestData) {
     $guarantees = array_filter($guarantees, static fn($g) => (int)($g['is_test_data'] ?? 0) === 0);
     // Re-index array after filtering
     $guarantees = array_values($guarantees);
@@ -709,6 +718,10 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                 ids: ids.join(','),
                 batch_identifier: <?= json_encode($importSource, JSON_UNESCAPED_UNICODE) ?>
             });
+            const includeTestData = <?= json_encode($includeTestData ? '1' : '') ?>;
+            if (includeTestData) {
+                params.set('include_test_data', includeTestData);
+            }
             window.open(`/views/batch-print.php?${params.toString()}`);
             Toast.show(`تم فتح نافذة الطباعة لـ ${ids.length} خطاب`, 'success');
         }
