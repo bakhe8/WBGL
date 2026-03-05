@@ -980,6 +980,143 @@ $formattedSuppliers = array_map(function ($s) {
             font-size: 12px;
         }
 
+        .notifications-section-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .notifications-mark-all-btn {
+            border: 1px solid var(--border-primary);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border-radius: 8px;
+            padding: 2px 8px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .notifications-mark-all-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .notifications-stack {
+            display: flex;
+            flex-direction: column;
+            margin-top: 8px;
+        }
+
+        .notification-card {
+            position: relative;
+            background: var(--bg-card);
+            border: 1px solid var(--border-primary);
+            border-radius: 10px;
+            padding: 10px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            z-index: 1;
+        }
+
+        .notification-card + .notification-card {
+            margin-top: -8px;
+        }
+
+        .notification-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+            z-index: 9;
+        }
+
+        .notification-card--warning {
+            border-right: 4px solid var(--accent-warning);
+        }
+
+        .notification-card--error {
+            border-right: 4px solid var(--accent-danger);
+        }
+
+        .notification-card--success {
+            border-right: 4px solid var(--accent-success);
+        }
+
+        .notification-card--info {
+            border-right: 4px solid var(--accent-primary);
+        }
+
+        .notification-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .notification-type-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-primary);
+            font-size: 10px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .notification-time {
+            font-size: 10px;
+            color: var(--text-light);
+            white-space: nowrap;
+        }
+
+        .notification-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .notification-message {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            margin-bottom: 8px;
+            word-break: break-word;
+        }
+
+        .notification-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .notification-btn {
+            border: 1px solid var(--border-primary);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border-radius: 8px;
+            font-size: 11px;
+            padding: 3px 8px;
+            cursor: pointer;
+        }
+
+        .notification-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .notification-btn--read {
+            color: var(--accent-success);
+            border-color: var(--accent-success);
+        }
+
+        .notification-btn--hide {
+            color: var(--accent-warning-hover);
+            border-color: var(--accent-warning);
+        }
+
         .empty-state-message {
             text-align: center;
             color: var(--text-light);
@@ -1337,9 +1474,18 @@ $formattedSuppliers = array_map(function ($s) {
                 <div class="personal-tasks-section">
                     <?php foreach ($personalTaskBreakdown as $bucket): ?>
                         <?php
-                        $isActive = ($statusFilter === 'actionable' && $stageFilter === $bucket['stage']);
+                        $bucketFilter = (string)($bucket['filter'] ?? 'actionable');
+                        $bucketStage = isset($bucket['stage']) && $bucket['stage'] !== null
+                            ? (string)$bucket['stage']
+                            : '';
+                        $isActive = ($statusFilter === $bucketFilter)
+                            && (
+                                ($bucketStage === '' && ($stageFilter === null || $stageFilter === ''))
+                                || ($bucketStage !== '' && $stageFilter === $bucketStage)
+                            );
+                        $bucketStageParam = $bucketStage !== '' ? $bucketStage : null;
                         ?>
-                        <a href="<?= htmlspecialchars($buildFilterHref('actionable', (string)$bucket['stage'])) ?>"
+                        <a href="<?= htmlspecialchars($buildFilterHref($bucketFilter, $bucketStageParam)) ?>"
                             class="personal-task-link <?= $isActive ? 'is-active' : '' ?>">
                             <span class="personal-task-label"><?= $bucket['label'] ?></span>
                             <span class="personal-task-count <?= $isActive ? 'is-active' : '' ?>">
@@ -1454,20 +1600,35 @@ $formattedSuppliers = array_map(function ($s) {
                     </div>
                 <div class="progress-text">
                     <span><span>مهام</span> <span><?= $taskCurrentIndex ?></span> <span data-i18n="index.ui.txt_aa7099e2">من</span> <span><?= $taskTotalRecords ?></span></span>
-                    <?php if ($unreadNotifications > 0): ?>
-                        <span class="task-notification-badge" data-i18n-title="index.tasks.unread_notifications_title" title="إشعارات غير مقروءة">
-                            🔔 <strong><?= (int)$unreadNotifications ?></strong>
-                        </span>
-                    <?php endif; ?>
+                    <span id="taskUnreadBadge"
+                        class="task-notification-badge<?= $unreadNotifications > 0 ? '' : ' u-hidden' ?>"
+                        data-i18n-title="index.tasks.unread_notifications_title"
+                        title="إشعارات غير مقروءة">
+                        🔔 <strong id="taskUnreadCount"><?= (int)$unreadNotifications ?></strong>
+                    </span>
                     <span class="progress-percent"><?= $taskProgressPercent ?>%</span>
                 </div>
             </div>
 
             <!-- Sidebar Body -->
             <div class="sidebar-body">
+                <div class="sidebar-section" id="notificationsSection">
+                    <div class="sidebar-section-title notifications-section-title">
+                        🔔 <span>الإشعارات</span>
+                        <button id="markAllNotificationsReadBtn" type="button" class="notifications-mark-all-btn">
+                            تعليم الكل كمقروء
+                        </button>
+                    </div>
+                    <div id="notificationsList" class="notifications-stack">
+                        <div id="emptyNotificationsMessage" class="empty-state-message">
+                            لا توجد إشعارات نشطة
+                        </div>
+                    </div>
+                </div>
+
                 <?php if ($canViewNotes): ?>
                     <!-- Notes Section -->
-                    <div class="sidebar-section" id="notesSection">
+                    <div class="sidebar-section sidebar-section-spaced" id="notesSection">
                         <div class="sidebar-section-title">
                             📝 <span data-i18n="index.notes.title">الملاحظات</span>
                         </div>
@@ -1639,6 +1800,205 @@ $formattedSuppliers = array_map(function ($s) {
                 : fallback;
         };
 
+        const wbglNotificationsState = {
+            items: []
+        };
+
+        function wbglEscapeHtml(value) {
+            const str = String(value ?? '');
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function wbglFormatNotificationTime(raw) {
+            if (!raw) return '';
+            const parsed = new Date(String(raw).replace(' ', 'T'));
+            if (Number.isNaN(parsed.getTime())) return String(raw);
+            return parsed.toLocaleString('ar-SA', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+        }
+
+        function wbglNotificationTypeMeta(type) {
+            const normalized = String(type || '').toLowerCase();
+            if (normalized.includes('failure') || normalized.includes('error') || normalized.includes('reject')) {
+                return {
+                    css: 'error',
+                    label: 'خطأ'
+                };
+            }
+            if (normalized.includes('warning') || normalized.includes('expiry') || normalized.includes('undo')) {
+                return {
+                    css: 'warning',
+                    label: 'تنبيه'
+                };
+            }
+            if (normalized.includes('success') || normalized.includes('approved') || normalized.includes('executed')) {
+                return {
+                    css: 'success',
+                    label: 'نجاح'
+                };
+            }
+            return {
+                css: 'info',
+                label: 'معلومة'
+            };
+        }
+
+        function wbglUpdateUnreadBadge(count) {
+            const badge = document.getElementById('taskUnreadBadge');
+            const countEl = document.getElementById('taskUnreadCount');
+            if (!badge || !countEl) return;
+
+            countEl.textContent = String(Math.max(0, Number(count || 0)));
+            if (count > 0) {
+                badge.classList.remove('u-hidden');
+            } else {
+                badge.classList.add('u-hidden');
+            }
+        }
+
+        function wbglRenderNotifications() {
+            const list = document.getElementById('notificationsList');
+            if (!list) return;
+
+            const items = [...wbglNotificationsState.items].sort((a, b) => {
+                const t1 = new Date(String(a.created_at || '').replace(' ', 'T')).getTime();
+                const t2 = new Date(String(b.created_at || '').replace(' ', 'T')).getTime();
+                return t1 - t2; // oldest -> newest
+            });
+
+            if (items.length === 0) {
+                list.innerHTML = '<div id="emptyNotificationsMessage" class="empty-state-message">لا توجد إشعارات نشطة</div>';
+                wbglUpdateUnreadBadge(0);
+                return;
+            }
+
+            list.innerHTML = items.map((item) => {
+                const meta = wbglNotificationTypeMeta(item.type);
+                const title = wbglEscapeHtml(item.title || 'إشعار');
+                const message = wbglEscapeHtml(item.message || '');
+                const when = wbglEscapeHtml(wbglFormatNotificationTime(item.created_at));
+                const id = Number(item.id || 0);
+                return `
+                    <article class="notification-card notification-card--${meta.css}" data-notification-id="${id}">
+                        <div class="notification-card-header">
+                            <span class="notification-type-badge">${wbglEscapeHtml(meta.label)}</span>
+                            <span class="notification-time">${when}</span>
+                        </div>
+                        <div class="notification-title">${title}</div>
+                        <div class="notification-message">${message}</div>
+                        <div class="notification-actions">
+                            <button class="notification-btn notification-btn--read" data-notification-action="mark_read" data-notification-id="${id}">مقروء</button>
+                            <button class="notification-btn notification-btn--hide" data-notification-action="hide" data-notification-id="${id}">إخفاء</button>
+                        </div>
+                    </article>
+                `;
+            }).join('');
+
+            wbglUpdateUnreadBadge(items.length);
+        }
+
+        async function wbglLoadNotifications() {
+            try {
+                const res = await fetch('/api/notifications.php?unread=1&include_hidden=0&limit=40', {
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                const payload = await res.json();
+                const rows = Array.isArray(payload?.data?.data)
+                    ? payload.data.data
+                    : (Array.isArray(payload?.data) ? payload.data : []);
+                wbglNotificationsState.items = rows;
+                wbglRenderNotifications();
+            } catch (err) {
+                console.error('NOTIFICATIONS_LOAD_ERROR', err);
+                wbglNotificationsState.items = [];
+                wbglRenderNotifications();
+            }
+        }
+
+        async function wbglNotificationAction(action, notificationId) {
+            const id = Number(notificationId || 0);
+            if (!id) return;
+            try {
+                const res = await fetch('/api/notifications.php', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: action,
+                        notification_id: id
+                    })
+                });
+                const payload = await res.json();
+                if (!payload?.success) {
+                    throw new Error(payload?.error || 'notification action failed');
+                }
+                wbglNotificationsState.items = wbglNotificationsState.items.filter((item) => Number(item.id) !== id);
+                wbglRenderNotifications();
+            } catch (err) {
+                console.error('NOTIFICATION_ACTION_ERROR', err);
+                showToast('تعذر تحديث الإشعار', 'error');
+            }
+        }
+
+        async function wbglMarkAllNotificationsRead() {
+            try {
+                const res = await fetch('/api/notifications.php', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'mark_all_read'
+                    })
+                });
+                const payload = await res.json();
+                if (!payload?.success) {
+                    throw new Error(payload?.error || 'mark all failed');
+                }
+                wbglNotificationsState.items = [];
+                wbglRenderNotifications();
+            } catch (err) {
+                console.error('NOTIFICATIONS_MARK_ALL_ERROR', err);
+                showToast('تعذر تعليم الإشعارات كمقروءة', 'error');
+            }
+        }
+
+        document.addEventListener('click', (event) => {
+            const actionBtn = event.target.closest('[data-notification-action]');
+            if (actionBtn) {
+                event.preventDefault();
+                wbglNotificationAction(
+                    String(actionBtn.getAttribute('data-notification-action') || ''),
+                    Number(actionBtn.getAttribute('data-notification-id') || 0)
+                );
+                return;
+            }
+
+            const markAllBtn = event.target.closest('#markAllNotificationsReadBtn');
+            if (markAllBtn) {
+                event.preventDefault();
+                wbglMarkAllNotificationsRead();
+            }
+        });
+
         // Toast notification system
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
@@ -1771,6 +2131,8 @@ $formattedSuppliers = array_map(function ($s) {
 
         // Apply formatting on load - Preview is always visible
         document.addEventListener('DOMContentLoaded', function() {
+            wbglLoadNotifications();
+
             const previewSection = document.getElementById('preview-section');
             if (previewSection) {
                 // Execute conversions using centralized PreviewFormatter

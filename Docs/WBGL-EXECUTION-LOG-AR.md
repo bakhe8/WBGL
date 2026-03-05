@@ -352,3 +352,18 @@
   - storage/logs/suspect-test-data-unflagged-report.md
 - الحالة: دورة v1.4 مكتملة بالكامل.
 
+## 2026-03-05T21:35:00+03:00 | P17-06
+- المرحلة: P17 — إغلاق فني تكميلي بعد تطبيق حارس الانتقالات
+- المهمة: تثبيت migration 000026 مع توافق البيئة وإعادة التحقق الكامل
+- الربط المرجعي: J-060
+- الدليل: تم إصلاح وتعزيز `20260305_000026_enforce_workflow_transition_guards.sql` (إزالة BOM، دعم اختلاف نوع `active_action_set_at`، إزالة `BEGIN/COMMIT` الداخليين)، ثم مواءمة `UndoRequestService::applyReopen` لإرجاع السجل إلى `pending + draft` مع تصفير `active_action/signatures`. بعد ذلك تم التحقق النهائي بنجاح: `migration-status` (Pending=0)، Unit (141/141)، Integration (46/46)، Permissions Drift (PASS)، Data Integrity (Fail=0).
+- الملفات المرجعية:
+  - database/migrations/20260305_000026_enforce_workflow_transition_guards.sql
+  - app/Services/UndoRequestService.php
+  - tests/Integration/EnterpriseApiFlowsTest.php
+  - storage/logs/phpunit-enterprise-latest.xml
+  - app/Scripts/migration-status.php
+  - app/Scripts/permissions-drift-report.php
+  - app/Scripts/data-integrity-check.php
+- الحالة: الإغلاق الفني المكتمل على البيئة الحالية.
+

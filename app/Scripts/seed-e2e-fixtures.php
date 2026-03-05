@@ -76,14 +76,16 @@ function wbgl_e2e_find_or_create_bank(PDO $db, string $arabicName): int
 function wbgl_e2e_upsert_guarantee(PDO $db, array $payload): int
 {
     $stmt = $db->prepare(
-        "INSERT INTO guarantees (guarantee_number, raw_data, import_source, imported_by, normalized_supplier_name, is_test_data)
-         VALUES (?, ?::json, ?, ?, ?, 0)
+        "INSERT INTO guarantees (guarantee_number, raw_data, import_source, imported_by, normalized_supplier_name, is_test_data, test_batch_id, test_note)
+         VALUES (?, ?::json, ?, ?, ?, 1, ?, ?)
          ON CONFLICT (guarantee_number) DO UPDATE
          SET raw_data = EXCLUDED.raw_data,
              import_source = EXCLUDED.import_source,
              imported_by = EXCLUDED.imported_by,
              normalized_supplier_name = EXCLUDED.normalized_supplier_name,
-             is_test_data = EXCLUDED.is_test_data
+             is_test_data = EXCLUDED.is_test_data,
+             test_batch_id = EXCLUDED.test_batch_id,
+             test_note = EXCLUDED.test_note
          RETURNING id"
     );
 
@@ -93,6 +95,8 @@ function wbgl_e2e_upsert_guarantee(PDO $db, array $payload): int
         $payload['import_source'],
         $payload['imported_by'],
         $payload['normalized_supplier_name'],
+        $payload['test_batch_id'],
+        $payload['test_note'],
     ]);
 
     return (int)$stmt->fetchColumn();
@@ -185,6 +189,8 @@ try {
         'import_source' => $batchIdentifier,
         'imported_by' => 'e2e_seed',
         'normalized_supplier_name' => mb_strtolower('شركة E2E للتشغيل', 'UTF-8'),
+        'test_batch_id' => $batchIdentifier,
+        'test_note' => 'seeded_e2e_fixture',
     ]);
 
     $readyNoActionGuaranteeId = wbgl_e2e_upsert_guarantee($db, [
@@ -200,6 +206,8 @@ try {
         'import_source' => $batchIdentifier,
         'imported_by' => 'e2e_seed',
         'normalized_supplier_name' => mb_strtolower('شركة E2E للتشغيل', 'UTF-8'),
+        'test_batch_id' => $batchIdentifier,
+        'test_note' => 'seeded_e2e_fixture',
     ]);
 
     wbgl_e2e_upsert_decision($db, [

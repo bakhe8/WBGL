@@ -202,6 +202,10 @@ class UndoRequestService
              SET status = 'pending',
                  is_locked = FALSE,
                  locked_reason = NULL,
+                 workflow_step = 'draft',
+                 active_action = NULL,
+                 active_action_set_at = NULL,
+                 signatures_received = 0,
                  last_modified_at = CURRENT_TIMESTAMP,
                  last_modified_by = ?
              WHERE guarantee_id = ?"

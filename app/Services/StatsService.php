@@ -16,6 +16,15 @@ use PDO;
 class StatsService
 {
     /**
+     * Data-entry task count:
+     * ready + draft + no active_action selected yet.
+     */
+    private static function getDataEntryTaskCount(PDO $db, bool $includeTestData = false): int
+    {
+        return NavigationService::countByFilter($db, 'data_entry', null, null, $includeTestData);
+    }
+
+    /**
      * Actionable workflow counts per stage (only truly actionable records).
      *
      * Mirrors actionable filter semantics used in index.php:
@@ -135,6 +144,11 @@ class StatsService
         $stats = self::getActionableWorkflowStats($db, $includeTestData);
         $count = 0;
 
+        // Data-entry preparation tasks (before audit flow starts).
+        if (\App\Support\Guard::has('manage_data')) {
+            $count += self::getDataEntryTaskCount($db, $includeTestData);
+        }
+
         $stagePermissions = [
             'draft' => 'audit_data',
             'audited' => 'analyze_guarantee',
@@ -163,14 +177,26 @@ class StatsService
     {
         $stats = self::getActionableWorkflowStats($db, $includeTestData);
         $breakdown = [];
+        $dataEntryTaskCount = self::getDataEntryTaskCount($db, $includeTestData);
+
+        if (\App\Support\Guard::has('manage_data')) {
+            if ($includeEmptyStages || $dataEntryTaskCount > 0) {
+                $breakdown[] = [
+                    'label' => 'مهام مدخل البيانات',
+                    'count' => $dataEntryTaskCount,
+                    'stage' => null,
+                    'filter' => 'data_entry',
+                ];
+            }
+        }
 
         $stageConfigs = [
-            'draft' => ['label' => 'مهام التدقيق', 'permission' => 'audit_data'],
-            'audited' => ['label' => 'مهام التحليل', 'permission' => 'analyze_guarantee'],
-            'analyzed' => ['label' => 'مهام الإشراف', 'permission' => 'supervise_analysis'],
-            'supervised' => ['label' => 'مهام الاعتماد', 'permission' => 'approve_decision'],
-            'approved' => ['label' => 'مهام التوقيع', 'permission' => 'sign_letters'],
-            'signed' => ['label' => 'مهام الطباعة بعد التوقيع', 'permission' => 'manage_data'],
+            'draft' => ['label' => 'مهام التدقيق', 'permission' => 'audit_data', 'filter' => 'actionable'],
+            'audited' => ['label' => 'مهام التحليل', 'permission' => 'analyze_guarantee', 'filter' => 'actionable'],
+            'analyzed' => ['label' => 'مهام الإشراف', 'permission' => 'supervise_analysis', 'filter' => 'actionable'],
+            'supervised' => ['label' => 'مهام الاعتماد', 'permission' => 'approve_decision', 'filter' => 'actionable'],
+            'approved' => ['label' => 'مهام التوقيع', 'permission' => 'sign_letters', 'filter' => 'actionable'],
+            'signed' => ['label' => 'مهام الطباعة بعد التوقيع', 'permission' => 'manage_data', 'filter' => 'actionable'],
         ];
 
         foreach ($stageConfigs as $stage => $config) {
@@ -180,7 +206,8 @@ class StatsService
                     $breakdown[] = [
                         'label' => $config['label'],
                         'count' => $count,
-                        'stage' => $stage
+                        'stage' => $stage,
+                        'filter' => $config['filter'],
                     ];
                 }
             }

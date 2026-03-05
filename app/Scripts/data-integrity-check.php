@@ -456,11 +456,15 @@ try {
                 WHERE COALESCE(g.is_test_data, 0) = 0
                   AND (
                         LOWER(g.import_source) = 'integration_flow'
+                     OR LOWER(g.import_source) = 'e2e_ui_flow_batch'
+                     OR LOWER(g.import_source) ~ '^e2e[_-]'
                      OR LOWER(g.import_source) ~ '^test_'
                      OR LOWER(g.import_source) LIKE 'test data%'
                      OR LOWER(g.import_source) = 'email_import_draft'
+                     OR LOWER(COALESCE(bm.batch_name, '')) LIKE '%e2e%'
                      OR LOWER(COALESCE(bm.batch_name, '')) LIKE '%test%'
                      OR COALESCE(bm.batch_name, '') LIKE '%اختبار%'
+                     OR LOWER(COALESCE(bm.batch_notes, '')) LIKE '%e2e%'
                      OR LOWER(COALESCE(bm.batch_notes, '')) LIKE '%test%'
                      OR COALESCE(bm.batch_notes, '') LIKE '%اختبار%'
                   )

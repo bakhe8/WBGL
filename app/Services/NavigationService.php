@@ -12,7 +12,7 @@ use PDO;
  * NavigationService
  * 
  * Handles navigation and pagination logic for guarantees list
- * Supports filtering by status (all, ready, pending, released)
+ * Supports filtering by status (all, ready, pending, released, actionable, data_entry)
  * 
  * @version 1.0
  */
@@ -23,7 +23,7 @@ class NavigationService
      * 
      * @param PDO $db Database connection
      * @param int|null $currentId Current guarantee ID (null for first record)
-     * @param string $statusFilter Filter: 'all', 'ready', 'pending', 'released'
+     * @param string $statusFilter Filter: 'all', 'ready', 'pending', 'released', 'actionable', 'data_entry'
      * @param string|null $searchTerm Search query if active
      * @return array Navigation data with totalRecords, currentIndex, prevId, nextId
      */
@@ -99,7 +99,7 @@ class NavigationService
         $allowTestData = $includeTestData && !$settings->isProductionMode();
         $testDataFilter = $allowTestData ? '' : ' AND g.is_test_data = 0';
 
-        // Role clamp: any role except data_entry/developer must stay in actionable scope only.
+        // Role clamp: any role except data_entry/developer must stay in task scope only.
         if ($forceActionableScope) {
             if ($filter === 'released') {
                 return [
@@ -107,7 +107,9 @@ class NavigationService
                     'params' => [],
                 ];
             }
-            $filter = 'actionable';
+            if (!in_array($filter, ['actionable', 'data_entry'], true)) {
+                $filter = 'actionable';
+            }
         }
 
         // ✅ Search Mode: Overrides standard status filters
@@ -178,6 +180,17 @@ class NavigationService
                 $params = array_merge($params, $predicate['params']);
             } elseif ($filter === 'pending') {
                 $conditions .= " AND (d.id IS NULL OR d.status = 'pending')";
+            } elseif ($filter === 'data_entry') {
+                if (!Guard::has('manage_data')) {
+                    return [
+                        'sql' => ' AND 1=0',
+                        'params' => [],
+                    ];
+                }
+                // Data-entry task bucket: ready + draft + no active action selected yet.
+                $conditions .= " AND d.status = 'ready'";
+                $conditions .= " AND d.workflow_step = 'draft'";
+                $conditions .= " AND (d.active_action IS NULL OR d.active_action = '')";
             } elseif ($filter === 'expiring_30') {
                 $conditions .= " AND {$expiryDateExpr} IS NOT NULL AND ({$expiryDateExpr})::date BETWEEN CURRENT_DATE AND (CURRENT_DATE + INTERVAL '30 days')";
             } elseif ($filter === 'expiring_90') {

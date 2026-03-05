@@ -33,17 +33,20 @@ foreach ($argv as $arg) {
 
 $db = Database::connect();
 
-$sourcePredicates = [
-    "LOWER(g.import_source) = 'integration_flow'",
-    "LOWER(g.import_source) LIKE '%copyof%'",
-    "LOWER(g.import_source) LIKE '%book1%'",
-    "LOWER(g.import_source) LIKE '%sim_import%'",
-    "LOWER(g.import_source) LIKE 'test\\_%' ESCAPE '\\'",
-    "LOWER(g.import_source) LIKE 'test data%'",
-    "LOWER(g.import_source) = 'email_import_draft'",
-];
-
-if (!empty($explicitSources)) {
+$sourcePredicates = [];
+if (empty($explicitSources)) {
+    $sourcePredicates = [
+        "LOWER(g.import_source) = 'integration_flow'",
+        "LOWER(g.import_source) = 'e2e_ui_flow_batch'",
+        "LOWER(g.import_source) LIKE 'e2e\\_%' ESCAPE '\\'",
+        "LOWER(g.import_source) LIKE '%copyof%'",
+        "LOWER(g.import_source) LIKE '%book1%'",
+        "LOWER(g.import_source) LIKE '%sim_import%'",
+        "LOWER(g.import_source) LIKE 'test\\_%' ESCAPE '\\'",
+        "LOWER(g.import_source) LIKE 'test data%'",
+        "LOWER(g.import_source) = 'email_import_draft'",
+    ];
+} else {
     foreach ($explicitSources as $src) {
         $normalized = strtolower($src);
         $looksManual = str_starts_with($normalized, 'manual_paste_')
@@ -60,6 +63,16 @@ if (!empty($explicitSources)) {
         $safe = str_replace("'", "''", $src);
         $sourcePredicates[] = "g.import_source = '{$safe}'";
     }
+}
+
+if (empty($sourcePredicates)) {
+    echo "WBGL Test Data Reconciliation\n";
+    echo "Mode: " . ($apply ? 'APPLY' : 'DRY_RUN') . "\n";
+    echo "Candidates: 0\n";
+    echo "Sources:\n";
+    echo " - (none)\n";
+    echo "No eligible source predicates were selected.\n";
+    exit(0);
 }
 
 $reasonPredicate = implode(" OR\n            ", $sourcePredicates);
@@ -111,30 +124,39 @@ if (!$apply || empty($ids)) {
     exit(0);
 }
 
-$placeholders = implode(',', array_fill(0, count($ids), '?'));
 $note = 'reconciled_by_script:' . date('Y-m-d H:i:s');
+$affected = 0;
+$failed = [];
 
-$db->beginTransaction();
-try {
-    $update = $db->prepare("
-        UPDATE guarantees
-        SET is_test_data = 1,
-            test_note = CASE
-                WHEN test_note IS NULL OR test_note = '' THEN ?
-                ELSE test_note
-            END
-        WHERE id IN ({$placeholders})
-    ");
-    $params = array_merge([$note], $ids);
-    $update->execute($params);
-    $affected = (int)$update->rowCount();
+$update = $db->prepare("
+    UPDATE guarantees
+    SET is_test_data = 1,
+        test_note = CASE
+            WHEN test_note IS NULL OR test_note = '' THEN ?
+            ELSE test_note
+        END
+    WHERE id = ?
+");
 
-    $db->commit();
-    echo "Updated rows: {$affected}\n";
-} catch (Throwable $e) {
-    if ($db->inTransaction()) {
-        $db->rollBack();
+foreach ($ids as $id) {
+    try {
+        $db->beginTransaction();
+        $update->execute([$note, $id]);
+        $affected += (int)$update->rowCount();
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        $failed[] = ['id' => $id, 'error' => $e->getMessage()];
     }
-    fwrite(STDERR, "Failed: " . $e->getMessage() . "\n");
+}
+
+echo "Updated rows: {$affected}\n";
+if (!empty($failed)) {
+    echo "Failed rows: " . count($failed) . "\n";
+    foreach ($failed as $row) {
+        echo "- id={$row['id']} error={$row['error']}\n";
+    }
     exit(1);
 }

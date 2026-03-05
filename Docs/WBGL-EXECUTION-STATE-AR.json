@@ -2,7 +2,7 @@
     "manifest_file": "Docs/WBGL-EXECUTION-SEQUENCE-AR.json",
     "manifest_version": "1.4.0",
     "mode": "mandatory_sequential",
-    "updated_at": "2026-03-05T09:25:00+03:00",
+    "updated_at": "2026-03-05T21:35:00+03:00",
     "steps": {
         "P1-01": {
             "status": "done",
@@ -336,6 +336,23 @@
                 "storage/logs/suspect-test-data-unflagged-report.md"
             ],
             "note": "إغلاق الدورة التنفيذية الحالية مكتمل."
+        },
+        "P17-06": {
+            "status": "done",
+            "started_at": "2026-03-05T21:20:00+03:00",
+            "completed_at": "2026-03-05T21:35:00+03:00",
+            "blocked_at": null,
+            "evidence": "تم إغلاق migration 20260305_000026_enforce_workflow_transition_guards.sql بالكامل (إزالة BOM + توافق نوع active_action_set_at + إزالة BEGIN/COMMIT الداخليين)، وتحديث reopen ليعيد السجل إلى pending+draft بدون active_action، ثم إعادة التحقق: migration-status Pending=0، Unit 141/141، Integration 46/46، Permissions Drift PASS، Data Integrity PASS (fail=0).",
+            "refs": [
+                "database/migrations/20260305_000026_enforce_workflow_transition_guards.sql",
+                "app/Services/UndoRequestService.php",
+                "tests/Integration/EnterpriseApiFlowsTest.php",
+                "storage/logs/phpunit-enterprise-latest.xml",
+                "app/Scripts/migration-status.php",
+                "app/Scripts/permissions-drift-report.php",
+                "app/Scripts/data-integrity-check.php"
+            ],
+            "note": "إغلاق فني نهائي بعد تطبيق الحارس على البيئة الحالية."
         }
     }
 }

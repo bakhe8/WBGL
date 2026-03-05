@@ -1,9 +1,7 @@
-﻿-- P1-26: Enforce workflow transition guards at DB level (PostgreSQL)
+-- P1-26: Enforce workflow transition guards at DB level (PostgreSQL)
 -- Purpose:
 -- 1) Keep status/workflow/action invariants aligned.
 -- 2) Prevent invalid stage jumps written directly to DB.
-
-BEGIN;
 
 -- Normalize legacy drift before strict trigger enforcement.
 UPDATE guarantee_decisions
@@ -25,11 +23,36 @@ WHERE status = 'ready'
   AND COALESCE(workflow_step, '') <> 'draft'
   AND COALESCE(BTRIM(active_action), '') = '';
 
-UPDATE guarantee_decisions
-SET active_action = 'release',
-    active_action_set_at = COALESCE(active_action_set_at, CURRENT_TIMESTAMP)
-WHERE status = 'released'
-  AND COALESCE(BTRIM(active_action), '') = '';
+DO $$
+DECLARE
+    active_action_set_at_udt TEXT;
+BEGIN
+    SELECT udt_name
+    INTO active_action_set_at_udt
+    FROM information_schema.columns
+    WHERE table_name = 'guarantee_decisions'
+      AND column_name = 'active_action_set_at'
+    LIMIT 1;
+
+    IF active_action_set_at_udt IN ('timestamp', 'timestamptz') THEN
+        EXECUTE $SQL$
+            UPDATE guarantee_decisions
+            SET active_action = 'release',
+                active_action_set_at = COALESCE(active_action_set_at, CURRENT_TIMESTAMP)
+            WHERE status = 'released'
+              AND COALESCE(BTRIM(active_action), '') = ''
+        $SQL$;
+    ELSE
+        EXECUTE $SQL$
+            UPDATE guarantee_decisions
+            SET active_action = 'release',
+                active_action_set_at = COALESCE(NULLIF(BTRIM(active_action_set_at), ''), to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD HH24:MI:SS'))
+            WHERE status = 'released'
+              AND COALESCE(BTRIM(active_action), '') = ''
+        $SQL$;
+    END IF;
+END;
+$$;
 
 UPDATE guarantee_decisions
 SET signatures_received = 1
@@ -105,4 +128,3 @@ BEFORE INSERT OR UPDATE ON guarantee_decisions
 FOR EACH ROW
 EXECUTE FUNCTION wbgl_enforce_decision_workflow_guards();
 
-COMMIT;

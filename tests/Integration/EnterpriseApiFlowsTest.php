@@ -3786,8 +3786,8 @@ final class EnterpriseApiFlowsTest extends TestCase
 
         $decision = self::$db->prepare(
             "INSERT INTO guarantee_decisions
-                (guarantee_id, status, is_locked, supplier_id, bank_id, decision_source, decided_by, created_at, updated_at, workflow_step, signatures_received)
-             VALUES (?, 'ready', ?, ?, ?, 'manual', 'integration_admin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'approved', 2)"
+                (guarantee_id, status, is_locked, supplier_id, bank_id, decision_source, decided_by, created_at, updated_at, workflow_step, active_action, signatures_received)
+             VALUES (?, 'ready', ?, ?, ?, 'manual', 'integration_admin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'approved', 'extension', 2)"
         );
         $decision->execute([$guaranteeId, 0, $supplierId, $bankId]);
 

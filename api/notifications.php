@@ -4,8 +4,9 @@ declare(strict_types=1);
 /**
  * API: Notification Inbox
  *
- * GET  /api/notifications.php?unread=1&limit=50
+ * GET  /api/notifications.php?unread=1&include_hidden=0&limit=50
  * POST /api/notifications.php { action: mark_read, notification_id }
+ * POST /api/notifications.php { action: hide, notification_id }
  * POST /api/notifications.php { action: mark_all_read }
  */
 
@@ -22,7 +23,8 @@ try {
     if ($method === 'GET') {
         $limit = Input::int($_GET, 'limit', 50) ?? 50;
         $unread = Input::int($_GET, 'unread', 0) === 1;
-        $rows = NotificationService::listForCurrentUser($limit, $unread);
+        $includeHidden = Input::int($_GET, 'include_hidden', 0) === 1;
+        $rows = NotificationService::listForCurrentUser($limit, $unread, $includeHidden);
         wbgl_api_compat_success([
             'data' => $rows,
         ]);
@@ -41,6 +43,12 @@ try {
     if ($action === 'mark_read') {
         $id = Input::int($input, 'notification_id', 0) ?? 0;
         NotificationService::markReadForCurrentUser($id);
+        wbgl_api_compat_success([]);
+    }
+
+    if ($action === 'hide') {
+        $id = Input::int($input, 'notification_id', 0) ?? 0;
+        NotificationService::hideForCurrentUser($id);
         wbgl_api_compat_success([]);
     }
 

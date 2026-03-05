@@ -1,6 +1,6 @@
 # WBGL Data Integrity Report
 
-- Generated At: `2026-03-05T18:16:41+00:00`
+- Generated At: `2026-03-05T18:47:09+00:00`
 - Driver: `pgsql`
 - Status: **WARN**
 - Fail violations: `0`
