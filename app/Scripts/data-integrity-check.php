@@ -249,6 +249,112 @@ try {
             ",
         ],
         [
+            'id' => 'OCCURRENCE_BATCH_IDENTIFIER_NOT_BLANK',
+            'title' => 'guarantee_occurrences batch_identifier must not be blank',
+            'severity' => 'fail',
+            'sql' => "
+                SELECT COUNT(*) AS c
+                FROM guarantee_occurrences
+                WHERE batch_identifier IS NULL
+                   OR TRIM(batch_identifier) = ''
+            ",
+        ],
+        [
+            'id' => 'BATCH_PURITY_NO_MIX',
+            'title' => 'batch_identifier must not contain both test and real guarantees',
+            'severity' => 'fail',
+            'sql' => "
+                SELECT COUNT(*) AS c
+                FROM (
+                    SELECT o.batch_identifier
+                    FROM guarantee_occurrences o
+                    JOIN guarantees g ON g.id = o.guarantee_id
+                    GROUP BY o.batch_identifier
+                    HAVING COUNT(DISTINCT COALESCE(g.is_test_data, 0)) > 1
+                ) mixed_batches
+            ",
+        ],
+        [
+            'id' => 'INTEGRATION_ARTIFACT_REAL_LEAK',
+            'title' => 'integration test artifacts must not stay classified as real guarantees',
+            'severity' => 'fail',
+            'sql' => "
+                SELECT COUNT(*) AS c
+                FROM guarantees
+                WHERE COALESCE(is_test_data, 0) = 0
+                  AND guarantee_number LIKE 'INT-G-%'
+                  AND CAST(raw_data AS TEXT) LIKE '%integration create guarantee flow%'
+            ",
+        ],
+        [
+            'id' => 'GUARANTEE_MISSING_OCCURRENCE',
+            'title' => 'every guarantee must have at least one occurrence row',
+            'severity' => 'fail',
+            'sql' => "
+                SELECT COUNT(*) AS c
+                FROM guarantees g
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM guarantee_occurrences o
+                    WHERE o.guarantee_id = g.id
+                )
+            ",
+        ],
+        [
+            'id' => 'DECISION_UNIQUE_PER_GUARANTEE',
+            'title' => 'guarantee_decisions must not contain duplicate rows per guarantee',
+            'severity' => 'fail',
+            'sql' => "
+                SELECT COUNT(*) AS c
+                FROM (
+                    SELECT guarantee_id
+                    FROM guarantee_decisions
+                    GROUP BY guarantee_id
+                    HAVING COUNT(*) > 1
+                ) duplicated
+            ",
+        ],
+        [
+            'id' => 'OPERATIONAL_COUNT_ARITHMETIC',
+            'title' => 'operational count equations must hold (total=open+released, open=ready+pending)',
+            'severity' => 'fail',
+            'sql' => "
+                WITH k AS (
+                    SELECT
+                        COUNT(*) AS absolute_total,
+                        COUNT(*) FILTER (WHERE (d.is_locked IS NULL OR d.is_locked = FALSE)) AS open_total,
+                        COUNT(*) FILTER (WHERE d.is_locked = TRUE) AS released_total,
+                        COUNT(*) FILTER (WHERE (d.is_locked IS NULL OR d.is_locked = FALSE) AND d.status = 'ready') AS ready_total,
+                        COUNT(*) FILTER (WHERE (d.is_locked IS NULL OR d.is_locked = FALSE) AND (d.id IS NULL OR d.status = 'pending')) AS pending_total
+                    FROM guarantees g
+                    LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
+                )
+                SELECT CASE
+                    WHEN absolute_total = (open_total + released_total)
+                     AND open_total = (ready_total + pending_total)
+                    THEN 0
+                    ELSE 1
+                END AS c
+                FROM k
+            ",
+        ],
+        [
+            'id' => 'TEST_FLAG_COUNT_ARITHMETIC',
+            'title' => 'test-flag partition must hold (total=real+test)',
+            'severity' => 'fail',
+            'sql' => "
+                SELECT CASE
+                    WHEN COUNT(*) = (
+                        COUNT(*) FILTER (WHERE COALESCE(is_test_data, 0) = 0) +
+                        COUNT(*) FILTER (WHERE COALESCE(is_test_data, 0) = 1)
+                    )
+                    THEN 0
+                    ELSE 1
+                END AS c
+                FROM guarantees
+            ",
+        ],
+        [
             'id' => 'ROLE_PERMISSION_ORPHANS',
             'title' => 'role_permissions rows must reference existing roles and permissions',
             'severity' => 'fail',
@@ -306,6 +412,28 @@ try {
                 FROM notifications
                 WHERE recipient_username IS NOT NULL
                   AND TRIM(recipient_username) = ''
+            ",
+        ],
+        [
+            'id' => 'SUSPECT_TEST_DATA_UNFLAGGED',
+            'title' => 'records with strong test signatures must be marked is_test_data=1',
+            'severity' => 'warn',
+            'sql' => "
+                SELECT COUNT(DISTINCT g.id) AS c
+                FROM guarantees g
+                LEFT JOIN guarantee_occurrences o ON o.guarantee_id = g.id
+                LEFT JOIN batch_metadata bm ON bm.import_source = o.batch_identifier
+                WHERE COALESCE(g.is_test_data, 0) = 0
+                  AND (
+                        LOWER(g.import_source) = 'integration_flow'
+                     OR LOWER(g.import_source) ~ '^test_'
+                     OR LOWER(g.import_source) LIKE 'test data%'
+                     OR LOWER(g.import_source) = 'email_import_draft'
+                     OR LOWER(COALESCE(bm.batch_name, '')) LIKE '%test%'
+                     OR COALESCE(bm.batch_name, '') LIKE '%اختبار%'
+                     OR LOWER(COALESCE(bm.batch_notes, '')) LIKE '%test%'
+                     OR COALESCE(bm.batch_notes, '') LIKE '%اختبار%'
+                  )
             ",
         ],
     ];

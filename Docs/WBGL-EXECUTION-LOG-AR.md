@@ -293,3 +293,62 @@
   - storage/logs/governance-summary.md
 - الحالة: جميع الخطوات مكتملة.
 
+## 2026-03-05T09:05:00+03:00 | P17-01
+- المرحلة: P17 — إغلاق البنود الخمسة للاستمرارية
+- المهمة: تطبيق المهاجرات المتبقية والتحقق من الصلاحيات
+- الربط المرجعي: J-010
+- الدليل: تم تطبيق آخر migration متبقٍ والتحقق من حالة المهاجرات (Pending=0) مع PASS كامل لتقرير انجراف الصلاحيات.
+- الملفات المرجعية:
+  - app/Scripts/migrate.php
+  - app/Scripts/migration-status.php
+  - database/migrations/20260305_000025_add_batch_full_operations_override_permission.sql
+  - app/Scripts/permissions-drift-report.php
+- الخطوة التالية: P17-02
+
+## 2026-03-05T09:12:00+03:00 | P17-02
+- المرحلة: P17 — إغلاق البنود الخمسة للاستمرارية
+- المهمة: تثبيت اختبار تكاملي لسلسلة الأدوار end-to-end
+- الربط المرجعي: J-020
+- الدليل: تم إضافة اختبار تكاملي موحد يغطي السلسلة الكاملة من data_entry حتى signed مع نجاحه منفردًا وضمن ملف التكامل.
+- الملفات المرجعية:
+  - tests/Integration/EnterpriseApiFlowsTest.php
+  - storage/logs/phpunit-enterprise-rehearsal.xml
+- الخطوة التالية: P17-03
+
+## 2026-03-05T09:16:00+03:00 | P17-03
+- المرحلة: P17 — إغلاق البنود الخمسة للاستمرارية
+- المهمة: تنظيم شحنة التغييرات إلى حزم مراجعة/تسليم
+- الربط المرجعي: J-030
+- الدليل: تم تنظيم الشحنة الكبيرة إلى حزم تغيير واضحة (DB/Workflow/UI/Isolation/Reports) في ملف توثيقي مستقل قابل للمراجعة والتسليم.
+- الملفات المرجعية:
+  - Docs/WBGL-CHANGE-PACKAGES-AR.md
+  - Docs/WBGL-MASTER-REMEDIATION-ROADMAP-AR.md
+- الخطوة التالية: P17-04
+
+## 2026-03-05T09:20:00+03:00 | P17-04
+- المرحلة: P17 — إغلاق البنود الخمسة للاستمرارية
+- المهمة: تحديث وثائق حالة التنفيذ الرسمية
+- الربط المرجعي: J-040
+- الدليل: تم تحديث التسلسل والحالة والسجل التنفيذي وتثبيت دورة v1.4 كمرجع الإغلاق الحالي.
+- الملفات المرجعية:
+  - Docs/WBGL-EXECUTION-SEQUENCE-AR.json
+  - Docs/WBGL-EXECUTION-STATE-AR.json
+  - Docs/WBGL-EXECUTION-LOG-AR.md
+- الخطوة التالية: P17-05
+
+## 2026-03-05T09:25:00+03:00 | P17-05
+- المرحلة: P17 — إغلاق البنود الخمسة للاستمرارية
+- المهمة: تشغيل فحوصات التناسق النهائي وإغلاق الدورة
+- الربط المرجعي: J-050
+- الدليل: تم تشغيل فحوصات الإغلاق النهائية: permissions drift PASS، data integrity PASS، counts consistency PASS، suspect test unflagged = 0.
+- الملفات المرجعية:
+  - app/Scripts/permissions-drift-report.php
+  - app/Scripts/data-integrity-check.php
+  - app/Scripts/generate-system-counts-consistency-report.php
+  - app/Scripts/generate-suspect-test-report.php
+  - storage/logs/permissions-drift-report.md
+  - storage/logs/data-integrity-report.md
+  - storage/logs/system-counts-consistency-report.md
+  - storage/logs/suspect-test-data-unflagged-report.md
+- الحالة: دورة v1.4 مكتملة بالكامل.
+
