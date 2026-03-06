@@ -26,6 +26,39 @@ if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
 
 $file = $_FILES['file'];
 
+$maxFileSize = 10 * 1024 * 1024; // 10 MB hard-limit at API layer.
+if (!isset($file['size']) || (int)$file['size'] <= 0 || (int)$file['size'] > $maxFileSize) {
+    wbgl_api_compat_fail(400, 'File size exceeds allowed limit');
+}
+
+$originalName = trim((string)($file['name'] ?? ''));
+$extension = strtolower((string)pathinfo($originalName, PATHINFO_EXTENSION));
+$allowedMimeByExtension = [
+    'pdf' => ['application/pdf'],
+    'png' => ['image/png'],
+    'jpg' => ['image/jpeg'],
+    'jpeg' => ['image/jpeg'],
+    'doc' => ['application/msword'],
+    'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    'xls' => ['application/vnd.ms-excel'],
+    'xlsx' => ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    'txt' => ['text/plain'],
+];
+
+if ($extension === '' || !array_key_exists($extension, $allowedMimeByExtension)) {
+    wbgl_api_compat_fail(400, 'Unsupported file extension');
+}
+
+$finfo = finfo_open(FILEINFO_MIME_TYPE);
+$detectedMime = '';
+if ($finfo !== false) {
+    $detectedMime = (string)finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+}
+if ($detectedMime === '' || !in_array($detectedMime, $allowedMimeByExtension[$extension], true)) {
+    wbgl_api_compat_fail(400, 'Unsupported or mismatched file type');
+}
+
 try {
     $db = Database::connect();
     $context = wbgl_api_policy_surface_for_guarantee($db, (int)$guaranteeId);
@@ -73,12 +106,15 @@ try {
 
     $uploadDir = __DIR__ . '/../storage/attachments/';
     if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0777, true);
+        mkdir($uploadDir, 0755, true);
     }
 
-    // Generate secure filename
-    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $safeName = uniqid() . '_' . preg_replace('/[^a-zA-Z0-9_-]/', '', pathinfo($file['name'], PATHINFO_FILENAME)) . '.' . $ext;
+    // Generate secure server-side filename
+    $baseName = preg_replace('/[^a-zA-Z0-9_-]/', '', pathinfo($originalName, PATHINFO_FILENAME));
+    if ($baseName === '') {
+        $baseName = 'attachment';
+    }
+    $safeName = date('YmdHis') . '_' . bin2hex(random_bytes(6)) . '_' . $baseName . '.' . $extension;
     $targetPath = $uploadDir . $safeName;
 
     if (move_uploaded_file($file['tmp_name'], $targetPath)) {
@@ -86,17 +122,17 @@ try {
         $repo = new AttachmentRepository();
         $id = $repo->create([
             'guarantee_id' => $guaranteeId,
-            'file_name' => $file['name'], // Original name
+            'file_name' => $originalName, // Original user-visible name
             'file_path' => 'attachments/' . $safeName, // Relative path for storage
             'file_size' => $file['size'],
-            'file_type' => $file['type'],
+            'file_type' => $detectedMime,
             'uploaded_by' => $uploadedBy
         ]);
         
         wbgl_api_compat_success([
             'file' => [
                 'id' => $id,
-                'name' => $file['name'],
+                'name' => $originalName,
                 'path' => 'attachments/' . $safeName,
                 'break_glass' => $policy['break_glass']
             ],
@@ -109,5 +145,5 @@ try {
         throw new Exception('Failed to move uploaded file');
     }
 } catch (Exception $e) {
-    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
+    wbgl_api_compat_fail(500, 'Attachment upload failed', [], 'internal');
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Support\Database;
+use App\Support\SchemaInspector;
 use PDO;
 use Throwable;
 
@@ -90,17 +91,6 @@ class OperationalMetricsService
 
     private static function tableExists(PDO $db, string $table): bool
     {
-        try {
-            $stmt = $db->prepare(
-                "SELECT 1
-                 FROM information_schema.tables
-                 WHERE table_schema = 'public' AND table_name = ?
-                 LIMIT 1"
-            );
-            $stmt->execute([$table]);
-            return (bool)$stmt->fetchColumn();
-        } catch (Throwable $e) {
-            return false;
-        }
+        return SchemaInspector::tableExists($db, $table);
     }
 }

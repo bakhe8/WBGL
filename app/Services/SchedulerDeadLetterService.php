@@ -82,11 +82,10 @@ class SchedulerDeadLetterService
         }
 
         try {
-            NotificationService::create(
+            NotificationPolicyService::emit(
                 'scheduler_failure',
                 'فشل مهمة مجدولة',
                 "فشلت المهمة {$jobName} بعد {$attempts} محاولة",
-                null,
                 [
                     'dead_letter_id' => $deadLetterId,
                     'job_name' => $jobName,

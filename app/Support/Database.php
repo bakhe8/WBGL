@@ -27,8 +27,9 @@ class Database
             } catch (Throwable $e) {
                 // If this fails, we can't do anything. Return 500 or die.
                 // For API context, JSON response is better.
+                error_log('[WBGL_DB_CONNECT_ERROR] ' . $e->getMessage());
                 if (php_sapi_name() === 'cli-server' || isset($_SERVER['HTTP_ACCEPT'])) {
-                    $message = 'Database Connection Error: ' . $e->getMessage();
+                    $message = 'Database Connection Error';
                     http_response_code(500);
                     header('Content-Type: application/json');
                     echo json_encode([

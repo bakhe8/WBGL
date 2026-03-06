@@ -123,6 +123,7 @@ $hasFullFilterException = Guard::has('ui_full_filters_view');
 
 // Production Mode: Auto-exclude test data
 $settings = Settings::getInstance();
+$notificationUiLimit = max(10, min(200, (int)$settings->get('NOTIFICATION_UI_MAX_ITEMS', 40)));
 $includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
 $localeInfo = LocaleResolver::resolve(
     AuthService::getCurrentUser(),
@@ -961,72 +962,110 @@ $formattedSuppliers = array_map(function ($s) {
             color: var(--accent-warning-hover);
         }
 
-        .task-notification-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 2px 8px;
-            border-radius: 999px;
-            border: 1px solid var(--border-primary);
-            background: var(--bg-secondary);
-            color: var(--text-muted);
-            font-size: 11px;
-            font-weight: 600;
-            white-space: nowrap;
+        #notificationsSection.notifications-overlay {
+            position: fixed;
+            right: 350px;
+            left: auto;
+            bottom: 16px;
+            width: min(390px, calc(100vw - 32px));
+            z-index: 1500;
+            padding: 0;
+            display: block;
+            pointer-events: none;
+            overflow: visible;
+            isolation: isolate;
         }
 
-        .task-notification-badge strong {
-            color: var(--accent-warning);
-            font-size: 12px;
-        }
-
-        .notifications-section-title {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-        }
-
-        .notifications-mark-all-btn {
-            border: 1px solid var(--border-primary);
-            background: var(--bg-secondary);
-            color: var(--text-secondary);
-            border-radius: 8px;
-            padding: 2px 8px;
-            font-size: 11px;
-            cursor: pointer;
-        }
-
-        .notifications-mark-all-btn:hover {
-            background: var(--bg-hover);
-            color: var(--text-primary);
+        #notificationsSection.notifications-overlay.u-hidden {
+            display: none !important;
         }
 
         .notifications-stack {
-            display: flex;
-            flex-direction: column;
-            margin-top: 8px;
+            position: relative;
+            margin-top: 2px;
+            min-height: 170px;
+            height: calc(156px + (var(--cards-visible, 1) * 14px));
+            max-height: 320px;
+            padding: 0;
+            overflow: visible;
+            pointer-events: auto;
+            --stack-step: 16px;
+            --stack-hover-lift: 4px;
+            --stack-tilt-factor: 1;
+        }
+
+        .notifications-stack.is-expanded {
+            --stack-step: 0;
+            --stack-hover-lift: 0;
+            --stack-tilt-factor: 0;
+            height: auto;
+            max-height: min(70vh, 760px);
+            overflow-y: auto;
+            overflow-x: visible;
+            padding-inline-end: 4px;
+        }
+
+        .notifications-stack.is-expanded .notification-card {
+            position: relative;
+            left: auto;
+            right: auto;
+            top: auto;
+            transform: none !important;
+            margin-bottom: 10px;
+            min-height: 0;
+            z-index: auto;
+        }
+
+        .notifications-stack.is-expanded .notification-card:last-child {
+            margin-bottom: 0;
+        }
+
+        .notifications-stack.is-expanded .notification-card:hover,
+        .notifications-stack.is-expanded .notification-card.is-focused {
+            transform: none !important;
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
         }
 
         .notification-card {
-            position: relative;
-            background: var(--bg-card);
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 96%, white) 0%, var(--bg-card) 100%);
             border: 1px solid var(--border-primary);
-            border-radius: 10px;
+            border-radius: 13px;
             padding: 10px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
-            z-index: 1;
-        }
-
-        .notification-card + .notification-card {
-            margin-top: -8px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.11);
+            transition: transform 0.16s ease, box-shadow 0.16s ease;
+            transform: translate3d(
+                calc(var(--stack-index, 0) * -3px),
+                calc(var(--stack-index, 0) * var(--stack-step, 16px)),
+                0
+            ) rotate(calc(var(--stack-tilt, 0) * var(--stack-tilt-factor, 1) * 1deg));
+            z-index: calc(120 - var(--stack-index, 0));
+            min-height: 158px;
+            pointer-events: auto;
+            cursor: default;
         }
 
         .notification-card:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
-            z-index: 9;
+            transform: translate3d(
+                calc(var(--stack-index, 0) * -3px),
+                calc(var(--stack-index, 0) * var(--stack-step, 16px) - var(--stack-hover-lift, 4px)),
+                0
+            ) rotate(calc(var(--stack-tilt, 0) * var(--stack-tilt-factor, 1) * 1deg));
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+            z-index: 200;
+        }
+
+        .notification-card.is-focused {
+            transform: translate3d(
+                calc(var(--stack-index, 0) * -4px),
+                calc(var(--stack-index, 0) * var(--stack-step, 16px) - 8px),
+                0
+            ) rotate(0deg);
+            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+            z-index: 260;
         }
 
         .notification-card--warning {
@@ -1051,6 +1090,12 @@ $formattedSuppliers = array_map(function ($s) {
             justify-content: space-between;
             gap: 8px;
             margin-bottom: 6px;
+        }
+
+        .notification-pin {
+            font-size: 12px;
+            opacity: 0.75;
+            margin-inline-end: 4px;
         }
 
         .notification-type-badge {
@@ -1079,6 +1124,12 @@ $formattedSuppliers = array_map(function ($s) {
             margin-bottom: 4px;
         }
 
+        .notification-category {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
         .notification-message {
             font-size: 12px;
             color: var(--text-secondary);
@@ -1090,6 +1141,7 @@ $formattedSuppliers = array_map(function ($s) {
         .notification-actions {
             display: flex;
             gap: 6px;
+            justify-content: flex-end;
         }
 
         .notification-btn {
@@ -1100,6 +1152,21 @@ $formattedSuppliers = array_map(function ($s) {
             font-size: 11px;
             padding: 3px 8px;
             cursor: pointer;
+        }
+
+        @media (max-width: 1399px) {
+            #notificationsSection.notifications-overlay {
+                right: 16px;
+                left: auto;
+                bottom: 16px;
+                width: min(390px, calc(100vw - 32px));
+            }
+        }
+
+        @media print {
+            #notificationsSection.notifications-overlay {
+                display: none !important;
+            }
         }
 
         .notification-btn:hover {
@@ -1117,12 +1184,7 @@ $formattedSuppliers = array_map(function ($s) {
             border-color: var(--accent-warning);
         }
 
-        .empty-state-message {
-            text-align: center;
-            color: var(--text-light);
-            font-size: var(--font-size-sm);
-            padding: 16px 0;
-        }
+        .empty-state-message { display: none; }
 
         .sidebar-permission-hint {
             margin: 8px 0 12px;
@@ -1600,32 +1662,12 @@ $formattedSuppliers = array_map(function ($s) {
                     </div>
                 <div class="progress-text">
                     <span><span>مهام</span> <span><?= $taskCurrentIndex ?></span> <span data-i18n="index.ui.txt_aa7099e2">من</span> <span><?= $taskTotalRecords ?></span></span>
-                    <span id="taskUnreadBadge"
-                        class="task-notification-badge<?= $unreadNotifications > 0 ? '' : ' u-hidden' ?>"
-                        data-i18n-title="index.tasks.unread_notifications_title"
-                        title="إشعارات غير مقروءة">
-                        🔔 <strong id="taskUnreadCount"><?= (int)$unreadNotifications ?></strong>
-                    </span>
                     <span class="progress-percent"><?= $taskProgressPercent ?>%</span>
                 </div>
             </div>
 
             <!-- Sidebar Body -->
             <div class="sidebar-body">
-                <div class="sidebar-section" id="notificationsSection">
-                    <div class="sidebar-section-title notifications-section-title">
-                        🔔 <span>الإشعارات</span>
-                        <button id="markAllNotificationsReadBtn" type="button" class="notifications-mark-all-btn">
-                            تعليم الكل كمقروء
-                        </button>
-                    </div>
-                    <div id="notificationsList" class="notifications-stack">
-                        <div id="emptyNotificationsMessage" class="empty-state-message">
-                            لا توجد إشعارات نشطة
-                        </div>
-                    </div>
-                </div>
-
                 <?php if ($canViewNotes): ?>
                     <!-- Notes Section -->
                     <div class="sidebar-section sidebar-section-spaced" id="notesSection">
@@ -1731,10 +1773,15 @@ $formattedSuppliers = array_map(function ($s) {
             </div>
         </aside>
 
+	    </div>
+
+    <!-- Floating Notifications Overlay (Detached from sidebar layout) -->
+    <div class="notifications-overlay u-hidden" id="notificationsSection" aria-live="polite">
+        <div id="notificationsList" class="notifications-stack"></div>
     </div>
 
-    <!-- Modals - Using existing partials -->
-    <?php require __DIR__ . '/partials/manual-entry-modal.php'; ?>
+	    <!-- Modals - Using existing partials -->
+	    <?php require __DIR__ . '/partials/manual-entry-modal.php'; ?>
     <?php require __DIR__ . '/partials/paste-modal.php'; ?>
     <?php require __DIR__ . '/partials/excel-import-modal.php'; ?>
 
@@ -1801,8 +1848,53 @@ $formattedSuppliers = array_map(function ($s) {
         };
 
         const wbglNotificationsState = {
-            items: []
+            items: [],
+            focusedNotificationId: null,
+            interactionsBound: false
         };
+        const wbglNotificationUiLimit = <?= (int)$notificationUiLimit ?>;
+        const wbglMaxStickyNotifications = 6;
+        const wbglAutoDismissTimers = new Map();
+        const wbglNotificationSessionHiddenIds = new Set();
+        const wbglNotificationSessionStorageKey = 'wbgl_notifications_hidden_session:'
+            + <?= json_encode((string)session_id() . ':' . (string)($currentUser?->username ?? 'guest'), JSON_UNESCAPED_UNICODE) ?>;
+
+        function wbglLoadSessionHiddenNotifications() {
+            try {
+                const raw = window.sessionStorage.getItem(wbglNotificationSessionStorageKey);
+                if (!raw) return;
+                const parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed)) return;
+                parsed.forEach((id) => {
+                    const numericId = Number(id || 0);
+                    if (numericId > 0) {
+                        wbglNotificationSessionHiddenIds.add(numericId);
+                    }
+                });
+            } catch (err) {
+                console.warn('NOTIFICATION_SESSION_HIDDEN_LOAD_ERROR', err);
+            }
+        }
+
+        function wbglPersistSessionHiddenNotifications() {
+            try {
+                const ids = Array.from(wbglNotificationSessionHiddenIds.values())
+                    .filter((id) => Number(id) > 0)
+                    .map((id) => Number(id));
+                window.sessionStorage.setItem(wbglNotificationSessionStorageKey, JSON.stringify(ids));
+            } catch (err) {
+                console.warn('NOTIFICATION_SESSION_HIDDEN_SAVE_ERROR', err);
+            }
+        }
+
+        function wbglHideNotificationForSession(notificationId) {
+            const id = Number(notificationId || 0);
+            if (!id) return;
+            wbglNotificationSessionHiddenIds.add(id);
+            wbglPersistSessionHiddenNotifications();
+            wbglNotificationsState.items = wbglNotificationsState.items.filter((item) => Number(item?.id || 0) !== id);
+            wbglRenderNotifications();
+        }
 
         function wbglEscapeHtml(value) {
             const str = String(value ?? '');
@@ -1827,29 +1919,100 @@ $formattedSuppliers = array_map(function ($s) {
             });
         }
 
-        function wbglNotificationTypeMeta(type) {
-            const normalized = String(type || '').toLowerCase();
-            if (normalized.includes('failure') || normalized.includes('error') || normalized.includes('reject')) {
-                return {
-                    css: 'error',
-                    label: 'خطأ'
-                };
+        function wbglParseDateMs(raw) {
+            if (!raw) return null;
+            const parsed = new Date(String(raw).replace(' ', 'T'));
+            const ms = parsed.getTime();
+            return Number.isNaN(ms) ? null : ms;
+        }
+
+        function wbglGetNotificationWindow(item) {
+            const meta = (item && item.data && typeof item.data === 'object' && item.data.notification_meta && typeof item.data.notification_meta === 'object')
+                ? item.data.notification_meta
+                : {};
+
+            const displayFrom = meta.display_from ?? meta.starts_at ?? meta.show_from ?? null;
+            const displayUntil = meta.display_until ?? meta.expires_at ?? meta.ends_at ?? null;
+            const durationSeconds = Number(meta.display_duration_seconds ?? meta.ttl_seconds ?? 0);
+
+            const startMs = wbglParseDateMs(displayFrom);
+            let endMs = wbglParseDateMs(displayUntil);
+            if (!endMs && Number.isFinite(durationSeconds) && durationSeconds > 0) {
+                const createdMs = wbglParseDateMs(item?.created_at);
+                if (createdMs) {
+                    endMs = createdMs + (durationSeconds * 1000);
+                }
             }
-            if (normalized.includes('warning') || normalized.includes('expiry') || normalized.includes('undo')) {
+
+            return {
+                startMs: startMs,
+                endMs: endMs,
+            };
+        }
+
+        function wbglResolveNotificationVisibility(item, nowMs) {
+            const window = wbglGetNotificationWindow(item);
+            if (window.startMs && nowMs < window.startMs) {
                 return {
-                    css: 'warning',
-                    label: 'تنبيه'
-                };
-            }
-            if (normalized.includes('success') || normalized.includes('approved') || normalized.includes('executed')) {
-                return {
-                    css: 'success',
-                    label: 'نجاح'
+                    visible: false,
+                    expired: false,
                 };
             }
             return {
-                css: 'info',
-                label: 'معلومة'
+                visible: true,
+                expired: false,
+            };
+        }
+
+        function wbglClearAutoDismissTimers(activeIdsSet = null) {
+            wbglAutoDismissTimers.forEach((timer, id) => {
+                if (activeIdsSet && activeIdsSet.has(id)) {
+                    return;
+                }
+                clearTimeout(timer);
+                wbglAutoDismissTimers.delete(id);
+            });
+        }
+
+        function wbglScheduleAutoDismiss(activeItems) {
+            // Explicit user action only:
+            // notifications must NOT auto-hide.
+            wbglClearAutoDismissTimers();
+        }
+
+        function wbglNotificationTypeMeta(item) {
+            const normalizedType = String(item?.type || '').toLowerCase();
+            const rawMeta = item?.data?.notification_meta;
+            const structuredMeta = rawMeta && typeof rawMeta === 'object' ? rawMeta : {};
+            const severity = String(structuredMeta.severity || '').toLowerCase();
+            const category = String(structuredMeta.category || '').toLowerCase();
+
+            let css = 'info';
+            let label = 'معلومة';
+            if (severity === 'error' || normalizedType.includes('failure') || normalizedType.includes('error') || normalizedType.includes('reject')) {
+                css = 'error';
+                label = 'خطأ';
+            } else if (severity === 'warning' || normalizedType.includes('warning') || normalizedType.includes('expiry') || normalizedType.includes('undo')) {
+                css = 'warning';
+                label = 'تنبيه';
+            } else if (severity === 'success' || normalizedType.includes('success') || normalizedType.includes('approved') || normalizedType.includes('executed')) {
+                css = 'success';
+                label = 'نجاح';
+            }
+
+            const categoryLabels = {
+                workflow: 'سير العمل',
+                governance: 'الحوكمة',
+                operations: 'التشغيل',
+                security: 'الأمن',
+                data_quality: 'جودة البيانات',
+                system: 'النظام',
+            };
+
+            return {
+                css: css,
+                label: label,
+                categoryLabel: categoryLabels[category] || 'عام',
             };
         }
 
@@ -1866,35 +2029,195 @@ $formattedSuppliers = array_map(function ($s) {
             }
         }
 
-        function wbglRenderNotifications() {
+        function wbglGetOrderedNotificationCards(list = null) {
+            const listEl = list || document.getElementById('notificationsList');
+            if (!listEl) return [];
+            return Array.from(listEl.querySelectorAll('.notification-card')).sort((a, b) => {
+                const aIdx = Number(a.getAttribute('data-stack-index') || 0);
+                const bIdx = Number(b.getAttribute('data-stack-index') || 0);
+                return aIdx - bIdx;
+            });
+        }
+
+        function wbglSetFocusedNotification(notificationId) {
             const list = document.getElementById('notificationsList');
             if (!list) return;
 
-            const items = [...wbglNotificationsState.items].sort((a, b) => {
+            const id = Number(notificationId || 0);
+            wbglNotificationsState.focusedNotificationId = id > 0 ? id : null;
+
+            list.querySelectorAll('.notification-card').forEach((card) => {
+                const cardId = Number(card.getAttribute('data-notification-id') || 0);
+                const isFocused = wbglNotificationsState.focusedNotificationId !== null
+                    && cardId === wbglNotificationsState.focusedNotificationId;
+                card.classList.toggle('is-focused', isFocused);
+            });
+        }
+
+        function wbglToggleNotificationStackExpanded(expanded) {
+            const list = document.getElementById('notificationsList');
+            if (!list) return;
+
+            const shouldExpand = Boolean(expanded);
+            list.classList.toggle('is-expanded', shouldExpand);
+            if (!shouldExpand) {
+                wbglSetFocusedNotification(null);
+                return;
+            }
+
+            const cards = wbglGetOrderedNotificationCards(list);
+            if (cards.length === 0) return;
+
+            const focusedId = Number(wbglNotificationsState.focusedNotificationId || 0);
+            const hasFocused = cards.some((card) => Number(card.getAttribute('data-notification-id') || 0) === focusedId);
+            if (!hasFocused) {
+                const topCard = cards[0];
+                wbglSetFocusedNotification(Number(topCard.getAttribute('data-notification-id') || 0));
+            }
+        }
+
+        function wbglCycleFocusedNotification(direction) {
+            const list = document.getElementById('notificationsList');
+            if (!list) return;
+
+            const cards = wbglGetOrderedNotificationCards(list);
+            if (cards.length === 0) return;
+
+            const ids = cards
+                .map((card) => Number(card.getAttribute('data-notification-id') || 0))
+                .filter((id) => id > 0);
+            if (ids.length === 0) return;
+
+            const currentId = Number(wbglNotificationsState.focusedNotificationId || 0);
+            let currentIndex = ids.indexOf(currentId);
+            if (currentIndex < 0) currentIndex = 0;
+
+            const step = direction >= 0 ? 1 : -1;
+            const nextIndex = (currentIndex + step + ids.length) % ids.length;
+            wbglSetFocusedNotification(ids[nextIndex]);
+
+            const target = cards[nextIndex];
+            if (target && typeof target.focus === 'function') {
+                target.focus({
+                    preventScroll: true
+                });
+            }
+        }
+
+        function wbglBindNotificationInteractions() {
+            if (wbglNotificationsState.interactionsBound) return;
+
+            const list = document.getElementById('notificationsList');
+            if (!list) return;
+
+            wbglNotificationsState.interactionsBound = true;
+
+            list.addEventListener('mouseenter', () => {
+                wbglToggleNotificationStackExpanded(true);
+            });
+
+            list.addEventListener('mouseleave', () => {
+                wbglToggleNotificationStackExpanded(false);
+            });
+
+            list.addEventListener('mouseover', (event) => {
+                const card = event.target.closest('.notification-card');
+                if (!card || !list.contains(card)) return;
+                const id = Number(card.getAttribute('data-notification-id') || 0);
+                if (id > 0) {
+                    wbglSetFocusedNotification(id);
+                }
+            });
+
+            list.addEventListener('focusin', (event) => {
+                const card = event.target.closest('.notification-card');
+                if (!card || !list.contains(card)) return;
+                wbglToggleNotificationStackExpanded(true);
+                const id = Number(card.getAttribute('data-notification-id') || 0);
+                if (id > 0) {
+                    wbglSetFocusedNotification(id);
+                }
+            });
+
+            list.addEventListener('focusout', (event) => {
+                const nextTarget = event.relatedTarget;
+                if (!nextTarget || !list.contains(nextTarget)) {
+                    wbglToggleNotificationStackExpanded(false);
+                }
+            });
+
+            list.addEventListener('wheel', (event) => {
+                // Keep native mouse wheel scroll in expanded list mode.
+                if (list.classList.contains('is-expanded')) {
+                    return;
+                }
+                if (!list.querySelector('.notification-card')) return;
+                wbglToggleNotificationStackExpanded(true);
+            });
+        }
+
+        function wbglRenderNotifications() {
+            const section = document.getElementById('notificationsSection');
+            const list = document.getElementById('notificationsList');
+            if (!section || !list) return;
+            wbglBindNotificationInteractions();
+
+            const nowMs = Date.now();
+            const sortedItems = [...wbglNotificationsState.items].sort((a, b) => {
                 const t1 = new Date(String(a.created_at || '').replace(' ', 'T')).getTime();
                 const t2 = new Date(String(b.created_at || '').replace(' ', 'T')).getTime();
                 return t1 - t2; // oldest -> newest
             });
 
-            if (items.length === 0) {
-                list.innerHTML = '<div id="emptyNotificationsMessage" class="empty-state-message">لا توجد إشعارات نشطة</div>';
+            const activeItems = [];
+            sortedItems.forEach((item) => {
+                const itemId = Number(item?.id || 0);
+                if (itemId > 0 && wbglNotificationSessionHiddenIds.has(itemId)) {
+                    return;
+                }
+                const visibility = wbglResolveNotificationVisibility(item, nowMs);
+                if (visibility.visible) {
+                    activeItems.push(item);
+                }
+            });
+
+            if (activeItems.length === 0) {
+                wbglClearAutoDismissTimers();
+                wbglNotificationsState.focusedNotificationId = null;
+                list.innerHTML = '';
+                list.classList.remove('is-expanded');
+                section.classList.add('u-hidden');
                 wbglUpdateUnreadBadge(0);
                 return;
             }
 
-            list.innerHTML = items.map((item) => {
-                const meta = wbglNotificationTypeMeta(item.type);
+            const renderItems = activeItems;
+            const renderIds = new Set(renderItems.map((item) => Number(item?.id || 0)).filter((id) => id > 0));
+            if (!renderIds.has(Number(wbglNotificationsState.focusedNotificationId || 0))) {
+                wbglNotificationsState.focusedNotificationId = null;
+            }
+            list.style.setProperty('--cards-visible', String(renderItems.length));
+            section.classList.remove('u-hidden');
+
+            list.innerHTML = renderItems.map((item, idx) => {
+                const meta = wbglNotificationTypeMeta(item);
                 const title = wbglEscapeHtml(item.title || 'إشعار');
                 const message = wbglEscapeHtml(item.message || '');
                 const when = wbglEscapeHtml(wbglFormatNotificationTime(item.created_at));
+                const category = wbglEscapeHtml(meta.categoryLabel);
                 const id = Number(item.id || 0);
+                const stackIndex = renderItems.length - 1 - idx;
+                const tiltPattern = [-1, 0, 1, 0, -1, 1];
+                const tilt = tiltPattern[idx % tiltPattern.length];
+                const isFocused = Number(wbglNotificationsState.focusedNotificationId || 0) === id;
                 return `
-                    <article class="notification-card notification-card--${meta.css}" data-notification-id="${id}">
+                    <article class="notification-card notification-card--${meta.css}${isFocused ? ' is-focused' : ''}" data-notification-id="${id}" data-stack-index="${stackIndex}" style="--stack-index:${stackIndex}; --stack-tilt:${tilt}" tabindex="0">
                         <div class="notification-card-header">
-                            <span class="notification-type-badge">${wbglEscapeHtml(meta.label)}</span>
+                            <span class="notification-type-badge"><span class="notification-pin">📌</span>${wbglEscapeHtml(meta.label)}</span>
                             <span class="notification-time">${when}</span>
                         </div>
                         <div class="notification-title">${title}</div>
+                        <div class="notification-category">${category}</div>
                         <div class="notification-message">${message}</div>
                         <div class="notification-actions">
                             <button class="notification-btn notification-btn--read" data-notification-action="mark_read" data-notification-id="${id}">مقروء</button>
@@ -1904,12 +2227,14 @@ $formattedSuppliers = array_map(function ($s) {
                 `;
             }).join('');
 
-            wbglUpdateUnreadBadge(items.length);
+            wbglSetFocusedNotification(wbglNotificationsState.focusedNotificationId);
+            wbglScheduleAutoDismiss(renderItems);
+            wbglUpdateUnreadBadge(activeItems.length);
         }
 
         async function wbglLoadNotifications() {
             try {
-                const res = await fetch('/api/notifications.php?unread=1&include_hidden=0&limit=40', {
+                const res = await fetch('/api/notifications.php?unread=1&include_hidden=0&limit=' + encodeURIComponent(String(wbglNotificationUiLimit)), {
                     credentials: 'same-origin',
                     headers: {
                         'Accept': 'application/json'
@@ -1928,9 +2253,10 @@ $formattedSuppliers = array_map(function ($s) {
             }
         }
 
-        async function wbglNotificationAction(action, notificationId) {
+        async function wbglNotificationAction(action, notificationId, options = {}) {
             const id = Number(notificationId || 0);
             if (!id) return;
+            const silent = Boolean(options && options.silent);
             try {
                 const res = await fetch('/api/notifications.php', {
                     method: 'POST',
@@ -1952,32 +2278,9 @@ $formattedSuppliers = array_map(function ($s) {
                 wbglRenderNotifications();
             } catch (err) {
                 console.error('NOTIFICATION_ACTION_ERROR', err);
-                showToast('تعذر تحديث الإشعار', 'error');
-            }
-        }
-
-        async function wbglMarkAllNotificationsRead() {
-            try {
-                const res = await fetch('/api/notifications.php', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        action: 'mark_all_read'
-                    })
-                });
-                const payload = await res.json();
-                if (!payload?.success) {
-                    throw new Error(payload?.error || 'mark all failed');
+                if (!silent) {
+                    showToast('تعذر تحديث الإشعار', 'error');
                 }
-                wbglNotificationsState.items = [];
-                wbglRenderNotifications();
-            } catch (err) {
-                console.error('NOTIFICATIONS_MARK_ALL_ERROR', err);
-                showToast('تعذر تعليم الإشعارات كمقروءة', 'error');
             }
         }
 
@@ -1985,17 +2288,17 @@ $formattedSuppliers = array_map(function ($s) {
             const actionBtn = event.target.closest('[data-notification-action]');
             if (actionBtn) {
                 event.preventDefault();
+                const action = String(actionBtn.getAttribute('data-notification-action') || '');
+                const notificationId = Number(actionBtn.getAttribute('data-notification-id') || 0);
+                if (action === 'hide') {
+                    wbglHideNotificationForSession(notificationId);
+                    return;
+                }
                 wbglNotificationAction(
-                    String(actionBtn.getAttribute('data-notification-action') || ''),
-                    Number(actionBtn.getAttribute('data-notification-id') || 0)
+                    action,
+                    notificationId
                 );
                 return;
-            }
-
-            const markAllBtn = event.target.closest('#markAllNotificationsReadBtn');
-            if (markAllBtn) {
-                event.preventDefault();
-                wbglMarkAllNotificationsRead();
             }
         });
 
@@ -2131,7 +2434,11 @@ $formattedSuppliers = array_map(function ($s) {
 
         // Apply formatting on load - Preview is always visible
         document.addEventListener('DOMContentLoaded', function() {
+            wbglLoadSessionHiddenNotifications();
+            wbglBindNotificationInteractions();
             wbglLoadNotifications();
+            setInterval(() => wbglRenderNotifications(), 30000);
+            setInterval(() => wbglLoadNotifications(), 90000);
 
             const previewSection = document.getElementById('preview-section');
             if (previewSection) {

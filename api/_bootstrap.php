@@ -166,12 +166,19 @@ if (!function_exists('wbgl_api_compat_fail')) {
         $resolvedErrorType = trim((string)$errorType) !== ''
             ? (string)$errorType
             : wbgl_api_error_type_from_status($statusCode);
+        $publicMessage = $message;
+        if ($resolvedErrorType === 'internal') {
+            $publicMessage = 'حدث خطأ داخلي. استخدم رقم الطلب للمتابعة.';
+            if (trim($message) !== '') {
+                error_log('[WBGL_API_INTERNAL][' . $requestId . '] ' . $message);
+            }
+        }
 
         if (!array_key_exists('request_id', $payload)) {
             $payload['request_id'] = $requestId;
         }
         if (!array_key_exists('error', $payload)) {
-            $payload['error'] = $message;
+            $payload['error'] = $publicMessage;
         }
         if (!array_key_exists('error_type', $payload)) {
             $payload['error_type'] = $resolvedErrorType;
@@ -182,7 +189,7 @@ if (!function_exists('wbgl_api_compat_fail')) {
         echo json_encode(array_merge([
             'success' => false,
             'data' => null,
-            'error' => $message,
+            'error' => $publicMessage,
             'error_type' => $resolvedErrorType,
             'request_id' => $requestId,
         ], $payload), JSON_UNESCAPED_UNICODE);

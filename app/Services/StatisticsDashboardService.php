@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\SchemaInspector;
 use PDO;
 
 /**
@@ -617,22 +618,7 @@ final class StatisticsDashboardService
      */
     private static function tableExists(PDO $db, string $table): bool
     {
-        try {
-            $stmt = $db->prepare("
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = 'public'
-                AND table_name = :table_name
-                LIMIT 1
-            ");
-            if ($stmt === false) {
-                return false;
-            }
-            $stmt->execute([':table_name' => $table]);
-            return $stmt->fetchColumn() !== false;
-        } catch (\Throwable) {
-            return false;
-        }
+        return SchemaInspector::tableExists($db, $table);
     }
 
     /**

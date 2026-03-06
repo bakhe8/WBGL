@@ -29,13 +29,15 @@ try {
         wbgl_api_compat_fail(400, 'guarantee_id is required');
     }
 
+    // Visibility is always required before reopen/break-glass flow.
+    wbgl_api_require_guarantee_visibility((int)$guaranteeId);
+
     $breakGlass = null;
     // Governance decision:
     // - Users with reopen_guarantee can submit undo requests without broad manage_data.
     // - break_glass path is validated first (ticket/reason/permission), then action is executed.
-    // - visibility scope remains enforced for callers outside both paths.
+    // - visibility scope remains enforced for all callers.
     if (!$hasReopenPermission && !$breakGlassRequested) {
-        wbgl_api_require_guarantee_visibility((int)$guaranteeId);
         wbgl_api_compat_fail(403, 'Permission Denied');
     }
 

@@ -76,7 +76,8 @@ class UndoRequestService
                 'status' => 'approved',
                 'approved_by' => $approver,
             ],
-            "undo_request_approved_{$requestId}"
+            "undo_request_approved_{$requestId}",
+            (string)($request['requested_by'] ?? '')
         );
     }
 
@@ -108,7 +109,8 @@ class UndoRequestService
                 'status' => 'rejected',
                 'rejected_by' => $rejector,
             ],
-            "undo_request_rejected_{$requestId}"
+            "undo_request_rejected_{$requestId}",
+            (string)($request['requested_by'] ?? '')
         );
     }
 
@@ -146,7 +148,8 @@ class UndoRequestService
                     'status' => 'executed',
                     'executed_by' => $executor,
                 ],
-                "undo_request_executed_{$requestId}"
+                "undo_request_executed_{$requestId}",
+                (string)($request['requested_by'] ?? '')
             );
         } catch (Throwable $e) {
             throw new RuntimeException($e->getMessage(), 0, $e);
@@ -276,10 +279,18 @@ class UndoRequestService
         string $title,
         string $message,
         array $data = [],
-        ?string $dedupeKey = null
+        ?string $dedupeKey = null,
+        ?string $directUsername = null
     ): void {
         try {
-            NotificationService::create($type, $title, $message, null, $data, $dedupeKey);
+            NotificationPolicyService::emit(
+                $type,
+                $title,
+                $message,
+                $data,
+                $dedupeKey,
+                $directUsername
+            );
         } catch (Throwable $e) {
             // Notification failure must not break undo workflow.
         }

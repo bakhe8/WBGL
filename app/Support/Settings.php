@@ -93,6 +93,11 @@ class Settings
         'OBS_ALERT_PENDING_UNDO_REQUESTS' => 10,      // Trigger when pending undo requests exceed this threshold
         'OBS_ALERT_SCHEDULER_STALE_HOURS' => 24,      // Trigger when no scheduler run happened for this many hours
 
+        // Notifications
+        'NOTIFICATIONS_ENABLED' => true,              // Master switch for in-app notification emission
+        'NOTIFICATION_POLICY_OVERRIDES' => [],        // Per-type routing/severity/category overrides (JSON object in settings UI)
+        'NOTIFICATION_UI_MAX_ITEMS' => 40,            // Max unread notifications loaded in sidebar widget
+
         // Enterprise DB Runtime Defaults (PostgreSQL-only)
         'DB_DRIVER' => 'pgsql',                       // pgsql
         'DB_DATABASE' => '',
@@ -127,7 +132,14 @@ class Settings
         // Save only to primary settings.json; local secret overrides stay in settings.local.json.
         $current = $this->loadPrimary();
         $merged = array_merge($current, $data);
-        file_put_contents($this->path, json_encode($merged, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        $encoded = json_encode($merged, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        if ($encoded === false) {
+            throw new \RuntimeException('Failed to encode settings payload');
+        }
+        $result = file_put_contents($this->path, $encoded, LOCK_EX);
+        if ($result === false) {
+            throw new \RuntimeException('Failed to persist settings file');
+        }
         return $merged;
     }
 

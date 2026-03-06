@@ -5,6 +5,7 @@ namespace App\Repositories;
 
 use App\Models\Guarantee;
 use App\Services\HistoryArchiveService;
+use App\Support\SchemaInspector;
 use PDO;
 
 /**
@@ -527,14 +528,6 @@ class GuaranteeRepository
 
     private function tableExists(string $tableName): bool
     {
-        $stmt = $this->db->prepare("
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-              AND table_name = ?
-            LIMIT 1
-        ");
-        $stmt->execute([$tableName]);
-        return (bool)$stmt->fetchColumn();
+        return SchemaInspector::tableExists($this->db, $tableName);
     }
 }

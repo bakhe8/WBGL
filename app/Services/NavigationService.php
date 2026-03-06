@@ -347,27 +347,120 @@ class NavigationService
         $filter = self::buildFilterConditions($statusFilter, $searchTerm, $stageFilter, $includeTestData);
 
         try {
-            // Offset is index - 1
-            $offset = $index - 1;
+            $total = self::getTotalCount($db, $filter);
+            if ($index > $total || $total < 1) {
+                return null;
+            }
 
-            $query = '
-                SELECT g.id FROM guarantees g
-                LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
-                LEFT JOIN suppliers s ON d.supplier_id = s.id
-                WHERE 1=1
-            ' . $filter['sql'] . '
-                ORDER BY g.id ASC
-                LIMIT 1 OFFSET :offset
-            ';
+            // Fast edges without binary search loop.
+            if ($index === 1) {
+                return self::fetchBoundaryId($db, $filter, true);
+            }
+            if ($index === $total) {
+                return self::fetchBoundaryId($db, $filter, false);
+            }
 
-            $stmt = $db->prepare($query);
-            $stmt->execute(array_merge(['offset' => $offset], $filter['params']));
-            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            $range = self::fetchIdRange($db, $filter);
+            if ($range === null) {
+                return null;
+            }
 
-            return $result ? (int) $result['id'] : null;
+            [$low, $high] = $range;
+            while ($low <= $high) {
+                $mid = intdiv($low + $high, 2);
+                $countLe = self::countUpToId($db, $filter, $mid);
+
+                if ($countLe < $index) {
+                    $low = $mid + 1;
+                } else {
+                    $high = $mid - 1;
+                }
+            }
+
+            return self::firstIdAtOrAfter($db, $filter, $low);
         } catch (\Exception $e) {
             return null;
         }
+    }
+
+    /**
+     * @return array{0:int,1:int}|null
+     */
+    private static function fetchIdRange(PDO $db, array $filter): ?array
+    {
+        $query = '
+            SELECT MIN(g.id) AS min_id, MAX(g.id) AS max_id
+            FROM guarantees g
+            LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
+            LEFT JOIN suppliers s ON d.supplier_id = s.id
+            WHERE 1=1
+        ' . $filter['sql'];
+
+        $stmt = $db->prepare($query);
+        $stmt->execute($filter['params']);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!is_array($row) || $row['min_id'] === null || $row['max_id'] === null) {
+            return null;
+        }
+
+        return [(int)$row['min_id'], (int)$row['max_id']];
+    }
+
+    private static function countUpToId(PDO $db, array $filter, int $maxId): int
+    {
+        $query = '
+            SELECT COUNT(*)
+            FROM guarantees g
+            LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
+            LEFT JOIN suppliers s ON d.supplier_id = s.id
+            WHERE g.id <= :max_id
+        ' . $filter['sql'];
+
+        $params = array_merge(['max_id' => $maxId], $filter['params']);
+        $stmt = $db->prepare($query);
+        $stmt->execute($params);
+        return (int)$stmt->fetchColumn();
+    }
+
+    private static function firstIdAtOrAfter(PDO $db, array $filter, int $minId): ?int
+    {
+        $query = '
+            SELECT g.id
+            FROM guarantees g
+            LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
+            LEFT JOIN suppliers s ON d.supplier_id = s.id
+            WHERE g.id >= :min_id
+        ' . $filter['sql'] . '
+            ORDER BY g.id ASC
+            LIMIT 1
+        ';
+
+        $params = array_merge(['min_id' => $minId], $filter['params']);
+        $stmt = $db->prepare($query);
+        $stmt->execute($params);
+        $value = $stmt->fetchColumn();
+        return $value !== false ? (int)$value : null;
+    }
+
+    private static function fetchBoundaryId(PDO $db, array $filter, bool $ascending): ?int
+    {
+        $order = $ascending ? 'ASC' : 'DESC';
+        $query = '
+            SELECT g.id
+            FROM guarantees g
+            LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
+            LEFT JOIN suppliers s ON d.supplier_id = s.id
+            WHERE 1=1
+        ' . $filter['sql'] . "
+            ORDER BY g.id {$order}
+            LIMIT 1
+        ";
+
+        $stmt = $db->prepare($query);
+        $stmt->execute($filter['params']);
+        $value = $stmt->fetchColumn();
+        return $value !== false ? (int)$value : null;
     }
 
     /**

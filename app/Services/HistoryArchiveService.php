@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\SchemaInspector;
 use PDO;
 
 /**
@@ -95,14 +96,6 @@ final class HistoryArchiveService
 
     private static function archiveTableExists(PDO $db): bool
     {
-        $stmt = $db->prepare("
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-              AND table_name = 'guarantee_history_archive'
-            LIMIT 1
-        ");
-        $stmt->execute();
-        return (bool)$stmt->fetchColumn();
+        return SchemaInspector::tableExists($db, 'guarantee_history_archive');
     }
 }

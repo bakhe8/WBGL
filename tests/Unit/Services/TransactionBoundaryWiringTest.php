@@ -29,12 +29,14 @@ final class TransactionBoundaryWiringTest extends TestCase
         $extendApi = $this->readFile('api/extend.php');
         $reduceApi = $this->readFile('api/reduce.php');
         $releaseApi = $this->readFile('api/release.php');
+        $workflowAdvanceApi = $this->readFile('api/workflow-advance.php');
         $saveAndNextService = $this->readFile('app/Services/SaveAndNextApplicationService.php');
         $undoService = $this->readFile('app/Services/UndoRequestService.php');
 
         $this->assertStringContainsString('TransactionBoundary::run', $extendApi);
         $this->assertStringContainsString('TransactionBoundary::run', $reduceApi);
         $this->assertStringContainsString('TransactionBoundary::run', $releaseApi);
+        $this->assertStringContainsString('TransactionBoundary::run', $workflowAdvanceApi);
         $this->assertStringContainsString('TransactionBoundary::run', $saveAndNextService);
         $this->assertStringContainsString('TransactionBoundary::run', $undoService);
     }
@@ -46,4 +48,3 @@ final class TransactionBoundaryWiringTest extends TestCase
         return (string)file_get_contents($path);
     }
 }
-

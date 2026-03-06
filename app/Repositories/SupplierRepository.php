@@ -125,6 +125,49 @@ class SupplierRepository
     }
 
     /**
+     * Candidate pre-filter for fuzzy matching using normalized tokens.
+     *
+     * @param array<int,string> $tokens
+     * @return array<int, array{id:int, official_name:string, normalized_name:string, english_name:?string}>
+     */
+    public function getFuzzyCandidatesByTokens(array $tokens, int $limit = 600): array
+    {
+        $normalizedTokens = array_values(array_unique(array_filter(array_map(
+            static fn(string $token): string => trim($token),
+            $tokens
+        ), static fn(string $token): bool => mb_strlen($token) >= 3)));
+
+        if (empty($normalizedTokens)) {
+            return $this->getAllSuppliers();
+        }
+
+        $pdo = Database::connection();
+        $clauses = [];
+        $params = [];
+
+        foreach ($normalizedTokens as $index => $token) {
+            $key = ':token_' . $index;
+            $clauses[] = "normalized_name LIKE {$key}";
+            $clauses[] = "english_name LIKE {$key}";
+            $params[$key] = '%' . $token . '%';
+        }
+
+        $sql = 'SELECT id, official_name, english_name, normalized_name
+                FROM suppliers
+                WHERE ' . implode(' OR ', $clauses) . '
+                LIMIT :candidate_limit';
+        $stmt = $pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value, PDO::PARAM_STR);
+        }
+        $stmt->bindValue(':candidate_limit', max(50, $limit), PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
      * Find suppliers by entity anchor (contains)
      * Used by AnchorSignalFeeder
      * 

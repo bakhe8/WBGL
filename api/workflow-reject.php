@@ -16,6 +16,7 @@ require_once __DIR__ . '/_bootstrap.php';
 
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Repositories\NoteRepository;
+use App\Services\NotificationPolicyService;
 use App\Services\TimelineRecorder;
 use App\Services\WorkflowService;
 use App\Support\Database;
@@ -145,6 +146,24 @@ try {
         throw $e;
     }
 
+    try {
+        NotificationPolicyService::emit(
+            'workflow_reject',
+            'تم رفض مسار الضمان',
+            'تمت إعادة السجل إلى مدخل البيانات مع إزالة الإجراء النشط.',
+            [
+                'guarantee_id' => $guaranteeId,
+                'rejected_by' => $actor,
+                'reason' => $reason,
+                'old_workflow_step' => $oldStep,
+                'new_workflow_step' => 'draft',
+            ],
+            "workflow_reject:{$guaranteeId}:" . date('YmdHi')
+        );
+    } catch (\Throwable $notificationError) {
+        // Notification delivery is non-blocking for workflow actions.
+    }
+
     wbgl_api_compat_success([
         'message' => 'تم رفض السجل وإعادته لمدخل البيانات بنجاح.',
         'workflow_step' => 'draft',
@@ -156,4 +175,3 @@ try {
 } catch (\Throwable $e) {
     wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }
-

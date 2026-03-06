@@ -7,6 +7,30 @@ use App\Support\Settings;
 use App\Services\SettingsAuditService;
 wbgl_api_require_permission('manage_users');
 
+/**
+ * @param array<string,mixed> $settings
+ * @return array<string,mixed>
+ */
+function wbgl_settings_redact_sensitive(array $settings): array
+{
+    $redacted = $settings;
+    foreach ($redacted as $key => $value) {
+        $upperKey = strtoupper((string)$key);
+        if (
+            str_contains($upperKey, 'PASS')
+            || str_contains($upperKey, 'PASSWORD')
+            || str_contains($upperKey, 'SECRET')
+            || str_contains($upperKey, 'TOKEN')
+            || str_contains($upperKey, 'API_KEY')
+            || str_contains($upperKey, 'PRIVATE_KEY')
+        ) {
+            $redacted[$key] = is_string($value) && trim($value) !== '' ? '***' : '';
+        }
+    }
+
+    return $redacted;
+}
+
 // Handle POST request to save settings
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -59,6 +83,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $input['CANDIDATES_LIMIT'] = $value;
         }
 
+        if (isset($input['NOTIFICATION_UI_MAX_ITEMS'])) {
+            $value = (int)$input['NOTIFICATION_UI_MAX_ITEMS'];
+            if ($value < 10 || $value > 200) {
+                $errors[] = "NOTIFICATION_UI_MAX_ITEMS must be between 10 and 200";
+            }
+            $input['NOTIFICATION_UI_MAX_ITEMS'] = $value;
+        }
+
+        if (isset($input['NOTIFICATIONS_ENABLED'])) {
+            $input['NOTIFICATIONS_ENABLED'] = ((int)$input['NOTIFICATIONS_ENABLED']) === 1 ? 1 : 0;
+        }
+
+        if (isset($input['NOTIFICATION_POLICY_OVERRIDES'])) {
+            $rawOverrides = $input['NOTIFICATION_POLICY_OVERRIDES'];
+            if (is_string($rawOverrides)) {
+                $trimmedOverrides = trim($rawOverrides);
+                if ($trimmedOverrides === '') {
+                    $input['NOTIFICATION_POLICY_OVERRIDES'] = [];
+                } else {
+                    $decodedOverrides = json_decode($trimmedOverrides, true);
+                    if (!is_array($decodedOverrides)) {
+                        $errors[] = "NOTIFICATION_POLICY_OVERRIDES must be a valid JSON object";
+                    } else {
+                        $input['NOTIFICATION_POLICY_OVERRIDES'] = $decodedOverrides;
+                    }
+                }
+            } elseif (is_array($rawOverrides)) {
+                $input['NOTIFICATION_POLICY_OVERRIDES'] = $rawOverrides;
+            } else {
+                $errors[] = "NOTIFICATION_POLICY_OVERRIDES must be JSON object or array";
+            }
+        }
+
         // Logical validation: AUTO >= REVIEW
         if (isset($input['MATCH_AUTO_THRESHOLD']) && isset($input['MATCH_REVIEW_THRESHOLD'])) {
             $reviewComparable = $input['MATCH_REVIEW_THRESHOLD'];
@@ -95,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         wbgl_api_compat_success([
-            'settings' => $saved,
+            'settings' => wbgl_settings_redact_sensitive($saved),
         ]);
         
     } catch (Exception $e) {
@@ -108,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
         $settings = new Settings();
         wbgl_api_compat_success([
-            'settings' => $settings->all(),
+            'settings' => wbgl_settings_redact_sensitive($settings->all()),
         ]);
     } catch (Exception $e) {
         wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');

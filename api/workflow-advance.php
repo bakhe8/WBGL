@@ -8,6 +8,7 @@
 require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
+use App\Support\TransactionBoundary;
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Services\WorkflowService;
 use App\Services\TimelineRecorder;
@@ -78,7 +79,7 @@ try {
     // 5. Determine Next Step
     $nextStep = WorkflowService::getNextStage($currentStep);
     if (!$nextStep) {
-        wbgl_api_compat_fail(200, 'No further stages available', [
+        wbgl_api_compat_fail(409, 'No further stages available', [
             'required_permission' => 'workflow_advance',
             'current_step' => $currentStep,
             'reason_code' => 'NO_NEXT_STAGE',
@@ -90,12 +91,33 @@ try {
 
     // Special Handling: Signatures (if multiple required)
     if ($nextStep === WorkflowService::STAGE_SIGNED) {
-        $oldSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
-        $decision->signaturesReceived++;
-        if ($decision->signaturesReceived < WorkflowService::signaturesRequired()) {
-            // Stay in APPROVED stage but record signature
-            $decisionRepo->createOrUpdate($decision);
-            TimelineRecorder::recordWorkflowEvent($guaranteeId, $currentStep, "signature_received_" . $decision->signaturesReceived, $userName, $oldSnapshot);
+        $signatureResult = TransactionBoundary::run($db, function () use (
+            $decision,
+            $decisionRepo,
+            $guaranteeId,
+            $currentStep,
+            $userName
+        ): array {
+            $oldSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
+            $decision->signaturesReceived++;
+            if ($decision->signaturesReceived < WorkflowService::signaturesRequired()) {
+                // Stay in APPROVED stage but record signature
+                $decisionRepo->createOrUpdate($decision);
+                TimelineRecorder::recordWorkflowEvent(
+                    $guaranteeId,
+                    $currentStep,
+                    'signature_received_' . $decision->signaturesReceived,
+                    $userName,
+                    $oldSnapshot
+                );
+
+                return ['partial_signature' => true];
+            }
+
+            return ['partial_signature' => false];
+        });
+
+        if (($signatureResult['partial_signature'] ?? false) === true) {
             wbgl_api_compat_success([
                 'message' => 'تم تسجيل التوقيع بنجاح. بانتظار بقية التواقيع.',
                 'workflow_step' => $currentStep,
@@ -107,21 +129,29 @@ try {
     }
 
     // 6. Execute Transition
-    $oldStep = $decision->workflowStep;
-    $oldSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
-    $decision->workflowStep = $nextStep;
-
-    // Update decision in DB
-    $decisionRepo->createOrUpdate($decision);
-
-    // 5. Record Event
-    TimelineRecorder::recordWorkflowEvent(
+    TransactionBoundary::run($db, function () use (
+        $decision,
+        $decisionRepo,
         $guaranteeId,
-        $oldStep,
         $nextStep,
-        $userName,
-        $oldSnapshot
-    );
+        $userName
+    ): void {
+        $oldStep = $decision->workflowStep;
+        $oldSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
+        $decision->workflowStep = $nextStep;
+
+        // Update decision in DB
+        $decisionRepo->createOrUpdate($decision);
+
+        // Record event
+        TimelineRecorder::recordWorkflowEvent(
+            $guaranteeId,
+            $oldStep,
+            $nextStep,
+            $userName,
+            $oldSnapshot
+        );
+    });
 
     wbgl_api_compat_success([
         'message' => 'تم الانتقال بنجاح إلى مرحلة: ' . $nextStep,
@@ -130,6 +160,7 @@ try {
         'surface' => $surface,
         'reasons' => $policy['reasons'] ?? [],
     ]);
-} catch (\Exception $e) {
-    wbgl_api_compat_fail(500, $e->getMessage());
+} catch (\Throwable $e) {
+    error_log('[WBGL_WORKFLOW_ADVANCE_ERROR] ' . $e->getMessage());
+    wbgl_api_compat_fail(500, 'حدث خطأ داخلي أثناء تنفيذ انتقال المرحلة.', [], 'internal');
 }

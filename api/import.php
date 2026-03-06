@@ -9,6 +9,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/_bootstrap.php';
 
 use App\Services\ImportService;
+use App\Services\NotificationPolicyService;
 use App\Support\Settings;
 
 header('Content-Type: application/json; charset=utf-8');
@@ -26,6 +27,23 @@ register_shutdown_function(function() {
             @mkdir($logsDir, 0755, true);
         }
         file_put_contents($logsDir . '/import_fatal.log', date('Y-m-d H:i:s') . " FATAL: " . json_encode($error) . PHP_EOL, FILE_APPEND);
+        try {
+            NotificationPolicyService::emit(
+                'import_failure',
+                'فشل جسيم أثناء الاستيراد',
+                'حدث خطأ قاتل أثناء معالجة الاستيراد.',
+                [
+                    'severity' => 'fatal',
+                    'error_type' => (int)($error['type'] ?? 0),
+                    'error_message' => (string)($error['message'] ?? ''),
+                    'error_file' => basename((string)($error['file'] ?? '')),
+                    'error_line' => (int)($error['line'] ?? 0),
+                ],
+                'import_fatal:' . date('YmdHi')
+            );
+        } catch (\Throwable $notificationError) {
+            // Notification failure is non-blocking on fatal shutdown.
+        }
         wbgl_api_compat_fail(500, 'Fatal Error', ['details' => $error], 'internal');
     }
 });
@@ -148,6 +166,28 @@ try {
         date('Y-m-d H:i:s') . " EXCEPTION: " . $e->getMessage() . "\nStack: " . $e->getTraceAsString() . "\n",
         FILE_APPEND
     );
+
+    try {
+        $actor = wbgl_api_current_user_display();
+        $fileName = isset($_FILES['file']['name']) ? (string)$_FILES['file']['name'] : '';
+        NotificationPolicyService::emit(
+            'import_failure',
+            'فشل عملية الاستيراد',
+            'تعذّر إكمال استيراد الملف.',
+            [
+                'severity' => 'error',
+                'actor' => $actor,
+                'file_name' => $fileName,
+                'error_message' => $e->getMessage(),
+                'error_file' => basename($e->getFile()),
+                'error_line' => $e->getLine(),
+            ],
+            'import_failure:' . md5($e->getMessage() . ':' . basename($e->getFile()) . ':' . $e->getLine()) . ':' . date('YmdHi'),
+            $actor
+        );
+    } catch (\Throwable $notificationError) {
+        // Notification failure should not block API error response.
+    }
     
     wbgl_api_compat_fail(500, $e->getMessage(), [
         'message' => $e->getMessage(),

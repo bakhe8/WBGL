@@ -40,16 +40,6 @@ class WorkflowService
         self::STAGE_SIGNED => 'sign_letters',
     ];
 
-    // Permission required to act on the current stage (advance/reject).
-    private const STAGE_OWNER_PERMISSIONS = [
-        self::STAGE_DRAFT => 'audit_data',
-        self::STAGE_AUDITED => 'analyze_guarantee',
-        self::STAGE_ANALYZED => 'supervise_analysis',
-        self::STAGE_SUPERVISED => 'approve_decision',
-        self::STAGE_APPROVED => 'sign_letters',
-        self::STAGE_SIGNED => 'manage_data',
-    ];
-
     private const REJECTABLE_STAGES = [
         self::STAGE_DRAFT,
         self::STAGE_AUDITED,
@@ -118,7 +108,7 @@ class WorkflowService
 
     public static function requiredPermissionForStage(string $stage): ?string
     {
-        return self::STAGE_OWNER_PERMISSIONS[$stage] ?? null;
+        return ActionabilityPolicyService::STAGE_PERMISSION_MAP[$stage] ?? null;
     }
 
     public static function canReject(GuaranteeDecision $decision): bool

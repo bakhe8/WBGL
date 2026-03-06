@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../app/Support/autoload.php';
 
 use App\Services\SettingsDashboardService;
+use App\Services\NotificationPolicyService;
 use App\Support\ViewPolicy;
 
 ViewPolicy::guardView('settings.php');
@@ -12,6 +13,28 @@ $settingsViewModel = SettingsDashboardService::buildViewModel(
 $currentSettings = is_array($settingsViewModel['currentSettings'] ?? null)
     ? $settingsViewModel['currentSettings']
     : [];
+$notificationPolicyOverridesRaw = $currentSettings['NOTIFICATION_POLICY_OVERRIDES'] ?? [];
+if (is_string($notificationPolicyOverridesRaw)) {
+    $decodedOverrides = json_decode($notificationPolicyOverridesRaw, true);
+    $notificationPolicyOverridesRaw = is_array($decodedOverrides) ? $decodedOverrides : [];
+}
+if (!is_array($notificationPolicyOverridesRaw)) {
+    $notificationPolicyOverridesRaw = [];
+}
+$notificationPolicyOverridesJson = json_encode(
+    $notificationPolicyOverridesRaw,
+    JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+);
+if (!is_string($notificationPolicyOverridesJson) || trim($notificationPolicyOverridesJson) === '') {
+    $notificationPolicyOverridesJson = '{}';
+}
+$notificationPolicyDefaultsJson = json_encode(
+    NotificationPolicyService::defaultPolicyMap(),
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+);
+if (!is_string($notificationPolicyDefaultsJson) || trim($notificationPolicyDefaultsJson) === '') {
+    $notificationPolicyDefaultsJson = '{}';
+}
 $pageLocale = (string)($settingsViewModel['pageLocale'] ?? 'ar');
 $pageDirection = (string)($settingsViewModel['pageDirection'] ?? ($pageLocale === 'ar' ? 'rtl' : 'ltr'));
 $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? date('Y-m-d H:i:s'));
@@ -121,6 +144,68 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
             width: 100%; padding: 10px 12px; border: 1px solid var(--border-primary);
             background: var(--bg-card); color: var(--text-primary);
             border-radius: var(--radius-md); font-family: var(--font-family); font-size: 14px; transition: all 0.2s;
+        }
+        textarea.form-input {
+            min-height: 180px;
+            resize: vertical;
+            font-family: Consolas, "Courier New", monospace;
+            line-height: 1.45;
+        }
+        .policy-validation {
+            margin-top: 8px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .policy-validation.ok {
+            color: var(--accent-success);
+        }
+        .policy-validation.error {
+            color: var(--accent-danger);
+        }
+        .policy-preview-panel {
+            margin-top: 12px;
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-md);
+            background: var(--bg-secondary);
+            overflow: hidden;
+        }
+        .policy-preview-header {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-primary);
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .policy-preview-body {
+            max-height: 300px;
+            overflow: auto;
+            padding: 0;
+        }
+        .policy-preview-empty {
+            padding: 12px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        .policy-preview-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .policy-preview-table th,
+        .policy-preview-table td {
+            border-bottom: 1px solid var(--border-primary);
+            padding: 8px 10px;
+            text-align: right;
+            vertical-align: top;
+        }
+        .policy-preview-table th {
+            position: sticky;
+            top: 0;
+            background: var(--bg-card);
+            z-index: 1;
+        }
+        .policy-preview-table code {
+            font-size: 11px;
         }
         .form-input:focus { outline: none; border-color: var(--border-focus); box-shadow: var(--shadow-focus); }
         .form-actions { display: flex; gap: 12px; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-primary); }
@@ -405,6 +490,56 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                             </ul>
                         </div>
                     </div>
+
+                    <!-- Notifications Governance -->
+                    <div class="form-group prod-toggle-group">
+                        <label class="form-label prod-toggle-label">
+                            <input type="checkbox" name="NOTIFICATIONS_ENABLED" value="1"
+                                   <?= !empty($currentSettings['NOTIFICATIONS_ENABLED']) ? 'checked' : '' ?>
+                                   class="prod-toggle-checkbox">
+                            <span>🔔 تفعيل الإشعارات داخل النظام</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">الحد الأقصى لكروت الإشعار في الشريط الجانبي</label>
+                        <span class="form-help">NOTIFICATION_UI_MAX_ITEMS (من 10 إلى 200)</span>
+                        <input
+                            type="number"
+                            class="form-input"
+                            name="NOTIFICATION_UI_MAX_ITEMS"
+                            value="<?= (int)($currentSettings['NOTIFICATION_UI_MAX_ITEMS'] ?? 40) ?>"
+                            min="10"
+                            max="200"
+                            step="1"
+                            required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">سياسة توجيه الإشعارات (JSON اختياري)</label>
+                        <span class="form-help">
+                            المفتاح = نوع الإشعار، والقيمة يمكن أن تحتوي:
+                            <code>roles</code>, <code>severity</code>, <code>category</code>, <code>allow_direct_user</code>, <code>fallback_global</code>.
+                        </span>
+                        <textarea
+                            class="form-input"
+                            name="NOTIFICATION_POLICY_OVERRIDES"
+                            spellcheck="false"
+                            dir="ltr"><?= htmlspecialchars($notificationPolicyOverridesJson, ENT_QUOTES, 'UTF-8') ?></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">معاينة السياسة الفعّالة قبل الحفظ</label>
+                        <span class="form-help">يتم الدمج بين السياسة الافتراضية وقيم JSON الحالية في الحقل أعلاه.</span>
+                        <div id="notificationPolicyValidation" class="policy-validation" aria-live="polite"></div>
+                        <div class="policy-preview-panel">
+                            <div class="policy-preview-header">أنواع الإشعارات بعد الدمج</div>
+                            <div id="notificationPolicyPreview" class="policy-preview-body">
+                                <div class="policy-preview-empty">جاري بناء المعاينة...</div>
+                            </div>
+                        </div>
+                    </div>
+                    <script id="notificationPolicyDefaults" type="application/json"><?= htmlspecialchars($notificationPolicyDefaultsJson, ENT_NOQUOTES, 'UTF-8') ?></script>
                 </div>
 
                 <!-- Actions -->
@@ -658,6 +793,19 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
         const errorAlert = document.getElementById('alertError');
         const resetBtn = document.getElementById('resetBtn');
         const lazyLoadedTabs = new Set();
+        const notificationPolicyTextarea = form.querySelector('textarea[name="NOTIFICATION_POLICY_OVERRIDES"]');
+        const notificationPolicyValidation = document.getElementById('notificationPolicyValidation');
+        const notificationPolicyPreview = document.getElementById('notificationPolicyPreview');
+        const notificationPolicyDefaultsNode = document.getElementById('notificationPolicyDefaults');
+        const notificationPolicyDefaults = (() => {
+            if (!notificationPolicyDefaultsNode) return {};
+            try {
+                const parsed = JSON.parse(notificationPolicyDefaultsNode.textContent || '{}');
+                return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+            } catch (error) {
+                return {};
+            }
+        })();
 
         function t(key, fallback, params) {
             if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
@@ -721,8 +869,151 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                 .join('&#039;');
         }
 
+        function parseNotificationPolicyOverridesText(rawText) {
+            const trimmed = String(rawText || '').trim();
+            if (trimmed === '') {
+                return { ok: true, data: {} };
+            }
+
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed)) {
+                    return { ok: true, data: {} };
+                }
+                if (!parsed || typeof parsed !== 'object') {
+                    return { ok: false, error: 'صيغة JSON يجب أن تكون كائنًا (Object) من نوع => سياسة.' };
+                }
+                return { ok: true, data: parsed };
+            } catch (error) {
+                return { ok: false, error: 'JSON غير صالح: ' + (error?.message || 'صيغة غير صحيحة') };
+            }
+        }
+
+        function normalizePolicyRoles(value) {
+            if (!Array.isArray(value)) {
+                return [];
+            }
+            const unique = new Set();
+            value.forEach((role) => {
+                const slug = String(role || '').trim();
+                if (slug !== '') {
+                    unique.add(slug);
+                }
+            });
+            return Array.from(unique);
+        }
+
+        function normalizePolicySeverity(value) {
+            const allowed = new Set(['info', 'success', 'warning', 'error']);
+            const normalized = String(value || '').trim().toLowerCase();
+            return allowed.has(normalized) ? normalized : 'info';
+        }
+
+        function normalizePolicyCategory(value) {
+            const allowed = new Set(['workflow', 'governance', 'operations', 'security', 'data_quality', 'system']);
+            const normalized = String(value || '').trim().toLowerCase();
+            return allowed.has(normalized) ? normalized : 'system';
+        }
+
+        function buildEffectiveNotificationPolicyRows(overridesMap) {
+            const keys = new Set([
+                ...Object.keys(notificationPolicyDefaults || {}),
+                ...Object.keys(overridesMap || {}),
+            ]);
+
+            return Array.from(keys)
+                .filter((type) => String(type || '').trim() !== '')
+                .sort((a, b) => a.localeCompare(b))
+                .map((type) => {
+                    const base = notificationPolicyDefaults[type] && typeof notificationPolicyDefaults[type] === 'object'
+                        ? notificationPolicyDefaults[type]
+                        : {};
+                    const override = overridesMap[type] && typeof overridesMap[type] === 'object' && !Array.isArray(overridesMap[type])
+                        ? overridesMap[type]
+                        : {};
+                    const hasOverride = Object.keys(override).length > 0;
+                    const merged = {
+                        category: normalizePolicyCategory(override.category ?? base.category ?? 'system'),
+                        severity: normalizePolicySeverity(override.severity ?? base.severity ?? 'info'),
+                        roles: normalizePolicyRoles(override.roles ?? base.roles ?? []),
+                        allow_direct_user: Boolean(override.allow_direct_user ?? base.allow_direct_user ?? true),
+                        fallback_global: Boolean(override.fallback_global ?? base.fallback_global ?? true),
+                        source: hasOverride ? 'override' : 'default',
+                    };
+                    return { type, ...merged };
+                });
+        }
+
+        function renderNotificationPolicyPreview(rows) {
+            if (!notificationPolicyPreview) {
+                return;
+            }
+            if (!Array.isArray(rows) || rows.length === 0) {
+                notificationPolicyPreview.innerHTML = '<div class="policy-preview-empty">لا توجد أنواع إشعارات معرفة.</div>';
+                return;
+            }
+
+            const body = rows.map((row) => {
+                const roles = row.roles.length > 0 ? row.roles.join(', ') : '—';
+                const sourceLabel = row.source === 'override' ? 'override' : 'default';
+                return `
+                    <tr>
+                        <td><code>${escapeHtml(row.type)}</code></td>
+                        <td>${escapeHtml(row.category)}</td>
+                        <td>${escapeHtml(row.severity)}</td>
+                        <td>${escapeHtml(roles)}</td>
+                        <td>${row.allow_direct_user ? 'نعم' : 'لا'}</td>
+                        <td>${row.fallback_global ? 'نعم' : 'لا'}</td>
+                        <td><code>${sourceLabel}</code></td>
+                    </tr>`;
+            }).join('');
+
+            notificationPolicyPreview.innerHTML = `
+                <table class="policy-preview-table">
+                    <thead>
+                        <tr>
+                            <th>النوع</th>
+                            <th>الفئة</th>
+                            <th>الشدة</th>
+                            <th>الأدوار المستهدفة</th>
+                            <th>مستخدم مباشر</th>
+                            <th>Fallback</th>
+                            <th>المصدر</th>
+                        </tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>
+            `;
+        }
+
+        function updateNotificationPolicyPreview() {
+            if (!notificationPolicyTextarea || !notificationPolicyValidation) {
+                return { ok: true, data: {} };
+            }
+
+            const parsed = parseNotificationPolicyOverridesText(notificationPolicyTextarea.value);
+            if (!parsed.ok) {
+                notificationPolicyValidation.textContent = parsed.error || 'JSON غير صالح';
+                notificationPolicyValidation.classList.remove('ok');
+                notificationPolicyValidation.classList.add('error');
+                renderNotificationPolicyPreview([]);
+                return parsed;
+            }
+
+            const rows = buildEffectiveNotificationPolicyRows(parsed.data);
+            notificationPolicyValidation.textContent = `JSON صالح. الأنواع الفعّالة: ${rows.length}`;
+            notificationPolicyValidation.classList.remove('error');
+            notificationPolicyValidation.classList.add('ok');
+            renderNotificationPolicyPreview(rows);
+            return parsed;
+        }
+
         refreshLoadingLabels();
         document.addEventListener('wbgl:language-changed', refreshLoadingLabels);
+        updateNotificationPolicyPreview();
+        if (notificationPolicyTextarea) {
+            notificationPolicyTextarea.addEventListener('input', updateNotificationPolicyPreview);
+        }
         
         // --- Modals ---
         const modalState = {
@@ -1166,11 +1457,6 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
 
         /* Existing JS for Settings Form */
         
-        function hideAlerts() {
-            successAlert.classList.add('alert-hidden');
-            errorAlert.classList.add('alert-hidden');
-        }
-        
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             hideAlerts();
@@ -1188,6 +1474,16 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                 // Set to 1 if checked, 0 if unchecked
                 settings[checkbox.name] = checkbox.checked ? 1 : 0;
             });
+
+            const policyValidation = updateNotificationPolicyPreview();
+            if (!policyValidation.ok) {
+                showAlert('error', policyValidation.error || 'JSON سياسة الإشعارات غير صالح.');
+                return;
+            }
+            if (notificationPolicyTextarea) {
+                const policyRaw = notificationPolicyTextarea.value.trim();
+                settings.NOTIFICATION_POLICY_OVERRIDES = policyRaw === '' ? '{}' : policyRaw;
+            }
             
             try {
                 const response = await fetch('../api/settings.php', {

@@ -5,6 +5,7 @@ namespace App\Services;
 
 use App\Support\AuthService;
 use App\Support\Database;
+use App\Support\SchemaInspector;
 use PDO;
 use Throwable;
 
@@ -56,18 +57,6 @@ class AuditTrailService
 
     private static function tableExists(PDO $db): bool
     {
-        try {
-            $stmt = $db->prepare("
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = 'public'
-                  AND table_name = 'audit_trail_events'
-                LIMIT 1
-            ");
-            $stmt->execute();
-            return (bool)$stmt->fetchColumn();
-        } catch (Throwable $e) {
-            return false;
-        }
+        return SchemaInspector::tableExists($db, 'audit_trail_events');
     }
 }

@@ -30,7 +30,7 @@ class StatusEvaluator
     public static function evaluate(?int $supplierId, ?int $bankId): string
     {
         // Status authority: Both supplier AND bank must exist for approval
-        if ($supplierId && $bankId) {
+        if (self::hasValidForeignKey($supplierId) && self::hasValidForeignKey($bankId)) {
             return 'ready';
         }
         
@@ -59,10 +59,14 @@ class StatusEvaluator
             return 'pending';
         }
         
-        return self::evaluate(
-            $decision['supplier_id'] ? (int)$decision['supplier_id'] : null,
-            $decision['bank_id'] ? (int)$decision['bank_id'] : null
-        );
+        $supplierId = isset($decision['supplier_id']) && (int)$decision['supplier_id'] > 0
+            ? (int)$decision['supplier_id']
+            : null;
+        $bankId = isset($decision['bank_id']) && (int)$decision['bank_id'] > 0
+            ? (int)$decision['bank_id']
+            : null;
+
+        return self::evaluate($supplierId, $bankId);
     }
     
     /**
@@ -80,7 +84,7 @@ class StatusEvaluator
         $reasons = [];
         
         // If ready, explain why complete
-        if ($supplierId && $bankId) {
+        if (self::hasValidForeignKey($supplierId) && self::hasValidForeignKey($bankId)) {
             $reasons[] = [
                 'type' => 'complete',
                 'severity' => 'success',
@@ -91,7 +95,7 @@ class StatusEvaluator
         }
         
         // If pending, explain what's missing
-        if (!$supplierId) {
+        if (!self::hasValidForeignKey($supplierId)) {
             $reasons[] = [
                 'type' => 'missing_supplier',
                 'severity' => 'error',
@@ -99,8 +103,8 @@ class StatusEvaluator
                 'message_en' => 'Supplier not selected'
             ];
         }
-        
-        if (!$bankId) {
+
+        if (!self::hasValidForeignKey($bankId)) {
             $reasons[] = [
                 'type' => 'missing_bank',
                 'severity' => 'error',
@@ -121,5 +125,10 @@ class StatusEvaluator
         }
         
         return $reasons;
+    }
+
+    private static function hasValidForeignKey(?int $value): bool
+    {
+        return $value !== null && $value > 0;
     }
 }

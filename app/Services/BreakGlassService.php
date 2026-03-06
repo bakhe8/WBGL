@@ -119,9 +119,31 @@ class BreakGlassService
             $expiresAt,
             $payload,
         ]);
+        $eventId = (int)$db->lastInsertId();
+
+        try {
+            NotificationPolicyService::emit(
+                'break_glass_override_used',
+                'تم تفعيل تجاوز طارئ (Break Glass)',
+                'تم استخدام مسار الطوارئ لتنفيذ إجراء عالي الحساسية.',
+                [
+                    'event_id' => $eventId,
+                    'action_name' => $actionName,
+                    'target_type' => $targetType,
+                    'target_id' => $targetId,
+                    'requested_by' => $requestedBy,
+                    'ticket_ref' => $ticketRef !== '' ? $ticketRef : null,
+                    'expires_at' => $expiresAt,
+                    'reason' => $reason,
+                ],
+                "break_glass_override_used:{$eventId}"
+            );
+        } catch (\Throwable $notificationError) {
+            // Non-blocking: governance action should continue even if notification fails.
+        }
 
         return [
-            'id' => (int)$db->lastInsertId(),
+            'id' => $eventId,
             'expires_at' => $expiresAt,
             'ticket_ref' => $ticketRef !== '' ? $ticketRef : null,
             'reason' => $reason,

@@ -57,8 +57,9 @@ class FuzzySignalFeeder implements SignalFeederInterface
      */
     public function getSignals(string $normalizedInput): array
     {
-        // Get ALL suppliers (no pre-filtering)
-        $allSuppliers = $this->supplierRepo->getAllSuppliers();
+        // Performance pre-filter: narrow fuzzy scan set using distinctive tokens first.
+        $inputTokens = $this->extractDistinctiveTokens($normalizedInput);
+        $allSuppliers = $this->supplierRepo->getFuzzyCandidatesByTokens($inputTokens, 600);
 
         $signals = [];
 
@@ -75,6 +76,20 @@ class FuzzySignalFeeder implements SignalFeederInterface
             ]);
 
             foreach ($namesToCheck as $nameType => $supplierNormalized) {
+                // Fast gate: if best possible similarity from length alone is below threshold,
+                // skip expensive levenshtein call.
+                $inputLen = mb_strlen($normalizedInput);
+                $supplierLen = mb_strlen((string)$supplierNormalized);
+                $maxLen = max($inputLen, $supplierLen);
+                if ($maxLen <= 0) {
+                    continue;
+                }
+                $lengthDiff = abs($inputLen - $supplierLen);
+                $maxPossibleSimilarity = 1 - ($lengthDiff / $maxLen);
+                if ($maxPossibleSimilarity < self::MIN_SIMILARITY) {
+                    continue;
+                }
+
                 // Calculate similarity
                 $similarity = $this->calculateSimilarity($normalizedInput, $supplierNormalized);
 
@@ -190,5 +205,18 @@ class FuzzySignalFeeder implements SignalFeederInterface
         $commonDistinctive = array_intersect($inputDistinctive, $supplierDistinctive);
         
         return count($commonDistinctive) > 0;
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function extractDistinctiveTokens(string $input): array
+    {
+        $tokens = array_filter(explode(' ', strtolower(trim($input))));
+        $distinctive = array_values(array_diff($tokens, self::GENERIC_WORDS));
+        return array_values(array_unique(array_filter(
+            $distinctive,
+            static fn(string $token): bool => mb_strlen($token) >= 3
+        )));
     }
 }

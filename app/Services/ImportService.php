@@ -191,8 +191,8 @@ class ImportService
                     $imported++;
                     
                 } catch (\PDOException $e) {
-                    // Decision #6: Handle duplicate guarantees
-                    if (strpos($e->getMessage(), 'UNIQUE constraint') !== false) {
+                    // Decision #6: Handle duplicate guarantees (PostgreSQL + legacy compatibility)
+                    if (self::isDuplicateGuaranteeConstraint($e)) {
                         // Find existing guarantee
                         $existing = $this->guaranteeRepo->findByNumber($guaranteeNumber);
                         
@@ -205,10 +205,11 @@ class ImportService
                             $duplicates++;
                             $skipped[] = "الصف #{$rowNumber}: ضمان مكرر (تم تسجيل ظهور جديد في الدفعة الحالية)";
                         }
-                    } else {
-                        // Other database error
-                        throw $e;
+                        continue;
                     }
+
+                    // Other database error
+                    throw $e;
                 } catch (\Throwable $e) {
                     $errors[] = "الصف #{$rowNumber}: " . $e->getMessage();
                 }
@@ -720,5 +721,24 @@ class ImportService
         throw new RuntimeException(
             "guarantee_occurrences must expose either 'batch_type' or 'import_source' column."
         );
+    }
+
+    private static function isDuplicateGuaranteeConstraint(\PDOException $e): bool
+    {
+        $message = strtolower((string)$e->getMessage());
+        $sqlState = strtoupper((string)$e->getCode());
+        $errorInfoState = strtoupper((string)($e->errorInfo[0] ?? ''));
+
+        // PostgreSQL unique_violation SQLSTATE
+        if ($sqlState === '23505' || $errorInfoState === '23505') {
+            return true;
+        }
+
+        // Legacy wording compatibility (SQLite / generic adapters)
+        if (str_contains($message, 'unique constraint')) {
+            return true;
+        }
+
+        return str_contains($message, 'duplicate key value violates unique constraint');
     }
 }
