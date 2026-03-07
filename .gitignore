@@ -22,6 +22,7 @@
 /debug_import_error.txt
 .phpunit.result.cache
 /Emails/
+/dist/
 /public/uploads/
 node_modules/
 playwright-report/
