@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Support\SchemaInspector;
+use App\Support\TypeNormalizer;
 use PDO;
 
 /**
@@ -550,13 +551,14 @@ final class StatisticsDashboardService
         string $statsJsonRawTypeExpr,
         string $statsJsonAmountExpr
     ): array {
-        $typeDistribution = self::fetchAll($db, "
+        $typeDistributionRaw = self::fetchAll($db, "
             SELECT {$statsJsonRawTypeExpr} as type, COUNT(*) as count
             FROM guarantees
             {$whereD}
             GROUP BY type
             ORDER BY count DESC
         ");
+        $typeDistribution = self::normalizeTypeDistribution($typeDistributionRaw);
 
         $amountCorrelation = self::fetchAll($db, "
             SELECT
@@ -579,6 +581,44 @@ final class StatisticsDashboardService
             'typeDistribution' => $typeDistribution,
             'amountCorrelation' => $amountCorrelation,
         ];
+    }
+
+    /**
+     * Merge raw type buckets into canonical labels using TypeNormalizer.
+     *
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<int,array{type:string,count:int}>
+     */
+    private static function normalizeTypeDistribution(array $rows): array
+    {
+        /** @var array<string,array{type:string,count:int}> $merged */
+        $merged = [];
+
+        foreach ($rows as $row) {
+            $rawType = trim((string)($row['type'] ?? ''));
+            $normalizedType = trim(TypeNormalizer::normalize($rawType));
+            if ($normalizedType === '') {
+                $normalizedType = 'غير محدد';
+            }
+
+            $key = mb_strtolower($normalizedType, 'UTF-8');
+            if (!isset($merged[$key])) {
+                $merged[$key] = [
+                    'type' => $normalizedType,
+                    'count' => 0,
+                ];
+            }
+
+            $merged[$key]['count'] += (int)($row['count'] ?? 0);
+        }
+
+        $result = array_values($merged);
+        usort(
+            $result,
+            static fn(array $a, array $b): int => ($b['count'] <=> $a['count']) ?: strcmp($a['type'], $b['type'])
+        );
+
+        return $result;
     }
 
     /**

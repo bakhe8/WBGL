@@ -169,17 +169,17 @@ class WorkflowService
     {
         switch ($currentStep) {
             case self::STAGE_DRAFT:
-                return "تأكيد التدقيق (Audit)";
+                return "تأكيد التدقيق";
             case self::STAGE_AUDITED:
-                return "تأكيد التحليل (Analyze)";
+                return "تأكيد التحليل";
             case self::STAGE_ANALYZED:
-                return "مراجعة المشرف (Supervise)";
+                return "مراجعة المشرف";
             case self::STAGE_SUPERVISED:
-                return "اعتماد نهائي (Approve)";
+                return "اعتماد نهائي";
             case self::STAGE_APPROVED:
-                return "توقيع الخطاب (Sign)";
+                return "توقيع الخطاب";
             case self::STAGE_SIGNED:
-                return "مكتمل (Signed)";
+                return "مكتمل";
             default:
                 return "نفذ الإجراء التالي";
         }

@@ -491,11 +491,9 @@ class ParseCoordinatorService
             // ✅ Record Occurrence
             ImportService::recordOccurrence((int)$saved->id, $batchId, 'smart_paste', null, $db);
 
-            // Record history event
-            try {
-                \App\Services\TimelineRecorder::recordImportEvent((int)$saved->id, $source, $saved->rawData);
-            } catch (\Throwable $t) {
-                error_log("Failed to record history: " . $t->getMessage());
+            $importEventId = \App\Services\TimelineRecorder::recordImportEvent((int)$saved->id, $source, $saved->rawData);
+            if (!$importEventId) {
+                throw new \RuntimeException('Failed to record import history event');
             }
 
             if ($ownsTransaction) {
@@ -534,11 +532,9 @@ class ParseCoordinatorService
                 throw new \RuntimeException('Permission Denied');
             }
 
-            // Record duplicate
-            try {
-                \App\Services\TimelineRecorder::recordDuplicateImportEvent($existing->id, 'smart_paste');
-            } catch (\Throwable $t) {
-                error_log("Failed to record duplicate: " . $t->getMessage());
+            $duplicateEventId = \App\Services\TimelineRecorder::recordDuplicateImportEvent($existing->id, 'smart_paste');
+            if (!$duplicateEventId) {
+                throw new \RuntimeException('Failed to record duplicate import event');
             }
             
             return [
@@ -610,11 +606,9 @@ class ParseCoordinatorService
             // ✅ Record Occurrence
             ImportService::recordOccurrence((int)$saved->id, $batchId, 'smart_paste', null, $db);
 
-            // Record history
-            try {
-                \App\Services\TimelineRecorder::recordImportEvent((int)$saved->id, 'smart_paste');
-            } catch (\Throwable $t) {
-                error_log("Failed to record history: " . $t->getMessage());
+            $importEventId = \App\Services\TimelineRecorder::recordImportEvent((int)$saved->id, 'smart_paste');
+            if (!$importEventId) {
+                throw new \RuntimeException('Failed to record import history event');
             }
 
             if ($ownsTransaction) {

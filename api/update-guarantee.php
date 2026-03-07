@@ -8,9 +8,11 @@ use App\Repositories\GuaranteeRepository;
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Repositories\SupplierRepository;
 use App\Services\GuaranteeMutationPolicyService;
+use App\Support\TransactionBoundary;
 use App\Support\Database;
 use App\Support\Input;
 use App\Support\Settings;
+use App\Support\TypeNormalizer;
 use App\Models\Guarantee;
 
 header('Content-Type: application/json; charset=utf-8');
@@ -70,7 +72,7 @@ try {
     $contractNumber = Input::string($input, 'contract_number', '');
     $expiryDate = Input::string($input, 'expiry_date', '');
     $issueDate = Input::string($input, 'issue_date', '');
-    $type = Input::string($input, 'type', 'Initial');
+    $type = TypeNormalizer::normalize(Input::string($input, 'type', 'Initial'));
     $comment = Input::string($input, 'comment', '');
     $relatedTo = Input::string($input, 'related_to', 'contract');
 
@@ -99,28 +101,29 @@ try {
         'related_to' => $relatedTo,
     ]);
 
-    // Snapshot contract: always capture state BEFORE mutation.
-    $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
+    TransactionBoundary::run($db, static function () use ($db, $guaranteeId, $newRaw): void {
+        // Snapshot contract: always capture state BEFORE mutation.
+        $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
 
-    // Update DB
-    $updateSql = "UPDATE guarantees SET raw_data = ?, imported_at = CURRENT_TIMESTAMP";
-    $params = [json_encode($newRaw, JSON_UNESCAPED_UNICODE), $guaranteeId];
-    
-    $settings = Settings::getInstance();
-    if (!$settings->isProductionMode()) {
-        $updateSql .= ", is_test_data = 1";
-    }
-    
-    $updateSql .= " WHERE id = ?";
-    
-    $db->prepare($updateSql)->execute($params);
+        // Update DB
+        $updateSql = "UPDATE guarantees SET raw_data = ?, imported_at = CURRENT_TIMESTAMP";
+        $params = [json_encode($newRaw, JSON_UNESCAPED_UNICODE), $guaranteeId];
 
-    // Record Event
-    \App\Services\TimelineRecorder::recordManualEditEvent(
-        $guaranteeId,
-        $newRaw,
-        is_array($oldSnapshot) ? $oldSnapshot : null
-    );
+        $settings = Settings::getInstance();
+        if (!$settings->isProductionMode()) {
+            $updateSql .= ", is_test_data = 1";
+        }
+
+        $updateSql .= " WHERE id = ?";
+        $db->prepare($updateSql)->execute($params);
+
+        // Record Event
+        \App\Services\TimelineRecorder::recordManualEditEvent(
+            $guaranteeId,
+            $newRaw,
+            is_array($oldSnapshot) ? $oldSnapshot : null
+        );
+    });
 
     wbgl_api_compat_success([
         'message' => 'تم تعديل الضمان بنجاح',

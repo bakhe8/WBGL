@@ -29,6 +29,10 @@ try {
             'actions' => 'الإجراءات',
             'update' => '✏️ تحديث',
             'delete' => '🗑️ حذف',
+            'select' => 'تحديد',
+            'select_all' => 'تحديد الكل',
+            'selected_count' => 'المحدد: %d',
+            'delete_selected' => '🗑️ حذف المحدد',
         ];
         $en = [
             'pagination_prev' => 'Previous',
@@ -46,6 +50,10 @@ try {
             'actions' => 'Actions',
             'update' => '✏️ Update',
             'delete' => '🗑️ Delete',
+            'select' => 'Select',
+            'select_all' => 'Select All',
+            'selected_count' => 'Selected: %d',
+            'delete_selected' => '🗑️ Delete Selected',
         ];
         $dict = $isEn ? $en : $ar;
         return $dict[$key] ?? $key;
@@ -101,10 +109,26 @@ try {
         echo '<div id="banksTableContainer">';
         // Top Pagination
         echo renderPagination($page, $totalPages, (int)$totalRows, 'loadBanks', $t);
+
+        echo '<div class="bulk-selection-toolbar" data-bulk-entity="banks">';
+        echo '  <label class="bulk-selection-label">';
+        echo '      <input type="checkbox" data-bulk-select-all="banks" onchange="toggleSelectAll(\'banks\', this)">';
+        echo '      <span>' . htmlspecialchars($t('select_all')) . '</span>';
+        echo '  </label>';
+        echo '  <span class="bulk-selection-count" data-bulk-count="banks">'
+            . sprintf(htmlspecialchars($t('selected_count')), 0)
+            . '</span>';
+        echo '  <button class="btn btn-sm btn-danger" data-bulk-delete-btn="banks"'
+            . ' data-authorize-resource="bank" data-authorize-action="manage" data-authorize-mode="disable"'
+            . ' onclick="deleteSelectedBanks()" disabled>'
+            . htmlspecialchars($t('delete_selected'))
+            . '</button>';
+        echo '</div>';
         
         echo '<table class="data-table">
             <thead>
                 <tr>
+                    <th class="bulk-select-cell">' . htmlspecialchars($t('select')) . '</th>
                     <th>' . htmlspecialchars($t('id')) . '</th>
                     <th>' . htmlspecialchars($t('arabic_name')) . '</th>
                     <th>' . htmlspecialchars($t('english_name')) . '</th>
@@ -118,8 +142,10 @@ try {
             <tbody>';
         
         foreach ($banks as $bank) {
-            echo '<tr data-id="' . $bank['id'] . '">
-                <td>' . $bank['id'] . '</td>
+            $bankId = (int)($bank['id'] ?? 0);
+            echo '<tr data-id="' . $bankId . '">
+                <td class="bulk-select-cell"><input type="checkbox" class="bulk-row-checkbox" data-bulk-entity="banks" value="' . $bankId . '" onchange="updateBulkSelectionUI(\'banks\')"></td>
+                <td>' . $bankId . '</td>
                 <td><input type="text" class="row-input" name="arabic_name" value="' . htmlspecialchars($bank['arabic_name'] ?? '') . '"></td>
                 <td><input type="text" class="row-input" name="english_name" value="' . htmlspecialchars($bank['english_name'] ?? '') . '"></td>
                 <td><input type="text" class="row-input" name="short_name" value="' . htmlspecialchars($bank['short_name'] ?? '') . '"></td>
@@ -131,12 +157,12 @@ try {
                         data-authorize-resource="bank"
                         data-authorize-action="manage"
                         data-authorize-mode="disable"
-                        onclick="updateBank(' . $bank['id'] . ', this)">' . htmlspecialchars($t('update')) . '</button>
+                        onclick="updateBank(' . $bankId . ', this)">' . htmlspecialchars($t('update')) . '</button>
                     <button class="btn btn-sm btn-danger table-action-btn"
                         data-authorize-resource="bank"
                         data-authorize-action="manage"
                         data-authorize-mode="disable"
-                        onclick="deleteBank(' . $bank['id'] . ')">' . htmlspecialchars($t('delete')) . '</button>
+                        onclick="deleteBank(' . $bankId . ')">' . htmlspecialchars($t('delete')) . '</button>
                 </td>
             </tr>';
         }

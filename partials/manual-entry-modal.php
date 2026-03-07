@@ -114,6 +114,25 @@
     const form = document.getElementById('manualEntryForm');
     const modal = document.getElementById('manualEntryModal');
 
+    function wbglT(key, fallback) {
+        if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
+            return window.WBGLI18n.t(key, fallback || key);
+        }
+        return fallback || key;
+    }
+
+    async function wbglConfirm(message, options) {
+        if (window.WBGLDialog && typeof window.WBGLDialog.confirm === 'function') {
+            return window.WBGLDialog.confirm(String(message || ''), options || {});
+        }
+        if (typeof window.showToast === 'function') {
+            window.showToast(wbglT('common.dialog.unavailable', 'تعذر فتح نافذة التأكيد. أعد تحميل الصفحة.'), 'error');
+        } else {
+            console.error('WBGLDialog.confirm is not available');
+        }
+        return false;
+    }
+
     function hideManualEntryModal() {
         if (modal) {
             modal.style.display = 'none';
@@ -170,11 +189,17 @@
         if (!button) {
             return;
         }
-        button.addEventListener('click', function (event) {
+        button.addEventListener('click', async function (event) {
             event.preventDefault();
             event.stopImmediatePropagation();
             if (formModified) {
-                if (confirm(promptText)) {
+                const confirmed = await wbglConfirm(promptText, {
+                    title: wbglT('common.dialog.confirm_title', 'تأكيد الإجراء'),
+                    confirmText: wbglT('common.dialog.confirm', 'تأكيد'),
+                    cancelText: wbglT('common.dialog.cancel', 'إلغاء'),
+                    tone: 'danger'
+                });
+                if (confirmed) {
                     hideManualEntryModal();
                 }
                 return;
@@ -183,7 +208,7 @@
         });
     }
 
-    bindSafeClose(btnCancel, (window.WBGLI18n && typeof window.WBGLI18n.t === 'function' ? window.WBGLI18n.t('modals.manual_entry.unsaved.cancel', 'لديك تعديلات غير محفوظة. هل تريد الإلغاء؟') : 'لديك تعديلات غير محفوظة. هل تريد الإلغاء؟'));
-    bindSafeClose(btnClose, (window.WBGLI18n && typeof window.WBGLI18n.t === 'function' ? window.WBGLI18n.t('modals.manual_entry.unsaved.close', 'لديك تعديلات غير محفوظة. هل تريد الإغلاق؟') : 'لديك تعديلات غير محفوظة. هل تريد الإغلاق؟'));
+    bindSafeClose(btnCancel, wbglT('modals.manual_entry.unsaved.cancel', 'لديك تعديلات غير محفوظة. هل تريد الإلغاء؟'));
+    bindSafeClose(btnClose, wbglT('modals.manual_entry.unsaved.close', 'لديك تعديلات غير محفوظة. هل تريد الإغلاق؟'));
 })();
 </script>

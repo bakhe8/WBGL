@@ -7,6 +7,7 @@ require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 use App\Repositories\GuaranteeRepository;
 use App\Repositories\AttachmentRepository;
 use App\Support\Database;
+use App\Support\TypeNormalizer;
 use App\Models\Guarantee;
 
 wbgl_api_require_permission('manage_data');
@@ -43,7 +44,7 @@ try {
             'amount' => $cleanAmount,
             'contract_number' => $gData['contract_number'],
             'expiry_date' => $gData['expiry_date'] ?: null,
-            'type' => $gData['type'] ?? 'INITIAL',
+            'type' => TypeNormalizer::normalize((string)($gData['type'] ?? 'INITIAL')),
             'details' => $gData['comment'] ?? '',
             'source' => 'smart_workstation'
         ];

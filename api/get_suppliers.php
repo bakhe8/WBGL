@@ -29,6 +29,10 @@ try {
             'update' => '✏️ تحديث',
             'merge' => '🔗 دمج',
             'delete' => '🗑️ حذف',
+            'select' => 'تحديد',
+            'select_all' => 'تحديد الكل',
+            'selected_count' => 'المحدد: %d',
+            'delete_selected' => '🗑️ حذف المحدد',
         ];
         $en = [
             'pagination_prev' => 'Previous',
@@ -46,6 +50,10 @@ try {
             'update' => '✏️ Update',
             'merge' => '🔗 Merge',
             'delete' => '🗑️ Delete',
+            'select' => 'Select',
+            'select_all' => 'Select All',
+            'selected_count' => 'Selected: %d',
+            'delete_selected' => '🗑️ Delete Selected',
         ];
         $dict = $isEn ? $en : $ar;
         return $dict[$key] ?? $key;
@@ -98,10 +106,26 @@ try {
         echo '<div id="suppliersTableContainer">';
         // Top Pagination
         echo renderPagination($page, $totalPages, (int)$totalRows, 'loadSuppliers', $t);
+
+        echo '<div class="bulk-selection-toolbar" data-bulk-entity="suppliers">';
+        echo '  <label class="bulk-selection-label">';
+        echo '      <input type="checkbox" data-bulk-select-all="suppliers" onchange="toggleSelectAll(\'suppliers\', this)">';
+        echo '      <span>' . htmlspecialchars($t('select_all')) . '</span>';
+        echo '  </label>';
+        echo '  <span class="bulk-selection-count" data-bulk-count="suppliers">'
+            . sprintf(htmlspecialchars($t('selected_count')), 0)
+            . '</span>';
+        echo '  <button class="btn btn-sm btn-danger" data-bulk-delete-btn="suppliers"'
+            . ' data-authorize-resource="supplier" data-authorize-action="manage" data-authorize-mode="disable"'
+            . ' onclick="deleteSelectedSuppliers()" disabled>'
+            . htmlspecialchars($t('delete_selected'))
+            . '</button>';
+        echo '</div>';
         
         echo '<table class="data-table">
             <thead>
                 <tr>
+                    <th class="bulk-select-cell">' . htmlspecialchars($t('select')) . '</th>
                     <th>' . htmlspecialchars($t('id')) . '</th>
                     <th>' . htmlspecialchars($t('official_name')) . '</th>
                     <th>' . htmlspecialchars($t('english_name')) . '</th>
@@ -112,11 +136,13 @@ try {
             <tbody>';
         
         foreach ($suppliers as $s) {
+            $supplierId = (int)($s['id'] ?? 0);
             $selectedConfirmed = $s['is_confirmed'] ? 'selected' : '';
             $selectedUnconfirmed = !$s['is_confirmed'] ? 'selected' : '';
             
-            echo '<tr data-id="' . $s['id'] . '">
-                <td>' . htmlspecialchars($s['id']) . '</td>
+            echo '<tr data-id="' . $supplierId . '">
+                <td class="bulk-select-cell"><input type="checkbox" class="bulk-row-checkbox" data-bulk-entity="suppliers" value="' . $supplierId . '" onchange="updateBulkSelectionUI(\'suppliers\')"></td>
+                <td>' . htmlspecialchars((string)$supplierId) . '</td>
                 <td><input type="text" class="row-input" name="official_name" value="' . htmlspecialchars($s['official_name']) . '"></td>
                 <td><input type="text" class="row-input" name="english_name" value="' . htmlspecialchars($s['english_name'] ?? '') . '"></td>
                 <td>
@@ -130,17 +156,17 @@ try {
                         data-authorize-resource="supplier"
                         data-authorize-action="manage"
                         data-authorize-mode="disable"
-                        onclick="updateSupplier(' . $s['id'] . ', this)">' . htmlspecialchars($t('update')) . '</button>
+                        onclick="updateSupplier(' . $supplierId . ', this)">' . htmlspecialchars($t('update')) . '</button>
                     <button class="btn btn-sm btn-merge table-action-btn table-action-btn-spaced"
                         data-authorize-resource="supplier"
                         data-authorize-action="manage"
                         data-authorize-mode="disable"
-                        onclick="openMergeModal(' . $s['id'] . ', \'' . addslashes($s['official_name']) . '\')">' . htmlspecialchars($t('merge')) . '</button>
+                        onclick="openMergeModal(' . $supplierId . ', \'' . addslashes($s['official_name']) . '\')">' . htmlspecialchars($t('merge')) . '</button>
                     <button class="btn btn-sm btn-danger table-action-btn"
                         data-authorize-resource="supplier"
                         data-authorize-action="manage"
                         data-authorize-mode="disable"
-                        onclick="deleteSupplier(' . $s['id'] . ')">' . htmlspecialchars($t('delete')) . '</button>
+                        onclick="deleteSupplier(' . $supplierId . ')">' . htmlspecialchars($t('delete')) . '</button>
                 </td>
             </tr>';
         }

@@ -211,7 +211,14 @@ function fetch_generic_actor_rows(PDO $db, string $scope, ?int $limit): array
         SELECT h.id
         FROM guarantee_history h
         JOIN guarantees g ON g.id = h.guarantee_id
-        WHERE LOWER(TRIM(COALESCE(h.created_by, ''))) IN ('user', 'web_user', 'المستخدم', 'بواسطة المستخدم')
+        WHERE LOWER(TRIM(COALESCE(h.created_by, ''))) IN (
+            'user',
+            'web_user',
+            'المستخدم',
+            'بواسطة المستخدم',
+            'legacy_user_unresolved',
+            '?????? ??? ????? (?????? ?????)'
+        )
           {$scopeFilter['sql']}
         ORDER BY h.id ASC
     " . limit_sql($limit);
@@ -232,7 +239,14 @@ function fetch_generic_note_actor_rows(PDO $db, string $scope, ?int $limit): arr
         SELECT n.id
         FROM guarantee_notes n
         JOIN guarantees g ON g.id = n.guarantee_id
-        WHERE LOWER(TRIM(COALESCE(n.created_by, ''))) IN ('user', 'web_user', 'المستخدم', 'بواسطة المستخدم')
+        WHERE LOWER(TRIM(COALESCE(n.created_by, ''))) IN (
+            'user',
+            'web_user',
+            'المستخدم',
+            'بواسطة المستخدم',
+            'legacy_user_unresolved',
+            '?????? ??? ????? (?????? ?????)'
+        )
           {$scopeFilter['sql']}
         ORDER BY n.id ASC
     " . limit_sql($limit);
@@ -253,7 +267,14 @@ function fetch_generic_attachment_actor_rows(PDO $db, string $scope, ?int $limit
         SELECT a.id
         FROM guarantee_attachments a
         JOIN guarantees g ON g.id = a.guarantee_id
-        WHERE LOWER(TRIM(COALESCE(a.uploaded_by, ''))) IN ('user', 'web_user', 'المستخدم', 'بواسطة المستخدم')
+        WHERE LOWER(TRIM(COALESCE(a.uploaded_by, ''))) IN (
+            'user',
+            'web_user',
+            'المستخدم',
+            'بواسطة المستخدم',
+            'legacy_user_unresolved',
+            '?????? ??? ????? (?????? ?????)'
+        )
           {$scopeFilter['sql']}
         ORDER BY a.id ASC
     " . limit_sql($limit);
@@ -310,7 +331,8 @@ try {
     }
 
     $repairActor = 'legacy_repair_bot';
-    $unknownUserLabel = 'legacy_user_unresolved';
+    $unknownTimelineUserLabel = 'legacy_user_historical';
+    $unknownExternalUserLabel = 'Legacy User (Historical Data)';
     $hasActorColumns =
         SchemaInspector::columnExists($db, 'guarantee_history', 'actor_kind') &&
         SchemaInspector::columnExists($db, 'guarantee_history', 'actor_display') &&
@@ -448,9 +470,9 @@ try {
             }
 
             if ($hasActorColumns) {
-                $updateHistoryActorStmt->execute([$unknownUserLabel, $unknownUserLabel, $historyId]);
+                $updateHistoryActorStmt->execute([$unknownTimelineUserLabel, $unknownTimelineUserLabel, $historyId]);
             } else {
-                $updateHistoryActorStmt->execute([$unknownUserLabel, $historyId]);
+                $updateHistoryActorStmt->execute([$unknownTimelineUserLabel, $historyId]);
             }
 
             if ($updateHistoryActorStmt->rowCount() > 0) {
@@ -464,7 +486,7 @@ try {
                 continue;
             }
 
-            $updateNotesActorStmt->execute([$unknownUserLabel, $noteId]);
+            $updateNotesActorStmt->execute([$unknownExternalUserLabel, $noteId]);
             if ($updateNotesActorStmt->rowCount() > 0) {
                 $applied['notes_actor_normalized']++;
             }
@@ -476,7 +498,7 @@ try {
                 continue;
             }
 
-            $updateAttachmentActorStmt->execute([$unknownUserLabel, $attachmentId]);
+            $updateAttachmentActorStmt->execute([$unknownExternalUserLabel, $attachmentId]);
             if ($updateAttachmentActorStmt->rowCount() > 0) {
                 $applied['attachments_actor_normalized']++;
             }

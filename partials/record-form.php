@@ -26,6 +26,7 @@ if (!isset($record)) {
 
 // Default $isHistorical to false if not set
 $isHistorical = $isHistorical ?? false;
+$showInlineHistoricalBanner = $showInlineHistoricalBanner ?? $isHistorical;
 $recordCanExecuteActions = $recordCanExecuteActions ?? true;
 $bannerData = $bannerData ?? null; // Should contain ['timestamp' => '...', 'reason' => '...']
 ?>
@@ -45,7 +46,7 @@ $bannerData = $bannerData ?? null; // Should contain ['timestamp' => '...', 'rea
     <input type="hidden" id="eventSubtype" data-preview-field="event_subtype" value="<?= htmlspecialchars($latestEventSubtype ?? '') ?>">
 
 </div>
-<?php if ($isHistorical): ?>
+<?php if ($showInlineHistoricalBanner): ?>
     <div class="historical-banner-card">
         <div class="historical-banner-info">
             <span class="historical-banner-icon">📜</span>
@@ -190,6 +191,14 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
                 'approved' => 'index.workflow.step.approved',
                 'signed' => 'index.workflow.step.signed',
             ];
+            $workflowActionI18nMap = [
+                'draft' => 'index.workflow.action.audit',
+                'audited' => 'index.workflow.action.analyze',
+                'analyzed' => 'index.workflow.action.supervise',
+                'supervised' => 'index.workflow.action.approve',
+                'approved' => 'index.workflow.action.sign',
+                'signed' => 'index.workflow.action.completed',
+            ];
             $workflowStepLabelMap = [
                 'draft' => 'مسودة',
                 'audited' => 'تم التدقيق',
@@ -199,6 +208,7 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
                 'signed' => 'تم التوقيع',
             ];
             $workflowStepI18nKey = $workflowStepI18nMap[$workflowStep] ?? null;
+            $workflowActionI18nKey = $workflowActionI18nMap[$workflowStep] ?? null;
             $workflowStepLabel = $workflowStepLabelMap[$workflowStep] ?? $workflowStep;
             // Operational UI default: hide raw workflow-step badge to reduce noise.
             // Can be enabled explicitly by setting $showWorkflowStagePill = true before including this partial.
@@ -234,7 +244,7 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
                         data-authorize-mode="hide"
                         title=""
                         data-i18n-title="index.workflow.execute_next_step">
-                        ⚡ <?= $actionLabel ?>
+                        ⚡ <span <?= $workflowActionI18nKey ? 'data-i18n="' . htmlspecialchars($workflowActionI18nKey, ENT_QUOTES, 'UTF-8') . '"' : '' ?>><?= htmlspecialchars($actionLabel) ?></span>
                     </button>
                 <?php endif; ?>
                 <?php if ($canReject && $recordCanExecuteActions): ?>
@@ -243,8 +253,9 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
                         data-step="<?= $workflowStep ?>"
                         data-authorize-permission="<?= htmlspecialchars($requiredWorkflowPermission, ENT_QUOTES, 'UTF-8') ?>"
                         data-authorize-mode="hide"
-                        title="يرفض المرحلة الحالية ويعيد السجل لمدخل البيانات">
-                        ⛔ رفض
+                        title=""
+                        data-i18n-title="index.workflow.reject.title">
+                        ⛔ <span data-i18n="index.workflow.reject.label">رفض</span>
                     </button>
                 <?php endif; ?>
             </div>

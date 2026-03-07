@@ -169,7 +169,7 @@ class StatsService
 
     /**
      * Get a breakdown of tasks by responsibility
-     * Returns array of ['label' => string, 'count' => int, 'stage' => string]
+     * Returns array of ['label' => string, 'label_key' => string, 'count' => int, 'stage' => string]
      *
      * @param bool $includeEmptyStages When true, include allowed stages even if count is 0
      */
@@ -183,6 +183,7 @@ class StatsService
             if ($includeEmptyStages || $dataEntryTaskCount > 0) {
                 $breakdown[] = [
                     'label' => 'مهام مدخل البيانات',
+                    'label_key' => 'index.tasks.bucket.data_entry',
                     'count' => $dataEntryTaskCount,
                     'stage' => null,
                     'filter' => 'data_entry',
@@ -191,12 +192,12 @@ class StatsService
         }
 
         $stageConfigs = [
-            'draft' => ['label' => 'مهام التدقيق', 'permission' => 'audit_data', 'filter' => 'actionable'],
-            'audited' => ['label' => 'مهام التحليل', 'permission' => 'analyze_guarantee', 'filter' => 'actionable'],
-            'analyzed' => ['label' => 'مهام الإشراف', 'permission' => 'supervise_analysis', 'filter' => 'actionable'],
-            'supervised' => ['label' => 'مهام الاعتماد', 'permission' => 'approve_decision', 'filter' => 'actionable'],
-            'approved' => ['label' => 'مهام التوقيع', 'permission' => 'sign_letters', 'filter' => 'actionable'],
-            'signed' => ['label' => 'مهام الطباعة بعد التوقيع', 'permission' => 'manage_data', 'filter' => 'actionable'],
+            'draft' => ['label' => 'مهام التدقيق', 'label_key' => 'index.tasks.bucket.audit', 'permission' => 'audit_data', 'filter' => 'actionable'],
+            'audited' => ['label' => 'مهام التحليل', 'label_key' => 'index.tasks.bucket.analyze', 'permission' => 'analyze_guarantee', 'filter' => 'actionable'],
+            'analyzed' => ['label' => 'مهام الإشراف', 'label_key' => 'index.tasks.bucket.supervise', 'permission' => 'supervise_analysis', 'filter' => 'actionable'],
+            'supervised' => ['label' => 'مهام الاعتماد', 'label_key' => 'index.tasks.bucket.approve', 'permission' => 'approve_decision', 'filter' => 'actionable'],
+            'approved' => ['label' => 'مهام التوقيع', 'label_key' => 'index.tasks.bucket.sign', 'permission' => 'sign_letters', 'filter' => 'actionable'],
+            'signed' => ['label' => 'مهام الطباعة بعد التوقيع', 'label_key' => 'index.tasks.bucket.print_after_sign', 'permission' => 'manage_data', 'filter' => 'actionable'],
         ];
 
         foreach ($stageConfigs as $stage => $config) {
@@ -205,6 +206,7 @@ class StatsService
                 if ($includeEmptyStages || $count > 0) {
                     $breakdown[] = [
                         'label' => $config['label'],
+                        'label_key' => $config['label_key'],
                         'count' => $count,
                         'stage' => $stage,
                         'filter' => $config['filter'],

@@ -537,14 +537,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     </div>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            document.querySelectorAll('form[data-confirm-key]').forEach(function (form) { window.WBGLI18n && typeof window.WBGLI18n.t === 'function' && window.WBGLI18n.t('maintenance.meta.title', 'maintenance.meta.title');
-                form.addEventListener('submit', function (event) {
+            const wbglT = function (key, fallback) {
+                if (window.WBGLI18n && typeof window.WBGLI18n.t === 'function') {
+                    return window.WBGLI18n.t(key, fallback || key);
+                }
+                return fallback || key;
+            };
+
+            const wbglConfirm = async function (message) {
+                if (window.WBGLDialog && typeof window.WBGLDialog.confirm === 'function') {
+                    return window.WBGLDialog.confirm(String(message || ''), {
+                        title: wbglT('common.dialog.confirm_title', 'تأكيد الإجراء'),
+                        confirmText: wbglT('common.dialog.confirm', 'تأكيد'),
+                        cancelText: wbglT('common.dialog.cancel', 'إلغاء'),
+                        tone: 'danger'
+                    });
+                }
+                if (typeof window.showToast === 'function') {
+                    window.showToast(wbglT('common.dialog.unavailable', 'تعذر فتح نافذة التأكيد. أعد تحميل الصفحة.'), 'error');
+                } else {
+                    console.error('WBGLDialog.confirm is not available');
+                }
+                return false;
+            };
+
+            document.querySelectorAll('form[data-confirm-key]').forEach(function (form) {
+                form.addEventListener('submit', async function (event) {
+                    if (form.dataset.wbglConfirmPassed === '1') {
+                        return;
+                    }
+                    event.preventDefault();
+
                     const key = form.getAttribute('data-confirm-key') || '';
-                    const translated = window.WBGLI18n && typeof window.WBGLI18n.t === 'function'
-                        ? window.WBGLI18n.t(key, key)
-                        : key;
-                    if (!window.confirm(translated)) {
-                        event.preventDefault();
+                    const translated = wbglT(key, key);
+                    const confirmed = await wbglConfirm(translated);
+                    if (confirmed) {
+                        form.dataset.wbglConfirmPassed = '1';
+                        form.submit();
                     }
                 });
             });

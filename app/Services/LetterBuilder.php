@@ -110,7 +110,9 @@ class LetterBuilder
      */
     private static function buildReleaseContent(array $data): array
     {
-        $supplierName = htmlspecialchars($data['supplier_name'] ?? '');
+        $supplierName = '<span data-preview-target="supplier_name">'
+            . htmlspecialchars($data['supplier_name'] ?? '')
+            . '</span>';
 
         return [
             'paragraphs' => [
@@ -136,7 +138,9 @@ class LetterBuilder
         $rawType = trim($data['type'] ?? '');
         $introPhrase = PreviewFormatter::getIntroPhrase($rawType);
 
-        $supplierName = htmlspecialchars($data['supplier_name'] ?? '');
+        $supplierName = '<span data-preview-target="supplier_name">'
+            . htmlspecialchars($data['supplier_name'] ?? '')
+            . '</span>';
         $arabicAmount = PreviewFormatter::toArabicNumerals(
             number_format((float) ($data['amount'] ?? 0), 2)
         );

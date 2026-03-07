@@ -7,6 +7,7 @@ use App\Support\Database;
 use App\Repositories\GuaranteeRepository;
 use App\Models\Guarantee;
 use App\Support\SimpleXlsxReader;
+use App\Support\TransactionBoundary;
 use App\Support\TypeNormalizer;
 use App\Repositories\BatchMetadataRepository; // ✅ NEW
 use PDO;
@@ -181,38 +182,76 @@ class ImportService
                     importedBy: $importedBy
                 );
 
-                try {
-                    $created = $this->guaranteeRepo->create($guarantee);
-                    // ✅ [NEW] Record First Occurrence
-                    $this->recordOccurrence($created->id, $batchIdentifier, 'excel', null, $db);
+                $rowResult = TransactionBoundary::run($db, function () use (
+                    $guarantee,
+                    $guaranteeNumber,
+                    $batchIdentifier,
+                    $db
+                ): array {
+                    try {
+                        $created = $this->guaranteeRepo->create($guarantee);
+                        $createdId = (int)$created->id;
+                        if ($createdId <= 0) {
+                            throw new RuntimeException('Failed to persist imported guarantee');
+                        }
 
-                    // ✅ ARCHITECTURAL ENFORCEMENT: Use Post-Persist State from Repository Object
-                    $importedIdsWithData[] = ['id' => $created->id, 'raw_data' => $created->rawData]; 
-                    $imported++;
-                    
-                } catch (\PDOException $e) {
-                    // Decision #6: Handle duplicate guarantees (PostgreSQL + legacy compatibility)
-                    if (self::isDuplicateGuaranteeConstraint($e)) {
+                        // ✅ [NEW] Record First Occurrence
+                        $this->recordOccurrence($createdId, $batchIdentifier, 'excel', null, $db);
+
+                        $importEventId = TimelineRecorder::recordImportEvent($createdId, 'excel', $created->rawData);
+                        if (!$importEventId) {
+                            throw new RuntimeException('Failed to record import timeline event');
+                        }
+
+                        return [
+                            'kind' => 'imported',
+                            'id' => $createdId,
+                            'raw_data' => $created->rawData,
+                        ];
+                    } catch (\PDOException $e) {
+                        // Decision #6: Handle duplicate guarantees (PostgreSQL + legacy compatibility)
+                        if (!self::isDuplicateGuaranteeConstraint($e)) {
+                            throw $e;
+                        }
+
                         // Find existing guarantee
                         $existing = $this->guaranteeRepo->findByNumber($guaranteeNumber);
-                        
-                        if ($existing) {
-                            // ✅ [NEW] Record Re-Occurrence (The core of Batch-as-Context)
-                            $this->recordOccurrence($existing->id, $batchIdentifier, 'excel', null, $db);
-
-                            // Record duplicate import event in timeline
-                            \App\Services\TimelineRecorder::recordDuplicateImportEvent($existing->id, 'excel');
-                            $duplicates++;
-                            $skipped[] = "الصف #{$rowNumber}: ضمان مكرر (تم تسجيل ظهور جديد في الدفعة الحالية)";
+                        if (!$existing || (int)$existing->id <= 0) {
+                            throw $e;
                         }
-                        continue;
-                    }
 
-                    // Other database error
-                    throw $e;
-                } catch (\Throwable $e) {
-                    $errors[] = "الصف #{$rowNumber}: " . $e->getMessage();
+                        $existingId = (int)$existing->id;
+                        // ✅ [NEW] Record Re-Occurrence (The core of Batch-as-Context)
+                        $this->recordOccurrence($existingId, $batchIdentifier, 'excel', null, $db);
+
+                        $duplicateEventId = TimelineRecorder::recordDuplicateImportEvent($existingId, 'excel');
+                        if (!$duplicateEventId) {
+                            throw new RuntimeException('Failed to record duplicate import timeline event');
+                        }
+
+                        return [
+                            'kind' => 'duplicate',
+                            'id' => $existingId,
+                        ];
+                    }
+                });
+
+                if (($rowResult['kind'] ?? '') === 'imported') {
+                    $imported++;
+                    $importedIdsWithData[] = [
+                        'id' => (int)($rowResult['id'] ?? 0),
+                        'raw_data' => $rowResult['raw_data'] ?? [],
+                    ];
+                    continue;
                 }
+
+                if (($rowResult['kind'] ?? '') === 'duplicate') {
+                    $duplicates++;
+                    $skipped[] = "الصف #{$rowNumber}: ضمان مكرر (تم تسجيل ظهور جديد في الدفعة الحالية)";
+                    continue;
+                }
+
+                throw new RuntimeException('Unexpected import row result type');
 
             } catch (\Throwable $e) {
                 $errors[] = "الصف #{$rowNumber}: " . $e->getMessage();
@@ -315,6 +354,11 @@ class ImportService
 
             // ✅ [NEW] Record Occurrence for manual entry
             $this->recordOccurrence($created->id, $batchIdentifier, 'manual', null, $db);
+
+            $importEventId = TimelineRecorder::recordImportEvent((int)$created->id, 'manual', $created->rawData);
+            if (!$importEventId) {
+                throw new RuntimeException('Failed to record manual import timeline event');
+            }
 
             if ($ownsTransaction) {
                 $db->commit();

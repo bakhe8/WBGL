@@ -108,21 +108,7 @@ try {
             }
         }
 
-        // --- RECORD IMPORT EVENTS (Before Smart Processing!) ---
-        try {
-            if (!empty($importedRecords)) {
-                foreach ($importedRecords as $record) {
-                    \App\Services\TimelineRecorder::recordImportEvent(
-                        (int)$record['id'],
-                        'excel',
-                        $record['raw_data'] // Explicit canonical payload
-                    );
-                }
-            }
-        } catch (\Throwable $e) { 
-            error_log("Failed to record import events: " . $e->getMessage());
-        }
-        // -------------------------------------------------------
+        // Import events are now persisted atomically inside ImportService::importFromExcel.
 
         // --- POST IMPORT AUTOMATION ---
         $autoMatchStats = ['processed' => 0, 'auto_matched' => 0];

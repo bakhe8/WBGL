@@ -50,7 +50,26 @@
             window.showToast(message, type || 'info');
             return;
         }
-        window.alert(message);
+        if (window.WBGLDialog && typeof window.WBGLDialog.alert === 'function') {
+            window.WBGLDialog.alert(String(message || ''), {
+                title: t('common.dialog.notice_title', 'تنبيه'),
+                confirmText: t('common.dialog.ok', 'موافق'),
+            });
+            return;
+        }
+        console.error('Notification fallback (no UI dialog available):', message);
+    }
+
+    async function dialogConfirm(message, options) {
+        if (window.WBGLDialog && typeof window.WBGLDialog.confirm === 'function') {
+            return window.WBGLDialog.confirm(String(message || ''), options || {});
+        }
+        if (typeof window.showToast === 'function') {
+            window.showToast(t('common.dialog.unavailable', 'تعذر فتح نافذة التأكيد. أعد تحميل الصفحة.'), 'error');
+        } else {
+            console.error('WBGLDialog.confirm is not available');
+        }
+        return false;
     }
 
     function t(key, fallbackOrParams, maybeParams) {
@@ -798,7 +817,13 @@
     }
 
     async function deleteUser(userId) {
-        if (!window.confirm(t('users.ui.txt_466d886f'))) return;
+        const confirmed = await dialogConfirm(t('users.ui.txt_466d886f'), {
+            title: t('common.dialog.confirm_title', 'تأكيد الإجراء'),
+            confirmText: t('common.dialog.confirm', 'تأكيد'),
+            cancelText: t('common.dialog.cancel', 'إلغاء'),
+            tone: 'danger',
+        });
+        if (!confirmed) return;
 
         showLoading(true);
         try {
@@ -823,7 +848,15 @@
     async function deleteRole(roleId) {
         const role = rolesData.find((item) => Number(item.id) === Number(roleId));
         const roleName = role ? role.name : `#${roleId}`;
-        if (!window.confirm(`هل أنت متأكد من حذف الدور "${roleName}"؟`)) return;
+        const confirmed = await dialogConfirm(t('users.roles.confirm_delete', 'هل أنت متأكد من حذف الدور "{{role}}"؟', {
+            role: roleName
+        }), {
+            title: t('common.dialog.confirm_title', 'تأكيد الإجراء'),
+            confirmText: t('common.dialog.confirm', 'تأكيد'),
+            cancelText: t('common.dialog.cancel', 'إلغاء'),
+            tone: 'danger',
+        });
+        if (!confirmed) return;
 
         showLoading(true);
         try {

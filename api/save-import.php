@@ -5,6 +5,8 @@ require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
 use App\Services\ImportService;
+use App\Services\TimelineRecorder;
+use App\Support\TypeNormalizer;
 
 wbgl_api_require_permission('import_excel');
 
@@ -35,6 +37,8 @@ try {
 
     foreach ($input['guarantees'] as $g) {
         $gNo = $g['guarantee_number'];
+        $typeInput = trim((string)($g['type'] ?? ''));
+        $normalizedType = $typeInput !== '' ? TypeNormalizer::normalize($typeInput) : null;
         
         // 1. Find Existing or Create New
         $stmtFind = $pdo->prepare("SELECT id, raw_data FROM guarantees WHERE guarantee_number = ?");
@@ -45,6 +49,8 @@ try {
 
         if ($existing) {
             wbgl_api_require_guarantee_visibility((int)$existing['id']);
+            $existingId = (int)$existing['id'];
+            $oldSnapshot = TimelineRecorder::createSnapshot($existingId);
 
             // Update Existing
             $currentData = json_decode($existing['raw_data'], true) ?? [];
@@ -55,6 +61,9 @@ try {
                 'bank' => $g['bank_name'] ?? null,
                 'last_import_update' => date('Y-m-d H:i:s')
             ]);
+            if ($normalizedType !== null) {
+                $newData['type'] = $normalizedType;
+            }
             
             // NEW: Ensure is_test_data is set if we are in dev mode and it wasn't set
             $updateSql = "UPDATE guarantees SET raw_data = ?, imported_at = CURRENT_TIMESTAMP";
@@ -68,7 +77,16 @@ try {
             
             $stmtUpdate = $pdo->prepare($updateSql);
             $stmtUpdate->execute($updateParams);
-            $guaranteeId = $existing['id'];
+            $guaranteeId = $existingId;
+
+            $manualEditEventId = TimelineRecorder::recordManualEditEvent(
+                $existingId,
+                $newData,
+                is_array($oldSnapshot) ? $oldSnapshot : null
+            );
+            if (!$manualEditEventId) {
+                throw new RuntimeException('Failed to record timeline event for email import update');
+            }
         } else {
             // New Record
             $rawData = [
@@ -78,7 +96,7 @@ try {
                 'bank' => $g['bank_name'] ?? null,
                 'supplier' => $g['supplier'] ?? null,
                 'contract_number' => $g['contract_number'] ?? null,
-                'type' => $g['type'] ?? null,
+                'type' => $normalizedType,
             ];
             
             $isTestDataFlag = $autoMarkTestData ? 1 : 0;
@@ -86,6 +104,11 @@ try {
             $stmtInsert = $pdo->prepare("INSERT INTO guarantees (guarantee_number, raw_data, import_source, imported_at, is_test_data) VALUES (?, ?, 'email_import', CURRENT_TIMESTAMP, ?)");
             $stmtInsert->execute([$gNo, json_encode($rawData), $isTestDataFlag]);
             $guaranteeId = $pdo->lastInsertId();
+
+            $importEventId = TimelineRecorder::recordImportEvent((int)$guaranteeId, 'email', $rawData);
+            if (!$importEventId) {
+                throw new RuntimeException('Failed to record timeline event for email import create');
+            }
         }
 
         if ($guaranteeId !== null) {
@@ -143,6 +166,11 @@ try {
         $stmtInsert = $pdo->prepare("INSERT INTO guarantees (guarantee_number, raw_data, import_source, imported_at, is_test_data) VALUES (?, ?, 'email_import_draft', CURRENT_TIMESTAMP, ?)");
         $stmtInsert->execute([$draftNo, json_encode($rawData), $isTestDataFlag]);
         $guaranteeId = $pdo->lastInsertId();
+
+        $importEventId = TimelineRecorder::recordImportEvent((int)$guaranteeId, 'email', $rawData);
+        if (!$importEventId) {
+            throw new RuntimeException('Failed to record timeline event for email import draft create');
+        }
 
         ImportService::recordOccurrence((int)$guaranteeId, $batchIdentifier, 'email', null, $pdo);
         

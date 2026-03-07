@@ -591,6 +591,7 @@ $isDeveloperUser = \App\Support\ViewPolicy::isCurrentUserDeveloper();
 
 <script src="<?= $basePath ?>public/js/security.js?v=<?= time() ?>"></script>
 <script src="<?= $basePath ?>public/js/i18n.js?v=<?= time() ?>"></script>
+<script src="<?= $basePath ?>public/js/dialog-system.js?v=<?= time() ?>"></script>
 <script src="<?= $basePath ?>public/js/direction.js?v=<?= time() ?>"></script>
 <script src="<?= $basePath ?>public/js/theme.js?v=<?= time() ?>"></script>
 <script src="<?= $basePath ?>public/js/policy.js?v=<?= time() ?>"></script>

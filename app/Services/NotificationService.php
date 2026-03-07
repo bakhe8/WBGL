@@ -143,7 +143,9 @@ class NotificationService
             if ($unreadOnly) {
                 $sql .= " AND COALESCE(ns.is_read, n.is_read, 0) = 0";
             }
-            $sql .= " ORDER BY n.created_at ASC, n.id ASC LIMIT {$limit}";
+            // Show newest notifications first so recent alerts are not pushed
+            // out by older unread backlog entries.
+            $sql .= " ORDER BY n.created_at DESC, n.id DESC LIMIT {$limit}";
 
             $stmt = $db->prepare($sql);
             $stmt->execute([
@@ -160,7 +162,7 @@ class NotificationService
             if ($unreadOnly) {
                 $sql .= " AND is_read = 0";
             }
-            $sql .= " ORDER BY created_at ASC, id ASC LIMIT {$limit}";
+            $sql .= " ORDER BY created_at DESC, id DESC LIMIT {$limit}";
 
             $stmt = $db->prepare($sql);
             $stmt->execute(['username' => $username]);

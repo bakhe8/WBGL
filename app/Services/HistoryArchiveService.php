@@ -37,50 +37,67 @@ final class HistoryArchiveService
 
         $placeholders = implode(',', array_fill(0, count($normalizedIds), '?'));
 
+        $insertColumns = [
+            'original_history_id',
+            'guarantee_id',
+            'event_type',
+            'event_subtype',
+            'snapshot_data',
+            'event_details',
+            'letter_snapshot',
+            'history_version',
+            'patch_data',
+            'anchor_snapshot',
+            'is_anchor',
+            'anchor_reason',
+            'letter_context',
+            'template_version',
+            'created_at',
+            'created_by',
+            'archived_at',
+            'archived_by',
+            'archive_reason',
+            'source_table',
+        ];
+        $selectColumns = [
+            'gh.id',
+            'gh.guarantee_id',
+            'gh.event_type',
+            'gh.event_subtype',
+            'gh.snapshot_data',
+            'gh.event_details',
+            'gh.letter_snapshot',
+            'gh.history_version',
+            'gh.patch_data',
+            'gh.anchor_snapshot',
+            'gh.is_anchor',
+            'gh.anchor_reason',
+            'gh.letter_context',
+            'gh.template_version',
+            'gh.created_at',
+            'gh.created_by',
+            'CURRENT_TIMESTAMP',
+            '?',
+            '?',
+            '\'guarantee_history\'',
+        ];
+
+        $actorColumns = ['actor_kind', 'actor_display', 'actor_user_id', 'actor_username', 'actor_email'];
+        foreach ($actorColumns as $actorColumn) {
+            if (SchemaInspector::columnExists($db, 'guarantee_history_archive', $actorColumn)
+                && SchemaInspector::columnExists($db, 'guarantee_history', $actorColumn)
+            ) {
+                $insertColumns[] = $actorColumn;
+                $selectColumns[] = 'gh.' . $actorColumn;
+            }
+        }
+
         $sqlBase = "
             INSERT INTO guarantee_history_archive (
-                original_history_id,
-                guarantee_id,
-                event_type,
-                event_subtype,
-                snapshot_data,
-                event_details,
-                letter_snapshot,
-                history_version,
-                patch_data,
-                anchor_snapshot,
-                is_anchor,
-                anchor_reason,
-                letter_context,
-                template_version,
-                created_at,
-                created_by,
-                archived_at,
-                archived_by,
-                archive_reason,
-                source_table
+                " . implode(",\n                ", $insertColumns) . "
             )
             SELECT
-                gh.id,
-                gh.guarantee_id,
-                gh.event_type,
-                gh.event_subtype,
-                gh.snapshot_data,
-                gh.event_details,
-                gh.letter_snapshot,
-                gh.history_version,
-                gh.patch_data,
-                gh.anchor_snapshot,
-                gh.is_anchor,
-                gh.anchor_reason,
-                gh.letter_context,
-                gh.template_version,
-                gh.created_at,
-                gh.created_by,
-                CURRENT_TIMESTAMP,
-                ?,
-                ?,
-                'guarantee_history'
+                " . implode(",\n                ", $selectColumns) . "
             FROM guarantee_history gh
             WHERE gh.guarantee_id IN ({$placeholders})
         ";

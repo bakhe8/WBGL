@@ -61,6 +61,18 @@ function wbglT(key, fallback, params) {
     return fallback || key;
 }
 
+async function wbglDialogPrompt(options) {
+    if (window.WBGLDialog && typeof window.WBGLDialog.prompt === 'function') {
+        return window.WBGLDialog.prompt(options || {});
+    }
+    if (typeof window.showToast === 'function') {
+        window.showToast(wbglT('common.dialog.unavailable', 'تعذر فتح نافذة الإدخال. أعد تحميل الصفحة.'), 'error');
+    } else {
+        console.error('WBGLDialog.prompt is not available');
+    }
+    return null;
+}
+
 function wbglCanHandleGlobalShortcut(event) {
     if (event.ctrlKey || event.metaKey || event.altKey) {
         return false;
@@ -239,9 +251,20 @@ document.addEventListener('DOMContentLoaded', () => {
         let requestBody = { guarantee_id: guaranteeId };
         let endpoint = '/api/workflow-advance.php';
         if (action === 'workflow-reject') {
-            const reason = (window.prompt('اكتب سبب الرفض (إجباري):') || '').trim();
+            const reasonInput = await wbglDialogPrompt({
+                title: wbglT('index.workflow.reject.title', 'سبب الرفض'),
+                message: wbglT('index.workflow.reject.prompt', ''),
+                kind: wbglT('index.workflow.reject.label', 'رفض'),
+                placeholder: wbglT('index.workflow.reject.placeholder', 'اكتب سبب الرفض'),
+                required: true,
+                requiredMessage: wbglT('index.workflow.reject.reason_required', ''),
+                confirmText: wbglT('index.workflow.reject.confirm_button', 'تأكيد الرفض'),
+                cancelText: wbglT('common.dialog.cancel', 'إلغاء'),
+                tone: 'warning',
+            });
+            const reason = (reasonInput || '').trim();
             if (!reason) {
-                showToast('سبب الرفض مطلوب.', 'warning');
+                showToast(wbglT('index.workflow.reject.reason_required', ''), 'warning');
                 return;
             }
             endpoint = '/api/workflow-reject.php';
@@ -251,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.disabled = true;
         const originalText = btn.textContent;
         btn.textContent = action === 'workflow-reject'
-            ? 'جاري الرفض...'
+            ? wbglT('index.workflow.reject.in_progress', '')
             : wbglT('index.workflow.execute_next_step', '');
 
         try {

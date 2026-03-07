@@ -24,6 +24,38 @@ if (!window.RecordsController) {
             // Preview is ALWAYS visible now
             this.previewVisible = true;
             this.printDropdownVisible = false;
+            this.previewBaselineHtml = null;
+            this.capturePreviewBaseline(true);
+        }
+
+        capturePreviewBaseline(force = false) {
+            const previewSection = document.getElementById('preview-section');
+            if (!(previewSection instanceof HTMLElement)) {
+                return false;
+            }
+
+            if (!force && typeof this.previewBaselineHtml === 'string' && this.previewBaselineHtml !== '') {
+                return true;
+            }
+
+            this.previewBaselineHtml = previewSection.innerHTML || '';
+            return true;
+        }
+
+        resetPreviewToBaseline() {
+            const previewSection = document.getElementById('preview-section');
+            if (!(previewSection instanceof HTMLElement)) {
+                return false;
+            }
+
+            if (typeof this.previewBaselineHtml !== 'string' || this.previewBaselineHtml === '') {
+                if (!this.capturePreviewBaseline(true)) {
+                    return false;
+                }
+            }
+
+            previewSection.innerHTML = this.previewBaselineHtml;
+            return true;
         }
 
         flushPendingToast() {
@@ -101,6 +133,9 @@ if (!window.RecordsController) {
             document.addEventListener('guarantee:updated', () => {
                 this.syncSuggestionVisibility();
                 BglLogger.debug('records.guarantee_updated');
+                if (!this.isHistoricalMode()) {
+                    this.capturePreviewBaseline(true);
+                }
                 this.updatePreviewFromDOM();
                 this.syncPreviewPrintButtonVisibility();
 
@@ -334,26 +369,28 @@ if (!window.RecordsController) {
                 }
 
                 // Update corresponding preview target
-                const target = document.querySelector(`[data-preview-target="${fieldName}"]`);
-                if (target && fieldValue) {
-                    target.textContent = fieldValue;
+                const targets = document.querySelectorAll(`[data-preview-target="${fieldName}"]`);
+                if (targets.length > 0) {
+                    targets.forEach((target) => {
+                        target.textContent = fieldValue || '';
 
-                    // ✨ SPECIFIC SYNC: Handle Contract vs PO target attributes
-                    if (fieldName === 'contract_number') {
-                        const relatedToInput = document.getElementById('relatedTo');
-                        const relatedTo = relatedToInput ? relatedToInput.value : 'contract';
+                        // ✨ SPECIFIC SYNC: Handle Contract vs PO target attributes
+                        if (fieldName === 'contract_number') {
+                            const relatedToInput = document.getElementById('relatedTo');
+                            const relatedTo = relatedToInput ? relatedToInput.value : 'contract';
 
-                        // 1. Update Lang Attribute: Contract=EN, PO=AR
-                        target.setAttribute('lang', relatedTo === 'contract' ? 'en' : 'ar');
+                            // 1. Update Lang Attribute: Contract=EN, PO=AR
+                            target.setAttribute('lang', relatedTo === 'contract' ? 'en' : 'ar');
 
-                        // 2. Update Label: Contract=للعقد رقم, PO=لأمر الشراء رقم
-                        const labelTarget = document.querySelector('[data-preview-target="related_label"]');
-                        if (labelTarget) {
-                            labelTarget.textContent = (relatedTo === 'purchase_order')
-                                ? this.t('messages.records.preview.related_label.purchase_order')
-                                : this.t('messages.records.preview.related_label.contract');
+                            // 2. Update Label: Contract=للعقد رقم, PO=لأمر الشراء رقم
+                            const labelTarget = document.querySelector('[data-preview-target="related_label"]');
+                            if (labelTarget) {
+                                labelTarget.textContent = (relatedTo === 'purchase_order')
+                                    ? this.t('messages.records.preview.related_label.purchase_order')
+                                    : this.t('messages.records.preview.related_label.contract');
+                            }
                         }
-                    }
+                    });
                 }
             });
 

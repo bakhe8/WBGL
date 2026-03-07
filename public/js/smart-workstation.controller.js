@@ -9,6 +9,18 @@ const wsT = (key, fallback, params) => {
     return fallback || key;
 };
 
+async function wsConfirm(message, options) {
+    if (window.WBGLDialog && typeof window.WBGLDialog.confirm === 'function') {
+        return window.WBGLDialog.confirm(message, options || {});
+    }
+    if (typeof window.showToast === 'function') {
+        window.showToast(wsT('common.dialog.unavailable', 'تعذر فتح نافذة التأكيد. أعد تحميل الصفحة.'), 'error');
+    } else {
+        console.error('WBGLDialog.confirm is not available');
+    }
+    return false;
+}
+
 window.SmartWorkstation = {
     state: {
         draftId: null,
@@ -91,9 +103,15 @@ window.SmartWorkstation = {
         document.body.classList.add('wbgl-lock-scroll');
     },
 
-    close() {
+    async close() {
         if (this.state.entries.length > 1 || this.isFormModified()) {
-            if (!confirm(wsT('index.workstation.confirm.close_unsaved', ''))) return;
+            const confirmed = await wsConfirm(wsT('index.workstation.confirm.close_unsaved', ''), {
+                title: wsT('index.workstation.confirm.close_title', 'تأكيد الإغلاق'),
+                confirmText: wsT('index.workstation.confirm.close_button', 'إغلاق'),
+                cancelText: wsT('common.dialog.cancel', 'إلغاء'),
+                tone: 'danger',
+            });
+            if (!confirmed) return;
         }
         const workstation = document.getElementById('smartWorkstation');
         if (workstation) {
@@ -192,8 +210,14 @@ window.SmartWorkstation = {
         }
     },
 
-    resetForm() {
-        if (!confirm(wsT('index.workstation.confirm.reset_current', ''))) return;
+    async resetForm() {
+        const confirmed = await wsConfirm(wsT('index.workstation.confirm.reset_current', ''), {
+            title: wsT('index.workstation.confirm.reset_title', 'تأكيد إعادة الضبط'),
+            confirmText: wsT('index.workstation.confirm.reset_button', 'إعادة ضبط'),
+            cancelText: wsT('common.dialog.cancel', 'إلغاء'),
+            tone: 'danger',
+        });
+        if (!confirmed) return;
         document.getElementById('wsGuarantee').value = '';
         document.getElementById('wsAmount').value = '';
         document.getElementById('wsExpiry').value = '';

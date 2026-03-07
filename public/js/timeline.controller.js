@@ -66,25 +66,19 @@ if (!window.TimelineController) {
             return parseInt(match[1], 10);
         }
 
-        processTimelineClick(element) {
+        async processTimelineClick(element) {
             // DEBOUNCE: Prevent rapid double-clicks
             if (this.isProcessing) return;
             this.isProcessing = true;
             setTimeout(() => { this.isProcessing = false; }, 300);
 
             const eventId = this.normalizeEventId(element.dataset.eventId);
-            const snapshotData = element.dataset.snapshot;
             if (eventId === null) {
                 this.showError(this.t('timeline.error.event_id_unresolved'));
                 return;
             }
 
             try {
-                let snapshot = null;
-                if (snapshotData && snapshotData !== '{}' && snapshotData !== 'null') {
-                    snapshot = JSON.parse(snapshotData);
-                }
-
                 // Remove active class from all cards
                 document.querySelectorAll('.timeline-event-wrapper').forEach(card => {
                     card.querySelector('.timeline-event-card')?.classList.remove('active-event');
@@ -93,14 +87,7 @@ if (!window.TimelineController) {
                 // Add active class to clicked card
                 element.querySelector('.timeline-event-card')?.classList.add('active-event');
 
-                // Use resolved before-state snapshot from timeline payload.
-                if (!snapshot || Object.keys(snapshot).length === 0) {
-                    this.showError(this.t('timeline.error.no_historical_data'));
-                    return;
-                }
-
-                this.displayHistoricalState(snapshot, eventId);
-                document.dispatchEvent(new CustomEvent('guarantee:updated'));
+                await this.displayHistoricalState(eventId, element);
 
             } catch (error) {
                 console.error('TL_CLICK_ERR', error);
@@ -108,90 +95,97 @@ if (!window.TimelineController) {
             }
         }
 
-        displayHistoricalState(snapshot, eventId) {
-            BglLogger.debug('TL_SHOW_HISTORICAL_STATE', snapshot);
-
-            // Parse snapshot if it's a string
-            let snapshotData = snapshot;
-            if (typeof snapshot === 'string') {
-                try {
-                    snapshotData = JSON.parse(snapshot);
-                } catch (e) {
-                    console.error('TL_PARSE_SNAPSHOT_ERR', e);
-                    return;
-                }
+        getCurrentIndex() {
+            const currentRecordEl = document.getElementById('record-form-section');
+            const fromDom = currentRecordEl ? parseInt(String(currentRecordEl.dataset.recordIndex || '1'), 10) : 1;
+            if (Number.isInteger(fromDom) && fromDom > 0) {
+                return fromDom;
             }
 
-            // Check if snapshot is empty
-            if (!snapshotData || Object.keys(snapshotData).length === 0) { // Removed snapshotData._no_snapshot check
-                BglLogger.warn('TL_SNAPSHOT_EMPTY');
-                if (window.showToast) window.showToast(this.t('timeline.error.no_historical_data'), 'error');
-                return;
+            const urlParams = new URLSearchParams(window.location.search);
+            const fromQuery = parseInt(String(urlParams.get('index') || '1'), 10);
+            return Number.isInteger(fromQuery) && fromQuery > 0 ? fromQuery : 1;
+        }
+
+        async fetchTimelineViewState(params) {
+            const query = new URLSearchParams();
+            if (params.historyId) {
+                query.set('history_id', String(params.historyId));
+            }
+            if (params.guaranteeId) {
+                query.set('guarantee_id', String(params.guaranteeId));
+            }
+            query.set('index', String(this.getCurrentIndex()));
+
+            const response = await fetch(`/api/get-timeline-view-state.php?${query.toString()}`);
+            const data = await response.json();
+            if (!data || !data.success) {
+                throw new Error((data && data.error) || 'TIMELINE_VIEW_STATE_FAILED');
+            }
+            return data;
+        }
+
+        applyServerStatePayload(payload) {
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('Invalid server payload');
             }
 
+            const recordHtml = String(payload.record_html || '');
+            const previewHtml = String(payload.preview_html || '');
 
-            // Mark as historical view (no client-side state saving - Server is source of truth)
+            const recordSection = document.getElementById('record-form-section');
+            if (recordSection && recordHtml.trim() !== '') {
+                recordSection.outerHTML = recordHtml;
+            }
+
+            const previewSection = document.getElementById('preview-section');
+            if (previewSection && previewHtml.trim() !== '') {
+                previewSection.outerHTML = previewHtml;
+            } else if (previewSection) {
+                previewSection.innerHTML = '';
+                previewSection.hidden = true;
+                previewSection.classList.add('u-hidden');
+            }
+
+            if (window.WBGLPolicy && typeof window.WBGLPolicy.applyDomGuards === 'function') {
+                window.WBGLPolicy.applyDomGuards(document);
+            }
+
+            if (window.recordsController && typeof window.recordsController.capturePreviewBaseline === 'function') {
+                window.recordsController.capturePreviewBaseline(true);
+            }
+
+            if (window.PreviewFormatter) {
+                window.PreviewFormatter.applyFormatting();
+            }
+
+            this.normalizePreviewPrintButton();
+            if (window.recordsController && typeof window.recordsController.syncSuggestionVisibility === 'function') {
+                window.recordsController.syncSuggestionVisibility();
+            }
+            if (window.recordsController && typeof window.recordsController.syncPreviewPrintButtonVisibility === 'function') {
+                window.recordsController.syncPreviewPrintButtonVisibility();
+            }
+        }
+
+        async displayHistoricalState(eventId, eventElement) {
+            BglLogger.debug('TL_SHOW_HISTORICAL_STATE_SERVER', { eventId: eventId });
+
+            const data = await this.fetchTimelineViewState({ historyId: eventId });
+            this.applyServerStatePayload(data);
+
+            this.currentGuaranteeId = parseInt(String(data.guarantee_id || '0'), 10) || null;
+            this.currentEventId = eventId;
             this.isHistoricalView = true;
-            // ✨ NEW: Context-Aware Highlighting & Banner Metadata
-            const eventElement = document.querySelector(`[data-event-id="${eventId}"]`);
-            this.currentEventSubtype = eventElement?.dataset.eventSubtype || null;
+            this.currentEventSubtype = String(data.event_subtype || eventElement?.dataset.eventSubtype || '');
 
-            // 1. Update Banner with Audit Info
-            this.showHistoricalBanner(eventElement);
+            this.showHistoricalBanner(eventElement || null);
+            this.highlightChanges(eventElement || null);
 
-            // 2. Highlight Delta (What changed in THIS step)
-            this.highlightChanges(eventElement);
-
-            let dataToDisplay = snapshotData;
-            let htmlSnapshotUsed = false;  // Track if we used HTML snapshot
-
-            // For Action Events: use letter_snapshot (After State - Final Values)
-            if (this.currentEventSubtype === 'extension' ||
-                this.currentEventSubtype === 'reduction' ||
-                this.currentEventSubtype === 'release') {
-
-                const letterSnapshotRaw = eventElement?.dataset.letterSnapshot;
-
-                if (letterSnapshotRaw && letterSnapshotRaw !== 'null' && !letterSnapshotRaw.trim().startsWith('{')) {
-                    BglLogger.debug('TL_USE_HTML_LETTER_SNAPSHOT');
-
-                    // Replace preview section with pre-rendered HTML
-                    const previewSection = document.getElementById('preview-section');
-                    if (previewSection) {
-                        previewSection.innerHTML = letterSnapshotRaw;
-
-                        // ✨ Apply unified formatting layer (digits, text direction)
-                        if (window.PreviewFormatter) {
-                            window.PreviewFormatter.applyFormatting();
-                        }
-
-                        htmlSnapshotUsed = true;
-                    }
-                }
-            }
-
-            // Update form fields with selected snapshot (only if not using HTML)
-            if (!htmlSnapshotUsed) {
-                this.updateFormFields(dataToDisplay);
-
-                // ✨ Apply formatting AFTER fields are updated
-                if (window.PreviewFormatter) {
-                    window.PreviewFormatter.applyFormatting();
-                }
-            } else {
-                // Still update Data Card for context
-                this.updateFormFields(snapshotData);
-
-                // ✨ Apply formatting AFTER fields are updated
-                if (window.PreviewFormatter) {
-                    window.PreviewFormatter.applyFormatting();
-                }
-            }
-
-            // 🔥 CRITICAL FIX: Persist subtype to hidden input for RecordsController to see
+            const previewAction = String(data.preview_action || this.currentEventSubtype || '');
             const activeActionInput = document.getElementById('activeAction');
             if (activeActionInput) {
-                activeActionInput.value = this.currentEventSubtype || '';
+                activeActionInput.value = previewAction;
             }
 
             const eventSubtypeInput = document.getElementById('eventSubtype');
@@ -199,19 +193,7 @@ if (!window.TimelineController) {
                 eventSubtypeInput.value = this.currentEventSubtype || '';
             }
 
-            // Disable editing
             this.disableEditing();
-
-            // ⚠️ CRITICAL: Skip updatePreviewFromDOM if HTML snapshot was used!
-            if (!htmlSnapshotUsed && window.recordsController?.previewVisible) {
-                window.recordsController.updatePreviewFromDOM();
-            }
-
-            // Ensure legacy/current print button markup always renders the same shape/style.
-            this.normalizePreviewPrintButton();
-            if (window.recordsController && typeof window.recordsController.syncPreviewPrintButtonVisibility === 'function') {
-                window.recordsController.syncPreviewPrintButtonVisibility();
-            }
         }
 
         normalizePreviewPrintButton() {
@@ -506,46 +488,20 @@ if (!window.TimelineController) {
             }
 
             try {
-                // Fetch current state from server (Server-Driven Architecture)
-                const response = await fetch(`/api/get-current-state.php?id=${currentId}`);
-                const data = await response.json();
-
-                if (!data.success) {
-                    throw new Error(data.error || 'LOAD_CURRENT_STATE_FAILED');
-                }
-
-                // ← NEW: إزالة event context بشكل صريح
-                this.currentEventSubtype = null;
-
-                // ✅ Update activeAction in Data Card from server snapshot
-                const activeActionInput = document.getElementById('activeAction');
-                if (activeActionInput && data.snapshot) {
-                    activeActionInput.value = data.snapshot.active_action || '';
-                }
-
-                // Update form fields with current state snapshot
-                this.updateFormFields(data.snapshot || {});
-
-                // ✨ Apply formatting AFTER fields are updated
-                if (window.PreviewFormatter) {
-                    window.PreviewFormatter.applyFormatting();
-                }
-
-                this.normalizePreviewPrintButton();
-                if (window.recordsController && typeof window.recordsController.syncPreviewPrintButtonVisibility === 'function') {
-                    window.recordsController.syncPreviewPrintButtonVisibility();
-                }
+                const data = await this.fetchTimelineViewState({ guaranteeId: currentId });
+                this.applyServerStatePayload(data);
 
                 // Hide historical banner (this is Current State)
                 this.removeHistoricalBanner();
 
-                // Enable editing (show buttons, enable inputs)
-                this.enableEditing();
-
                 // Reset timeline state
                 this.isHistoricalView = false;
                 this.currentEventId = null;
-                this.currentGuaranteeId = null;
+                this.currentGuaranteeId = parseInt(String(currentId), 10) || null;
+                this.currentEventSubtype = null;
+
+                // Enable editing (show buttons, enable inputs)
+                this.enableEditing();
 
                 // Re-activate latest timeline event
                 document.querySelectorAll('.timeline-event-wrapper').forEach(card => {

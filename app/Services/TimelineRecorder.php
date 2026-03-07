@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\SchemaInspector;
 use PDO;
 
 /**
@@ -482,6 +483,7 @@ class TimelineRecorder
         ], $details);
 
         $creatorText = self::normalizeCreator((string)$creator);
+        $actorStorage = TimelinePresentationNormalizer::actorStorageFromCreator($creatorText);
 
         error_log("🔍 recording event: Type=$type Subtype=$subtype GID=$guaranteeId");
 
@@ -510,6 +512,27 @@ class TimelineRecorder
             $eventTimestamp,
             $creatorText,
         ];
+
+        if (SchemaInspector::columnExists($db, 'guarantee_history', 'actor_kind')) {
+            $columns[] = 'actor_kind';
+            $values[] = $actorStorage['actor_kind'];
+        }
+        if (SchemaInspector::columnExists($db, 'guarantee_history', 'actor_display')) {
+            $columns[] = 'actor_display';
+            $values[] = $actorStorage['actor_display'];
+        }
+        if (SchemaInspector::columnExists($db, 'guarantee_history', 'actor_user_id')) {
+            $columns[] = 'actor_user_id';
+            $values[] = $actorStorage['actor_user_id'];
+        }
+        if (SchemaInspector::columnExists($db, 'guarantee_history', 'actor_username')) {
+            $columns[] = 'actor_username';
+            $values[] = $actorStorage['actor_username'];
+        }
+        if (SchemaInspector::columnExists($db, 'guarantee_history', 'actor_email')) {
+            $columns[] = 'actor_email';
+            $values[] = $actorStorage['actor_email'];
+        }
 
         if (!\App\Services\TimelineHybridLedger::supportsHybridColumns($db)) {
             throw new \RuntimeException('Hybrid history columns are required before writing timeline events');
@@ -761,7 +784,7 @@ class TimelineRecorder
     public static function getTimeline($guaranteeId)
     {
         $db = \App\Support\Database::connection();
-        $stmt = $db->prepare("SELECT * FROM guarantee_history WHERE guarantee_id = ? ORDER BY created_at DESC, id DESC");
+        $stmt = $db->prepare("SELECT * FROM guarantee_history WHERE guarantee_id = ? ORDER BY id DESC");
         $stmt->execute([$guaranteeId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

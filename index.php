@@ -964,8 +964,6 @@ $formattedSuppliers = array_map(function ($s) {
 
         #notificationsSection.notifications-overlay {
             position: fixed;
-            right: 350px;
-            left: auto;
             bottom: 16px;
             width: min(390px, calc(100vw - 32px));
             z-index: 1500;
@@ -976,6 +974,16 @@ $formattedSuppliers = array_map(function ($s) {
             isolation: isolate;
         }
 
+        #notificationsSection.notifications-overlay[dir="rtl"] {
+            right: 350px;
+            left: auto;
+        }
+
+        #notificationsSection.notifications-overlay[dir="ltr"] {
+            left: 350px;
+            right: auto;
+        }
+
         #notificationsSection.notifications-overlay.u-hidden {
             display: none !important;
         }
@@ -984,22 +992,29 @@ $formattedSuppliers = array_map(function ($s) {
             position: relative;
             margin-top: 2px;
             min-height: 170px;
-            height: calc(156px + (var(--cards-visible, 1) * 14px));
-            max-height: 320px;
+            direction: var(--notifications-dir, rtl);
+            --notification-card-height: 156px;
+            --stack-cap: 8;
+            --stack-step: 14px;
+            --stack-hover-lift: 3px;
+            --stack-x-step: 0px;
+            --stack-tilt-factor: 0;
+            --expanded-card-gap: 8px;
+            height: calc(var(--notification-card-height) + (var(--stack-step) * min(var(--cards-visible, 1), var(--stack-cap))));
+            max-height: 286px;
             padding: 0;
             overflow: visible;
             pointer-events: auto;
-            --stack-step: 16px;
-            --stack-hover-lift: 4px;
-            --stack-tilt-factor: 1;
         }
 
         .notifications-stack.is-expanded {
             --stack-step: 0;
             --stack-hover-lift: 0;
             --stack-tilt-factor: 0;
+            --stack-x-step: 0px;
             height: auto;
-            max-height: min(70vh, 760px);
+            /* 3.5 cards visible in hover/expanded mode */
+            max-height: min(64vh, 574px);
             overflow-y: auto;
             overflow-x: visible;
             padding-inline-end: 4px;
@@ -1011,8 +1026,8 @@ $formattedSuppliers = array_map(function ($s) {
             right: auto;
             top: auto;
             transform: none !important;
-            margin-bottom: 10px;
-            min-height: 0;
+            margin-bottom: var(--expanded-card-gap);
+            min-height: var(--notification-card-height);
             z-index: auto;
         }
 
@@ -1031,6 +1046,9 @@ $formattedSuppliers = array_map(function ($s) {
             left: 0;
             right: 0;
             top: 0;
+            direction: inherit;
+            text-align: start;
+            unicode-bidi: plaintext;
             background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 96%, white) 0%, var(--bg-card) 100%);
             border: 1px solid var(--border-primary);
             border-radius: 13px;
@@ -1038,20 +1056,20 @@ $formattedSuppliers = array_map(function ($s) {
             box-shadow: 0 4px 14px rgba(0, 0, 0, 0.11);
             transition: transform 0.16s ease, box-shadow 0.16s ease;
             transform: translate3d(
-                calc(var(--stack-index, 0) * -3px),
-                calc(var(--stack-index, 0) * var(--stack-step, 16px)),
+                calc(min(var(--stack-index, 0), var(--stack-cap, 8)) * var(--stack-x-step, 0px)),
+                calc(min(var(--stack-index, 0), var(--stack-cap, 8)) * var(--stack-step, 14px)),
                 0
             ) rotate(calc(var(--stack-tilt, 0) * var(--stack-tilt-factor, 1) * 1deg));
             z-index: calc(120 - var(--stack-index, 0));
-            min-height: 158px;
+            min-height: var(--notification-card-height);
             pointer-events: auto;
             cursor: default;
         }
 
         .notification-card:hover {
             transform: translate3d(
-                calc(var(--stack-index, 0) * -3px),
-                calc(var(--stack-index, 0) * var(--stack-step, 16px) - var(--stack-hover-lift, 4px)),
+                calc(min(var(--stack-index, 0), var(--stack-cap, 8)) * var(--stack-x-step, 0px)),
+                calc(min(var(--stack-index, 0), var(--stack-cap, 8)) * var(--stack-step, 14px) - var(--stack-hover-lift, 3px)),
                 0
             ) rotate(calc(var(--stack-tilt, 0) * var(--stack-tilt-factor, 1) * 1deg));
             box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
@@ -1060,8 +1078,8 @@ $formattedSuppliers = array_map(function ($s) {
 
         .notification-card.is-focused {
             transform: translate3d(
-                calc(var(--stack-index, 0) * -4px),
-                calc(var(--stack-index, 0) * var(--stack-step, 16px) - 8px),
+                calc(min(var(--stack-index, 0), var(--stack-cap, 8)) * var(--stack-x-step, 0px)),
+                calc(min(var(--stack-index, 0), var(--stack-cap, 8)) * var(--stack-step, 14px) - 6px),
                 0
             ) rotate(0deg);
             box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
@@ -1069,19 +1087,19 @@ $formattedSuppliers = array_map(function ($s) {
         }
 
         .notification-card--warning {
-            border-right: 4px solid var(--accent-warning);
+            border-inline-start: 4px solid var(--accent-warning);
         }
 
         .notification-card--error {
-            border-right: 4px solid var(--accent-danger);
+            border-inline-start: 4px solid var(--accent-danger);
         }
 
         .notification-card--success {
-            border-right: 4px solid var(--accent-success);
+            border-inline-start: 4px solid var(--accent-success);
         }
 
         .notification-card--info {
-            border-right: 4px solid var(--accent-primary);
+            border-inline-start: 4px solid var(--accent-primary);
         }
 
         .notification-card-header {
@@ -1090,6 +1108,7 @@ $formattedSuppliers = array_map(function ($s) {
             justify-content: space-between;
             gap: 8px;
             margin-bottom: 6px;
+            text-align: start;
         }
 
         .notification-pin {
@@ -1115,6 +1134,9 @@ $formattedSuppliers = array_map(function ($s) {
             font-size: 10px;
             color: var(--text-light);
             white-space: nowrap;
+            text-align: start;
+            direction: ltr;
+            unicode-bidi: plaintext;
         }
 
         .notification-title {
@@ -1122,12 +1144,18 @@ $formattedSuppliers = array_map(function ($s) {
             font-weight: 700;
             color: var(--text-primary);
             margin-bottom: 4px;
+            text-align: start;
+            direction: inherit;
+            unicode-bidi: plaintext;
         }
 
         .notification-category {
             font-size: 10px;
             color: var(--text-muted);
             margin-bottom: 4px;
+            text-align: start;
+            direction: inherit;
+            unicode-bidi: plaintext;
         }
 
         .notification-message {
@@ -1136,12 +1164,51 @@ $formattedSuppliers = array_map(function ($s) {
             line-height: 1.5;
             margin-bottom: 8px;
             word-break: break-word;
+            text-align: start;
+            direction: inherit;
+            unicode-bidi: plaintext;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            min-height: 54px;
         }
 
         .notification-actions {
             display: flex;
             gap: 6px;
+            justify-content: flex-start;
+            direction: inherit;
+        }
+
+        #notificationsSection.notifications-overlay[dir="rtl"] .notification-actions {
             justify-content: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        #notificationsSection.notifications-overlay[dir="ltr"] .notification-actions {
+            justify-content: flex-start;
+            flex-direction: row;
+        }
+
+        #notificationsSection.notifications-overlay[dir="rtl"] .notification-title,
+        #notificationsSection.notifications-overlay[dir="rtl"] .notification-category,
+        #notificationsSection.notifications-overlay[dir="rtl"] .notification-message {
+            text-align: right;
+        }
+
+        #notificationsSection.notifications-overlay[dir="ltr"] .notification-title,
+        #notificationsSection.notifications-overlay[dir="ltr"] .notification-category,
+        #notificationsSection.notifications-overlay[dir="ltr"] .notification-message {
+            text-align: left;
+        }
+
+        #notificationsSection.notifications-overlay[dir="rtl"] .notification-card-header {
+            direction: rtl;
+        }
+
+        #notificationsSection.notifications-overlay[dir="ltr"] .notification-card-header {
+            direction: ltr;
         }
 
         .notification-btn {
@@ -1155,9 +1222,16 @@ $formattedSuppliers = array_map(function ($s) {
         }
 
         @media (max-width: 1399px) {
-            #notificationsSection.notifications-overlay {
+            #notificationsSection.notifications-overlay[dir="rtl"] {
                 right: 16px;
                 left: auto;
+                bottom: 16px;
+                width: min(390px, calc(100vw - 32px));
+            }
+
+            #notificationsSection.notifications-overlay[dir="ltr"] {
+                left: 16px;
+                right: auto;
                 bottom: 16px;
                 width: min(390px, calc(100vw - 32px));
             }
@@ -1549,7 +1623,10 @@ $formattedSuppliers = array_map(function ($s) {
                         ?>
                         <a href="<?= htmlspecialchars($buildFilterHref($bucketFilter, $bucketStageParam)) ?>"
                             class="personal-task-link <?= $isActive ? 'is-active' : '' ?>">
-                            <span class="personal-task-label"><?= $bucket['label'] ?></span>
+                            <span class="personal-task-label"
+                                <?= !empty($bucket['label_key']) ? 'data-i18n="' . htmlspecialchars((string)$bucket['label_key'], ENT_QUOTES, 'UTF-8') . '"' : '' ?>>
+                                <?= htmlspecialchars((string)($bucket['label'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
+                            </span>
                             <span class="personal-task-count <?= $isActive ? 'is-active' : '' ?>">
                                 <?= $bucket['count'] ?>
                             </span>
@@ -1661,7 +1738,7 @@ $formattedSuppliers = array_map(function ($s) {
                         <div class="progress-fill" style="width: <?= $taskProgressPercent ?>%;"></div>
                     </div>
                 <div class="progress-text">
-                    <span><span>مهام</span> <span><?= $taskCurrentIndex ?></span> <span data-i18n="index.ui.txt_aa7099e2">من</span> <span><?= $taskTotalRecords ?></span></span>
+                    <span><span data-i18n="index.tasks.progress_label">مهام</span> <span><?= $taskCurrentIndex ?></span> <span data-i18n="index.ui.txt_aa7099e2">من</span> <span><?= $taskTotalRecords ?></span></span>
                     <span class="progress-percent"><?= $taskProgressPercent ?>%</span>
                 </div>
             </div>
@@ -1906,11 +1983,192 @@ $formattedSuppliers = array_map(function ($s) {
                 .replace(/'/g, '&#39;');
         }
 
+        function wbglNotificationTranslate(key, fallback, params) {
+            return window.WBGLTranslate
+                ? window.WBGLTranslate(key, fallback, params || {})
+                : fallback;
+        }
+
+        function wbglNotificationLocale() {
+            const language = wbglNotificationLanguage();
+            return language === 'en' ? 'en-US' : 'ar-SA';
+        }
+
+        function wbglNotificationLanguage() {
+            const raw = (window.WBGLI18n && typeof window.WBGLI18n.getLanguage === 'function')
+                ? String(window.WBGLI18n.getLanguage() || '').trim().toLowerCase()
+                : String(document.documentElement.getAttribute('lang') || '').trim().toLowerCase();
+            return raw === 'en' ? 'en' : 'ar';
+        }
+
+        function wbglNotificationDirection() {
+            const explicit = (window.WBGLDirection && typeof window.WBGLDirection.getDirection === 'function')
+                ? String(window.WBGLDirection.getDirection() || '').trim().toLowerCase()
+                : '';
+            if (explicit === 'rtl' || explicit === 'ltr') {
+                return explicit;
+            }
+
+            const htmlDir = String(document.documentElement.getAttribute('dir') || '').trim().toLowerCase();
+            if (htmlDir === 'rtl' || htmlDir === 'ltr') {
+                return htmlDir;
+            }
+
+            const language = wbglNotificationLanguage();
+            return language === 'en' ? 'ltr' : 'rtl';
+        }
+
+        function wbglDefaultNotificationI18nByType(item) {
+            const type = String(item?.type || '').trim().toLowerCase();
+            const data = (item?.data && typeof item.data === 'object') ? item.data : {};
+            const guaranteeId = String(data?.guarantee_id ?? '');
+            const guaranteeNumber = String(data?.guarantee_number ?? guaranteeId);
+            const expiryDate = String(data?.expiry_date ?? '');
+            const daysRemaining = String(data?.days_remaining ?? '');
+            const requestId = String(data?.request_id ?? '');
+            const jobName = String(data?.job_name ?? '');
+            const attempts = String(data?.attempts ?? '');
+            const actionName = String(data?.action_name ?? '');
+            const targetId = String(data?.target_id ?? '');
+            const fileName = String(data?.file_name ?? '');
+
+            if (type === 'workflow_reject') {
+                return {
+                    title_key: 'index.notifications.content.workflow_reject.title',
+                    title_fallback: 'تم رفض مسار الضمان',
+                    title_params: {},
+                    message_key: 'index.notifications.content.workflow_reject.message',
+                    message_fallback: 'تمت إعادة السجل إلى مدخل البيانات مع إزالة الإجراء النشط.',
+                    message_params: { guarantee_id: guaranteeId },
+                };
+            }
+            if (type === 'break_glass_override_used') {
+                return {
+                    title_key: 'index.notifications.content.break_glass_override_used.title',
+                    title_fallback: 'تم تفعيل تجاوز طارئ (Break Glass)',
+                    title_params: {},
+                    message_key: 'index.notifications.content.break_glass_override_used.message',
+                    message_fallback: 'تم استخدام مسار الطوارئ لتنفيذ إجراء عالي الحساسية.',
+                    message_params: { action_name: actionName, target_id: targetId },
+                };
+            }
+            if (type === 'import_failure') {
+                return {
+                    title_key: 'index.notifications.content.import_failure.title',
+                    title_fallback: 'فشل عملية الاستيراد',
+                    title_params: {},
+                    message_key: 'index.notifications.content.import_failure.message',
+                    message_fallback: 'تعذّر إكمال استيراد الملف.',
+                    message_params: { file_name: fileName },
+                };
+            }
+            if (type === 'scheduler_failure') {
+                return {
+                    title_key: 'index.notifications.content.scheduler_failure.title',
+                    title_fallback: 'فشل مهمة مجدولة',
+                    title_params: {},
+                    message_key: 'index.notifications.content.scheduler_failure.message',
+                    message_fallback: 'فشلت مهمة مجدولة بعد عدة محاولات.',
+                    message_params: { job_name: jobName, attempts: attempts },
+                };
+            }
+            if (type === 'expiry_warning') {
+                return {
+                    title_key: 'index.notifications.content.expiry_warning.title',
+                    title_fallback: 'تنبيه انتهاء ضمان',
+                    title_params: {},
+                    message_key: 'index.notifications.content.expiry_warning.message',
+                    message_fallback: 'الضمان رقم {{guarantee_number}} سينتهي خلال {{days_remaining}} يوم (تاريخ الانتهاء: {{expiry_date}}).',
+                    message_params: {
+                        guarantee_number: guaranteeNumber,
+                        days_remaining: daysRemaining,
+                        expiry_date: expiryDate,
+                    },
+                };
+            }
+            if (type === 'undo_request_submitted') {
+                return {
+                    title_key: 'index.notifications.content.undo_request_submitted.title',
+                    title_fallback: 'طلب إعادة فتح جديد',
+                    title_params: {},
+                    message_key: 'index.notifications.content.undo_request_submitted.message',
+                    message_fallback: 'تم إنشاء طلب إعادة فتح جديد.',
+                    message_params: { request_id: requestId, guarantee_id: guaranteeId },
+                };
+            }
+            if (type === 'undo_request_approved') {
+                return {
+                    title_key: 'index.notifications.content.undo_request_approved.title',
+                    title_fallback: 'اعتماد طلب إعادة فتح',
+                    title_params: {},
+                    message_key: 'index.notifications.content.undo_request_approved.message',
+                    message_fallback: 'تم اعتماد طلب إعادة الفتح.',
+                    message_params: { request_id: requestId },
+                };
+            }
+            if (type === 'undo_request_rejected') {
+                return {
+                    title_key: 'index.notifications.content.undo_request_rejected.title',
+                    title_fallback: 'رفض طلب إعادة فتح',
+                    title_params: {},
+                    message_key: 'index.notifications.content.undo_request_rejected.message',
+                    message_fallback: 'تم رفض طلب إعادة الفتح.',
+                    message_params: { request_id: requestId },
+                };
+            }
+            if (type === 'undo_request_executed') {
+                return {
+                    title_key: 'index.notifications.content.undo_request_executed.title',
+                    title_fallback: 'تنفيذ طلب إعادة فتح',
+                    title_params: {},
+                    message_key: 'index.notifications.content.undo_request_executed.message',
+                    message_fallback: 'تم تنفيذ طلب إعادة الفتح.',
+                    message_params: { request_id: requestId },
+                };
+            }
+            return null;
+        }
+
+        function wbglResolveNotificationText(item) {
+            const data = (item?.data && typeof item.data === 'object') ? item.data : {};
+            const explicit = (data?.notification_i18n && typeof data.notification_i18n === 'object')
+                ? data.notification_i18n
+                : null;
+            const i18nPayload = explicit || wbglDefaultNotificationI18nByType(item);
+
+            let titleText = String(item?.title || '').trim();
+            let messageText = String(item?.message || '').trim();
+            if (i18nPayload && typeof i18nPayload === 'object') {
+                const titleKey = String(i18nPayload.title_key || '').trim();
+                const titleFallback = String(i18nPayload.title_fallback || titleText || wbglNotificationTranslate('index.notifications.default_title', 'إشعار'));
+                const titleParams = (i18nPayload.title_params && typeof i18nPayload.title_params === 'object') ? i18nPayload.title_params : {};
+                if (titleKey !== '') {
+                    titleText = wbglNotificationTranslate(titleKey, titleFallback, titleParams);
+                } else {
+                    titleText = titleFallback;
+                }
+
+                const messageKey = String(i18nPayload.message_key || '').trim();
+                const messageFallback = String(i18nPayload.message_fallback || messageText || '');
+                const messageParams = (i18nPayload.message_params && typeof i18nPayload.message_params === 'object') ? i18nPayload.message_params : {};
+                if (messageKey !== '') {
+                    messageText = wbglNotificationTranslate(messageKey, messageFallback, messageParams);
+                } else {
+                    messageText = messageFallback;
+                }
+            }
+
+            return {
+                title: titleText || wbglNotificationTranslate('index.notifications.default_title', 'إشعار'),
+                message: messageText || '',
+            };
+        }
+
         function wbglFormatNotificationTime(raw) {
             if (!raw) return '';
             const parsed = new Date(String(raw).replace(' ', 'T'));
             if (Number.isNaN(parsed.getTime())) return String(raw);
-            return parsed.toLocaleString('ar-SA', {
+            return parsed.toLocaleString(wbglNotificationLocale(), {
                 year: 'numeric',
                 month: '2-digit',
                 day: '2-digit',
@@ -1988,31 +2246,31 @@ $formattedSuppliers = array_map(function ($s) {
             const category = String(structuredMeta.category || '').toLowerCase();
 
             let css = 'info';
-            let label = 'معلومة';
+            let label = wbglNotificationTranslate('index.notifications.type.info', 'معلومة');
             if (severity === 'error' || normalizedType.includes('failure') || normalizedType.includes('error') || normalizedType.includes('reject')) {
                 css = 'error';
-                label = 'خطأ';
+                label = wbglNotificationTranslate('index.notifications.type.error', 'خطأ');
             } else if (severity === 'warning' || normalizedType.includes('warning') || normalizedType.includes('expiry') || normalizedType.includes('undo')) {
                 css = 'warning';
-                label = 'تنبيه';
+                label = wbglNotificationTranslate('index.notifications.type.warning', 'تنبيه');
             } else if (severity === 'success' || normalizedType.includes('success') || normalizedType.includes('approved') || normalizedType.includes('executed')) {
                 css = 'success';
-                label = 'نجاح';
+                label = wbglNotificationTranslate('index.notifications.type.success', 'نجاح');
             }
 
             const categoryLabels = {
-                workflow: 'سير العمل',
-                governance: 'الحوكمة',
-                operations: 'التشغيل',
-                security: 'الأمن',
-                data_quality: 'جودة البيانات',
-                system: 'النظام',
+                workflow: wbglNotificationTranslate('index.notifications.category.workflow', 'سير العمل'),
+                governance: wbglNotificationTranslate('index.notifications.category.governance', 'الحوكمة'),
+                operations: wbglNotificationTranslate('index.notifications.category.operations', 'التشغيل'),
+                security: wbglNotificationTranslate('index.notifications.category.security', 'الأمن'),
+                data_quality: wbglNotificationTranslate('index.notifications.category.data_quality', 'جودة البيانات'),
+                system: wbglNotificationTranslate('index.notifications.category.system', 'النظام'),
             };
 
             return {
                 css: css,
                 label: label,
-                categoryLabel: categoryLabels[category] || 'عام',
+                categoryLabel: categoryLabels[category] || wbglNotificationTranslate('index.notifications.category.general', 'عام'),
             };
         }
 
@@ -2161,6 +2419,10 @@ $formattedSuppliers = array_map(function ($s) {
             const list = document.getElementById('notificationsList');
             if (!section || !list) return;
             wbglBindNotificationInteractions();
+            const currentDir = wbglNotificationDirection();
+            section.setAttribute('dir', currentDir);
+            list.setAttribute('dir', currentDir);
+            list.style.setProperty('--notifications-dir', currentDir);
 
             const nowMs = Date.now();
             const sortedItems = [...wbglNotificationsState.items].sort((a, b) => {
@@ -2201,17 +2463,20 @@ $formattedSuppliers = array_map(function ($s) {
 
             list.innerHTML = renderItems.map((item, idx) => {
                 const meta = wbglNotificationTypeMeta(item);
-                const title = wbglEscapeHtml(item.title || 'إشعار');
-                const message = wbglEscapeHtml(item.message || '');
+                const resolvedText = wbglResolveNotificationText(item);
+                const title = wbglEscapeHtml(resolvedText.title || wbglNotificationTranslate('index.notifications.default_title', 'إشعار'));
+                const message = wbglEscapeHtml(resolvedText.message || '');
                 const when = wbglEscapeHtml(wbglFormatNotificationTime(item.created_at));
                 const category = wbglEscapeHtml(meta.categoryLabel);
+                const readLabel = wbglEscapeHtml(wbglNotificationTranslate('index.notifications.actions.read', 'مقروء'));
+                const hideLabel = wbglEscapeHtml(wbglNotificationTranslate('index.notifications.actions.hide', 'إخفاء'));
                 const id = Number(item.id || 0);
                 const stackIndex = renderItems.length - 1 - idx;
-                const tiltPattern = [-1, 0, 1, 0, -1, 1];
-                const tilt = tiltPattern[idx % tiltPattern.length];
+                const tilt = 0;
                 const isFocused = Number(wbglNotificationsState.focusedNotificationId || 0) === id;
+                const currentDir = wbglNotificationDirection();
                 return `
-                    <article class="notification-card notification-card--${meta.css}${isFocused ? ' is-focused' : ''}" data-notification-id="${id}" data-stack-index="${stackIndex}" style="--stack-index:${stackIndex}; --stack-tilt:${tilt}" tabindex="0">
+                    <article class="notification-card notification-card--${meta.css}${isFocused ? ' is-focused' : ''}" data-notification-id="${id}" data-stack-index="${stackIndex}" style="--stack-index:${stackIndex}; --stack-tilt:${tilt}" dir="${currentDir}" tabindex="0">
                         <div class="notification-card-header">
                             <span class="notification-type-badge"><span class="notification-pin">📌</span>${wbglEscapeHtml(meta.label)}</span>
                             <span class="notification-time">${when}</span>
@@ -2220,8 +2485,8 @@ $formattedSuppliers = array_map(function ($s) {
                         <div class="notification-category">${category}</div>
                         <div class="notification-message">${message}</div>
                         <div class="notification-actions">
-                            <button class="notification-btn notification-btn--read" data-notification-action="mark_read" data-notification-id="${id}">مقروء</button>
-                            <button class="notification-btn notification-btn--hide" data-notification-action="hide" data-notification-id="${id}">إخفاء</button>
+                            <button class="notification-btn notification-btn--read" data-notification-action="mark_read" data-notification-id="${id}">${readLabel}</button>
+                            <button class="notification-btn notification-btn--hide" data-notification-action="hide" data-notification-id="${id}">${hideLabel}</button>
                         </div>
                     </article>
                 `;
@@ -2279,7 +2544,7 @@ $formattedSuppliers = array_map(function ($s) {
             } catch (err) {
                 console.error('NOTIFICATION_ACTION_ERROR', err);
                 if (!silent) {
-                    showToast('تعذر تحديث الإشعار', 'error');
+                    showToast(wbglNotificationTranslate('index.notifications.errors.update_failed', 'تعذر تحديث الإشعار'), 'error');
                 }
             }
         }
@@ -2453,6 +2718,14 @@ $formattedSuppliers = array_map(function ($s) {
                 // Run again after a slight delay to catch any dynamic updates
                 setTimeout(runConversions, 500);
             }
+        });
+
+        document.addEventListener('wbgl:language-changed', function() {
+            wbglRenderNotifications();
+        });
+
+        document.addEventListener('wbgl:direction-changed', function() {
+            wbglRenderNotifications();
         });
     </script>
 

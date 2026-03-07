@@ -114,7 +114,7 @@
         <!-- رأس الخطاب: اسم البنك + المحترمين -->
         <div class="preview-header">
             <div class="preview-recipient-name">
-                <div data-i18n-skip="true">السادة <span class="symbol">/</span> <span><?= htmlspecialchars($header['bank_name']) ?></span></div>
+                <div data-i18n-skip="true">السادة <span class="symbol">/</span> <span data-preview-target="bank_name"><?= htmlspecialchars($header['bank_name']) ?></span></div>
             </div>
             <div class="preview-salutation">
                 <div data-i18n-skip="true">المحترمين</div>

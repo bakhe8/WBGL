@@ -12,6 +12,7 @@ use App\Services\ImportService;
 use App\Support\Database;
 use App\Support\Input;
 use App\Support\Settings;
+use App\Support\TypeNormalizer;
 use App\Models\Guarantee;
 use App\Models\GuaranteeDecision;
 
@@ -54,7 +55,7 @@ try {
     $contractNumber = Input::string($input, 'contract_number', '');
     $expiryDate = Input::string($input, 'expiry_date', '');
     $issueDate = Input::string($input, 'issue_date', '');
-    $type = Input::string($input, 'type', 'Initial');
+    $type = TypeNormalizer::normalize(Input::string($input, 'type', 'Initial'));
     $comment = Input::string($input, 'comment', '');
     $relatedTo = Input::string($input, 'related_to', 'contract');
 

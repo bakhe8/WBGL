@@ -195,7 +195,7 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
         .policy-preview-table td {
             border-bottom: 1px solid var(--border-primary);
             padding: 8px 10px;
-            text-align: right;
+            text-align: start;
             vertical-align: top;
         }
         .policy-preview-table th {
@@ -225,6 +225,11 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
         .data-table th { background: var(--bg-secondary); font-weight: 700; color: var(--text-secondary); white-space: nowrap; }
         .data-table tr:last-child td { border-bottom: none; }
         .data-table tr:hover { background: var(--bg-hover); }
+        .bulk-selection-toolbar { display: flex; align-items: center; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
+        .bulk-selection-label { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-weight: 600; }
+        .bulk-selection-count { color: var(--text-muted); font-size: 13px; }
+        .bulk-select-cell { width: 56px; text-align: center !important; }
+        .bulk-row-checkbox { width: 16px; height: 16px; cursor: pointer; }
         
         /* Editable Inputs */
         .row-input {
@@ -497,13 +502,13 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                             <input type="checkbox" name="NOTIFICATIONS_ENABLED" value="1"
                                    <?= !empty($currentSettings['NOTIFICATIONS_ENABLED']) ? 'checked' : '' ?>
                                    class="prod-toggle-checkbox">
-                            <span>🔔 تفعيل الإشعارات داخل النظام</span>
+                            <span data-i18n="settings.general.notifications.enable_label">🔔 تفعيل الإشعارات داخل النظام</span>
                         </label>
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label">الحد الأقصى لكروت الإشعار في الشريط الجانبي</label>
-                        <span class="form-help">NOTIFICATION_UI_MAX_ITEMS (من 10 إلى 200)</span>
+                        <label class="form-label" data-i18n="settings.general.notifications.ui_limit_label">الحد الأقصى لكروت الإشعار في الشريط الجانبي</label>
+                        <span class="form-help" data-i18n="settings.general.notifications.ui_limit_help">NOTIFICATION_UI_MAX_ITEMS (من 10 إلى 200)</span>
                         <input
                             type="number"
                             class="form-input"
@@ -516,8 +521,8 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label">سياسة توجيه الإشعارات (JSON اختياري)</label>
-                        <span class="form-help">
+                        <label class="form-label" data-i18n="settings.general.notifications.policy_label">سياسة توجيه الإشعارات (JSON اختياري)</label>
+                        <span class="form-help" data-i18n="settings.general.notifications.policy_help">
                             المفتاح = نوع الإشعار، والقيمة يمكن أن تحتوي:
                             <code>roles</code>, <code>severity</code>, <code>category</code>, <code>allow_direct_user</code>, <code>fallback_global</code>.
                         </span>
@@ -529,13 +534,13 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label">معاينة السياسة الفعّالة قبل الحفظ</label>
-                        <span class="form-help">يتم الدمج بين السياسة الافتراضية وقيم JSON الحالية في الحقل أعلاه.</span>
+                        <label class="form-label" data-i18n="settings.general.notifications.policy_preview_label">معاينة السياسة الفعّالة قبل الحفظ</label>
+                        <span class="form-help" data-i18n="settings.general.notifications.policy_preview_help">يتم الدمج بين السياسة الافتراضية وقيم JSON الحالية في الحقل أعلاه.</span>
                         <div id="notificationPolicyValidation" class="policy-validation" aria-live="polite"></div>
                         <div class="policy-preview-panel">
-                            <div class="policy-preview-header">أنواع الإشعارات بعد الدمج</div>
+                            <div class="policy-preview-header" data-i18n="settings.general.notifications.policy_preview_header">أنواع الإشعارات بعد الدمج</div>
                             <div id="notificationPolicyPreview" class="policy-preview-body">
-                                <div class="policy-preview-empty">جاري بناء المعاينة...</div>
+                                <div class="policy-preview-empty" data-i18n="settings.general.notifications.policy_preview_building">جاري بناء المعاينة...</div>
                             </div>
                         </div>
                     </div>
@@ -814,6 +819,14 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
             return fallback || key;
         }
 
+        function formatTemplate(text, params = {}) {
+            const source = String(text ?? '');
+            return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {
+                const value = params[key];
+                return value === undefined || value === null ? '' : String(value);
+            });
+        }
+
         function refreshLoadingLabels() {
             document.querySelectorAll('[data-loading-label-key]').forEach((element) => {
                 const key = element.getAttribute('data-loading-label-key');
@@ -869,6 +882,114 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                 .join('&#039;');
         }
 
+        function translateWithParams(key, fallback, params = {}) {
+            const text = t(key, fallback, params);
+            return formatTemplate(text, params);
+        }
+
+        function getBulkConfig(entity) {
+            if (entity === 'banks') {
+                return {
+                    containerId: 'banksTableContainer',
+                    selectAllSelector: '[data-bulk-select-all="banks"]',
+                    rowSelector: 'input.bulk-row-checkbox[data-bulk-entity="banks"]',
+                    countSelector: '[data-bulk-count="banks"]',
+                    deleteBtnSelector: '[data-bulk-delete-btn="banks"]',
+                    policyResource: 'bank',
+                    policyAction: 'manage',
+                    countKey: 'settings.js.bulk.selected_count',
+                    countFallback: 'المحدد: {{count}}'
+                };
+            }
+            if (entity === 'suppliers') {
+                return {
+                    containerId: 'suppliersTableContainer',
+                    selectAllSelector: '[data-bulk-select-all="suppliers"]',
+                    rowSelector: 'input.bulk-row-checkbox[data-bulk-entity="suppliers"]',
+                    countSelector: '[data-bulk-count="suppliers"]',
+                    deleteBtnSelector: '[data-bulk-delete-btn="suppliers"]',
+                    policyResource: 'supplier',
+                    policyAction: 'manage',
+                    countKey: 'settings.js.bulk.selected_count',
+                    countFallback: 'المحدد: {{count}}'
+                };
+            }
+            return null;
+        }
+
+        function getSelectedIds(entity) {
+            const config = getBulkConfig(entity);
+            if (!config) return [];
+
+            const container = document.getElementById(config.containerId);
+            if (!container) return [];
+
+            return Array.from(container.querySelectorAll(`${config.rowSelector}:checked`))
+                .map((checkbox) => parseInt(checkbox.value || '0', 10))
+                .filter((id) => Number.isInteger(id) && id > 0);
+        }
+
+        function updateBulkSelectionUI(entity) {
+            const config = getBulkConfig(entity);
+            if (!config) return;
+
+            const container = document.getElementById(config.containerId);
+            if (!container) return;
+
+            const allRows = Array.from(container.querySelectorAll(config.rowSelector));
+            const selectedRows = allRows.filter((checkbox) => checkbox.checked);
+            const selectedCount = selectedRows.length;
+
+            const countNode = container.querySelector(config.countSelector);
+            if (countNode) {
+                countNode.textContent = translateWithParams(
+                    config.countKey,
+                    config.countFallback,
+                    { count: selectedCount }
+                );
+            }
+
+            const deleteBtn = container.querySelector(config.deleteBtnSelector);
+            if (deleteBtn) {
+                let canDelete = true;
+                if (window.WBGLPolicy && typeof window.WBGLPolicy.can === 'function') {
+                    canDelete = window.WBGLPolicy.can(config.policyResource, config.policyAction);
+                }
+                deleteBtn.disabled = !canDelete || selectedCount === 0;
+            }
+
+            const selectAll = container.querySelector(config.selectAllSelector);
+            if (selectAll) {
+                selectAll.checked = allRows.length > 0 && selectedCount === allRows.length;
+                selectAll.indeterminate = selectedCount > 0 && selectedCount < allRows.length;
+            }
+        }
+
+        function toggleSelectAll(entity, trigger) {
+            const config = getBulkConfig(entity);
+            if (!config) return;
+
+            const container = document.getElementById(config.containerId);
+            if (!container) return;
+
+            const shouldCheck = Boolean(trigger && trigger.checked);
+            container.querySelectorAll(config.rowSelector).forEach((checkbox) => {
+                checkbox.checked = shouldCheck;
+            });
+
+            updateBulkSelectionUI(entity);
+        }
+
+        function applyDynamicPolicies(containerId) {
+            if (!window.WBGLPolicy || typeof window.WBGLPolicy.applyDomGuards !== 'function') {
+                return;
+            }
+            const container = document.getElementById(containerId);
+            if (container) {
+                window.WBGLPolicy.applyDomGuards(container);
+            }
+        }
+
         function parseNotificationPolicyOverridesText(rawText) {
             const trimmed = String(rawText || '').trim();
             if (trimmed === '') {
@@ -881,11 +1002,29 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                     return { ok: true, data: {} };
                 }
                 if (!parsed || typeof parsed !== 'object') {
-                    return { ok: false, error: 'صيغة JSON يجب أن تكون كائنًا (Object) من نوع => سياسة.' };
+                    return {
+                        ok: false,
+                        error: t(
+                            'settings.general.notifications.validation.json_object_required',
+                            'صيغة JSON يجب أن تكون كائنًا (Object) من نوع => سياسة.'
+                        )
+                    };
                 }
                 return { ok: true, data: parsed };
             } catch (error) {
-                return { ok: false, error: 'JSON غير صالح: ' + (error?.message || 'صيغة غير صحيحة') };
+                const reason = error?.message || t(
+                    'settings.general.notifications.validation.invalid_json_generic',
+                    'صيغة غير صحيحة'
+                );
+                const invalidTemplate = t(
+                    'settings.general.notifications.validation.invalid_json',
+                    'JSON غير صالح: {{reason}}',
+                    { reason }
+                );
+                return {
+                    ok: false,
+                    error: formatTemplate(invalidTemplate, { reason })
+                };
             }
         }
 
@@ -949,21 +1088,39 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                 return;
             }
             if (!Array.isArray(rows) || rows.length === 0) {
-                notificationPolicyPreview.innerHTML = '<div class="policy-preview-empty">لا توجد أنواع إشعارات معرفة.</div>';
+                notificationPolicyPreview.innerHTML = `<div class="policy-preview-empty">${escapeHtml(
+                    t('settings.general.notifications.policy_preview_empty', 'لا توجد أنواع إشعارات معرفة.')
+                )}</div>`;
                 return;
             }
 
+            const categoryLabel = (value) => t(
+                'settings.general.notifications.category.' + String(value || '').toLowerCase(),
+                String(value || 'system')
+            );
+            const severityLabel = (value) => t(
+                'settings.general.notifications.severity.' + String(value || '').toLowerCase(),
+                String(value || 'info')
+            );
+            const yesLabel = t('settings.general.notifications.value.yes', 'نعم');
+            const noLabel = t('settings.general.notifications.value.no', 'لا');
+            const noneLabel = t('settings.general.notifications.value.none', '—');
+            const sourceDefaultLabel = t('settings.general.notifications.source.default', 'افتراضي');
+            const sourceOverrideLabel = t('settings.general.notifications.source.override', 'تجاوز');
+
             const body = rows.map((row) => {
-                const roles = row.roles.length > 0 ? row.roles.join(', ') : '—';
-                const sourceLabel = row.source === 'override' ? 'override' : 'default';
+                const roles = row.roles.length > 0
+                    ? row.roles.map((role) => t('common.roles.' + role, role)).join(', ')
+                    : noneLabel;
+                const sourceLabel = row.source === 'override' ? sourceOverrideLabel : sourceDefaultLabel;
                 return `
                     <tr>
                         <td><code>${escapeHtml(row.type)}</code></td>
-                        <td>${escapeHtml(row.category)}</td>
-                        <td>${escapeHtml(row.severity)}</td>
+                        <td>${escapeHtml(categoryLabel(row.category))}</td>
+                        <td>${escapeHtml(severityLabel(row.severity))}</td>
                         <td>${escapeHtml(roles)}</td>
-                        <td>${row.allow_direct_user ? 'نعم' : 'لا'}</td>
-                        <td>${row.fallback_global ? 'نعم' : 'لا'}</td>
+                        <td>${row.allow_direct_user ? yesLabel : noLabel}</td>
+                        <td>${row.fallback_global ? yesLabel : noLabel}</td>
                         <td><code>${sourceLabel}</code></td>
                     </tr>`;
             }).join('');
@@ -972,13 +1129,13 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                 <table class="policy-preview-table">
                     <thead>
                         <tr>
-                            <th>النوع</th>
-                            <th>الفئة</th>
-                            <th>الشدة</th>
-                            <th>الأدوار المستهدفة</th>
-                            <th>مستخدم مباشر</th>
-                            <th>Fallback</th>
-                            <th>المصدر</th>
+                            <th>${escapeHtml(t('settings.general.notifications.table.type', 'النوع'))}</th>
+                            <th>${escapeHtml(t('settings.general.notifications.table.category', 'الفئة'))}</th>
+                            <th>${escapeHtml(t('settings.general.notifications.table.severity', 'الشدة'))}</th>
+                            <th>${escapeHtml(t('settings.general.notifications.table.roles', 'الأدوار المستهدفة'))}</th>
+                            <th>${escapeHtml(t('settings.general.notifications.table.direct_user', 'مستخدم مباشر'))}</th>
+                            <th>${escapeHtml(t('settings.general.notifications.table.fallback', 'Fallback'))}</th>
+                            <th>${escapeHtml(t('settings.general.notifications.table.source', 'المصدر'))}</th>
                         </tr>
                     </thead>
                     <tbody>${body}</tbody>
@@ -993,7 +1150,10 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
 
             const parsed = parseNotificationPolicyOverridesText(notificationPolicyTextarea.value);
             if (!parsed.ok) {
-                notificationPolicyValidation.textContent = parsed.error || 'JSON غير صالح';
+                notificationPolicyValidation.textContent = parsed.error || t(
+                    'settings.general.notifications.validation.invalid_json_short',
+                    'JSON غير صالح'
+                );
                 notificationPolicyValidation.classList.remove('ok');
                 notificationPolicyValidation.classList.add('error');
                 renderNotificationPolicyPreview([]);
@@ -1001,7 +1161,12 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
             }
 
             const rows = buildEffectiveNotificationPolicyRows(parsed.data);
-            notificationPolicyValidation.textContent = `JSON صالح. الأنواع الفعّالة: ${rows.length}`;
+            const validSummaryTemplate = t(
+                'settings.general.notifications.validation.valid_summary',
+                'JSON صالح. الأنواع الفعّالة: {{count}}',
+                { count: rows.length }
+            );
+            notificationPolicyValidation.textContent = formatTemplate(validSummaryTemplate, { count: rows.length });
             notificationPolicyValidation.classList.remove('error');
             notificationPolicyValidation.classList.add('ok');
             renderNotificationPolicyPreview(rows);
@@ -1009,7 +1174,10 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
         }
 
         refreshLoadingLabels();
-        document.addEventListener('wbgl:language-changed', refreshLoadingLabels);
+        document.addEventListener('wbgl:language-changed', () => {
+            refreshLoadingLabels();
+            updateNotificationPolicyPreview();
+        });
         updateNotificationPolicyPreview();
         if (notificationPolicyTextarea) {
             notificationPolicyTextarea.addEventListener('input', updateNotificationPolicyPreview);
@@ -1272,6 +1440,8 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                 const html = await res.text();
                 // Policy: Use outerHTML replacement
                 container.outerHTML = html;
+                applyDynamicPolicies('banksTableContainer');
+                updateBulkSelectionUI('banks');
             } catch (e) {
                 showAlert('error', t('settings.js.bank.load_failed') + e.message);
                 container.classList.remove('loading');
@@ -1291,6 +1461,8 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                 const html = await res.text();
                 // Policy: Use outerHTML replacement
                 container.outerHTML = html;
+                applyDynamicPolicies('suppliersTableContainer');
+                updateBulkSelectionUI('suppliers');
             } catch (e) {
                 showAlert('error', t('settings.js.supplier.load_failed') + e.message);
                 container.classList.remove('loading');
@@ -1686,6 +1858,7 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                         // Remove row from DOM
                         const row = document.querySelector(`tr[data-id="${id}"]`);
                         if (row) row.remove();
+                        updateBulkSelectionUI('banks');
                         showAlert('success', t('settings.js.bank.delete_success'));
                     } else {
                         showAlert('error', t('settings.js.common.delete_failed_prefix') + (result.error || t('settings.js.common.unknown_error')));
@@ -1712,10 +1885,99 @@ $currentDateTimeLabel = (string)($settingsViewModel['currentDateTimeLabel'] ?? d
                         // Remove row from DOM
                         const row = document.querySelector(`tr[data-id="${id}"]`);
                         if (row) row.remove();
+                        updateBulkSelectionUI('suppliers');
                         showAlert('success', t('settings.js.supplier.delete_success'));
                     } else {
                         showAlert('error', t('settings.js.common.delete_failed_prefix') + (result.error || t('settings.js.common.unknown_error')));
                     }
+                } catch (e) {
+                    showAlert('error', t('settings.js.common.network_error'));
+                    console.error(e);
+                }
+            });
+        }
+
+        async function deleteSelectedBanks() {
+            const ids = getSelectedIds('banks');
+            if (ids.length === 0) {
+                showAlert('error', t('settings.js.bank.bulk_delete_none', 'يرجى تحديد بنك واحد على الأقل.'));
+                return;
+            }
+
+            const confirmMessage = translateWithParams(
+                'settings.js.bank.bulk_delete_confirm',
+                'هل أنت متأكد من حذف {{count}} بنك دفعة واحدة؟',
+                { count: ids.length }
+            );
+
+            showConfirm(confirmMessage, async () => {
+                try {
+                    const response = await fetch('../api/delete_banks_bulk.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids })
+                    });
+                    const result = await response.json();
+
+                    if (result.success) {
+                        const deletedCount = parseInt(String(result.deleted_count ?? ids.length), 10) || 0;
+                        showAlert(
+                            'success',
+                            translateWithParams(
+                                'settings.js.bank.bulk_delete_success',
+                                'تم حذف {{count}} بنك بنجاح.',
+                                { count: deletedCount }
+                            )
+                        );
+                        loadBanks();
+                        return;
+                    }
+
+                    showAlert('error', t('settings.js.common.delete_failed_prefix') + (result.error || t('settings.js.common.unknown_error')));
+                } catch (e) {
+                    showAlert('error', t('settings.js.common.network_error'));
+                    console.error(e);
+                }
+            });
+        }
+
+        async function deleteSelectedSuppliers() {
+            const ids = getSelectedIds('suppliers');
+            if (ids.length === 0) {
+                showAlert('error', t('settings.js.supplier.bulk_delete_none', 'يرجى تحديد مورد واحد على الأقل.'));
+                return;
+            }
+
+            const confirmMessage = translateWithParams(
+                'settings.js.supplier.bulk_delete_confirm',
+                'هل أنت متأكد من حذف {{count}} مورد دفعة واحدة؟',
+                { count: ids.length }
+            );
+
+            showConfirm(confirmMessage, async () => {
+                try {
+                    const response = await fetch('../api/delete_suppliers_bulk.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids })
+                    });
+                    const result = await response.json();
+
+                    if (result.success) {
+                        const deletedCount = parseInt(String(result.deleted_count ?? ids.length), 10) || 0;
+                        showAlert(
+                            'success',
+                            translateWithParams(
+                                'settings.js.supplier.bulk_delete_success',
+                                'تم حذف {{count}} مورد بنجاح.',
+                                { count: deletedCount }
+                            )
+                        );
+                        loadSuppliers();
+                        return;
+                    }
+
+                    showAlert('error', t('settings.js.common.delete_failed_prefix') + (result.error || t('settings.js.common.unknown_error')));
                 } catch (e) {
                     showAlert('error', t('settings.js.common.network_error'));
                     console.error(e);

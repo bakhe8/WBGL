@@ -521,19 +521,8 @@ class SaveAndNextApplicationService
         $isCorrection = (bool)$wasReadyStmt->fetchColumn();
         $decisionSubtype = $isCorrection ? 'correction' : ($wasAiMatch ? 'ai_match' : 'manual_edit');
 
-        try {
-            TimelineRecorder::recordDecisionEvent($guaranteeId, $oldSnapshot, $newData, false, null, $decisionSubtype);
-            error_log("[TIMELINE] Decision event recorded for guarantee #{$guaranteeId} as {$decisionSubtype}");
-        } catch (\Throwable $e) {
-            error_log('[TIMELINE ERROR] Failed to record decision event: ' . $e->getMessage());
-        }
-
-        try {
-            TimelineRecorder::recordStatusTransitionEvent($guaranteeId, $oldSnapshot, $statusToSave, 'data_completeness_check');
-            error_log("[TIMELINE] Status transition event recorded for guarantee #{$guaranteeId}: {$statusToSave}");
-        } catch (\Throwable $e) {
-            error_log('[TIMELINE ERROR] Failed to record status transition: ' . $e->getMessage());
-        }
+        TimelineRecorder::recordDecisionEvent($guaranteeId, $oldSnapshot, $newData, false, null, $decisionSubtype);
+        TimelineRecorder::recordStatusTransitionEvent($guaranteeId, $oldSnapshot, $statusToSave, 'data_completeness_check');
 
         try {
             $rawSupplierName = (string)($currentGuarantee->rawData['supplier'] ?? '');

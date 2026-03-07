@@ -42,6 +42,13 @@ final class NotificationPolicyService
             'allow_direct_user' => false,
             'fallback_global' => false,
         ],
+        'expiry_warning' => [
+            'category' => 'operations',
+            'severity' => 'warning',
+            'roles' => [],
+            'allow_direct_user' => true,
+            'fallback_global' => true,
+        ],
         'undo_request_submitted' => [
             'category' => 'governance',
             'severity' => 'warning',
@@ -262,7 +269,144 @@ final class NotificationPolicyService
             $existingMeta = $data['notification_meta'];
         }
         $data['notification_meta'] = array_merge($meta, $existingMeta);
+
+        $autoI18n = self::defaultI18nPayloadForType($type, $data);
+        if (is_array($autoI18n) && !empty($autoI18n)) {
+            $existingI18n = [];
+            if (isset($data['notification_i18n']) && is_array($data['notification_i18n'])) {
+                $existingI18n = $data['notification_i18n'];
+            }
+            $data['notification_i18n'] = array_merge($autoI18n, $existingI18n);
+        }
+
         return $data;
+    }
+
+    /**
+     * @param array<string,mixed> $data
+     * @return array<string,mixed>|null
+     */
+    private static function defaultI18nPayloadForType(string $type, array $data): ?array
+    {
+        $guaranteeId = (string)($data['guarantee_id'] ?? '');
+        $guaranteeNumber = trim((string)($data['guarantee_number'] ?? $guaranteeId));
+        $expiryDate = trim((string)($data['expiry_date'] ?? ''));
+        $daysRemaining = (string)($data['days_remaining'] ?? '');
+        $requestId = (string)($data['request_id'] ?? '');
+        $jobName = trim((string)($data['job_name'] ?? ''));
+        $attempts = (string)($data['attempts'] ?? '');
+        $actionName = trim((string)($data['action_name'] ?? ''));
+        $targetId = trim((string)($data['target_id'] ?? ''));
+        $fileName = trim((string)($data['file_name'] ?? ''));
+
+        switch ($type) {
+            case 'workflow_reject':
+                return [
+                    'title_key' => 'index.notifications.content.workflow_reject.title',
+                    'title_fallback' => 'تم رفض مسار الضمان',
+                    'title_params' => [],
+                    'message_key' => 'index.notifications.content.workflow_reject.message',
+                    'message_fallback' => 'تمت إعادة السجل إلى مدخل البيانات مع إزالة الإجراء النشط.',
+                    'message_params' => [
+                        'guarantee_id' => $guaranteeId,
+                    ],
+                ];
+            case 'break_glass_override_used':
+                return [
+                    'title_key' => 'index.notifications.content.break_glass_override_used.title',
+                    'title_fallback' => 'تم تفعيل تجاوز طارئ (Break Glass)',
+                    'title_params' => [],
+                    'message_key' => 'index.notifications.content.break_glass_override_used.message',
+                    'message_fallback' => 'تم استخدام مسار الطوارئ لتنفيذ إجراء عالي الحساسية.',
+                    'message_params' => [
+                        'action_name' => $actionName,
+                        'target_id' => $targetId,
+                    ],
+                ];
+            case 'import_failure':
+                return [
+                    'title_key' => 'index.notifications.content.import_failure.title',
+                    'title_fallback' => 'فشل عملية الاستيراد',
+                    'title_params' => [],
+                    'message_key' => 'index.notifications.content.import_failure.message',
+                    'message_fallback' => 'تعذّر إكمال استيراد الملف.',
+                    'message_params' => [
+                        'file_name' => $fileName,
+                    ],
+                ];
+            case 'scheduler_failure':
+                return [
+                    'title_key' => 'index.notifications.content.scheduler_failure.title',
+                    'title_fallback' => 'فشل مهمة مجدولة',
+                    'title_params' => [],
+                    'message_key' => 'index.notifications.content.scheduler_failure.message',
+                    'message_fallback' => 'فشلت مهمة مجدولة بعد عدة محاولات.',
+                    'message_params' => [
+                        'job_name' => $jobName,
+                        'attempts' => $attempts,
+                    ],
+                ];
+            case 'expiry_warning':
+                return [
+                    'title_key' => 'index.notifications.content.expiry_warning.title',
+                    'title_fallback' => 'تنبيه انتهاء ضمان',
+                    'title_params' => [],
+                    'message_key' => 'index.notifications.content.expiry_warning.message',
+                    'message_fallback' => 'الضمان رقم {{guarantee_number}} سينتهي خلال {{days_remaining}} يوم (تاريخ الانتهاء: {{expiry_date}}).',
+                    'message_params' => [
+                        'guarantee_number' => $guaranteeNumber,
+                        'days_remaining' => $daysRemaining,
+                        'expiry_date' => $expiryDate,
+                    ],
+                ];
+            case 'undo_request_submitted':
+                return [
+                    'title_key' => 'index.notifications.content.undo_request_submitted.title',
+                    'title_fallback' => 'طلب إعادة فتح جديد',
+                    'title_params' => [],
+                    'message_key' => 'index.notifications.content.undo_request_submitted.message',
+                    'message_fallback' => 'تم إنشاء طلب إعادة فتح جديد.',
+                    'message_params' => [
+                        'request_id' => $requestId,
+                        'guarantee_id' => $guaranteeId,
+                    ],
+                ];
+            case 'undo_request_approved':
+                return [
+                    'title_key' => 'index.notifications.content.undo_request_approved.title',
+                    'title_fallback' => 'اعتماد طلب إعادة فتح',
+                    'title_params' => [],
+                    'message_key' => 'index.notifications.content.undo_request_approved.message',
+                    'message_fallback' => 'تم اعتماد طلب إعادة الفتح.',
+                    'message_params' => [
+                        'request_id' => $requestId,
+                    ],
+                ];
+            case 'undo_request_rejected':
+                return [
+                    'title_key' => 'index.notifications.content.undo_request_rejected.title',
+                    'title_fallback' => 'رفض طلب إعادة فتح',
+                    'title_params' => [],
+                    'message_key' => 'index.notifications.content.undo_request_rejected.message',
+                    'message_fallback' => 'تم رفض طلب إعادة الفتح.',
+                    'message_params' => [
+                        'request_id' => $requestId,
+                    ],
+                ];
+            case 'undo_request_executed':
+                return [
+                    'title_key' => 'index.notifications.content.undo_request_executed.title',
+                    'title_fallback' => 'تنفيذ طلب إعادة فتح',
+                    'title_params' => [],
+                    'message_key' => 'index.notifications.content.undo_request_executed.message',
+                    'message_fallback' => 'تم تنفيذ طلب إعادة الفتح.',
+                    'message_params' => [
+                        'request_id' => $requestId,
+                    ],
+                ];
+            default:
+                return null;
+        }
     }
 
     private static function normalizeCategory(string $category): string

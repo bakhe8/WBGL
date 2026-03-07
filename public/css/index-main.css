@@ -767,7 +767,7 @@ body.wbgl-lock-scroll {
 .timeline-panel {
     width: var(--width-timeline);
     background: var(--bg-card);
-    border-right: 1px solid var(--border-primary);
+    border-inline-end: 1px solid var(--border-primary);
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
@@ -777,7 +777,7 @@ body.wbgl-lock-scroll {
     height: var(--height-record-header);
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-primary);
-    border-left: 1px solid var(--border-primary);
+    border-inline-start: 1px solid var(--border-primary);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -799,7 +799,9 @@ body.wbgl-lock-scroll {
 }
 
 .timeline-body--compact {
-    padding-right: 4px;
+    /* Keep timeline close to edge without clipping in both directions */
+    padding-block: 16px;
+    padding-inline: 4px;
 }
 
 .timeline-body {
@@ -808,14 +810,20 @@ body.wbgl-lock-scroll {
     padding: 16px;
 }
 
+.timeline-panel .timeline-body--compact {
+    padding-block: 16px;
+    padding-inline: 4px;
+}
+
 .timeline-list {
     position: relative;
-    padding-right: 20px;
+    padding-inline-start: 8px;
+    padding-inline-end: 0;
 }
 
 .timeline-line {
     position: absolute;
-    right: 7px;
+    inset-inline-start: 4px;
     top: 0;
     bottom: 0;
     width: 2px;
@@ -830,13 +838,14 @@ body.wbgl-lock-scroll {
 .timeline-event-wrapper--interactive {
     position: relative;
     margin-bottom: 10px;
-    padding-right: 12px;
+    padding-inline-start: 8px;
+    padding-inline-end: 0;
     cursor: pointer;
 }
 
 .timeline-event-connector {
     position: absolute;
-    right: 3px;
+    inset-inline-start: 0;
     top: 14px;
     bottom: -10px;
     width: 2px;
@@ -845,7 +854,7 @@ body.wbgl-lock-scroll {
 
 .timeline-dot {
     position: absolute;
-    right: -17px;
+    inset-inline-start: -13px;
     top: 6px;
     width: 12px;
     height: 12px;
@@ -857,7 +866,7 @@ body.wbgl-lock-scroll {
 }
 
 .timeline-dot--event {
-    right: -2px;
+    inset-inline-start: 1px;
     top: 8px;
     width: 10px;
     height: 10px;
@@ -879,15 +888,17 @@ body.wbgl-lock-scroll {
 }
 
 .timeline-event-card--interactive {
-    margin-right: 16px;
+    margin-inline-start: 10px;
+    margin-inline-end: 0;
     padding: 10px 12px;
     border-radius: 4px;
-    border-right: 3px solid var(--timeline-tone-color, var(--border-primary)) !important;
+    border-inline-start: 3px solid var(--timeline-tone-color, var(--border-primary)) !important;
+    border-inline-end: 1px solid var(--border-primary) !important;
     transition: all 0.2s ease;
 }
 
 .timeline-event-card--interactive:hover {
-    border-right-width: 4px !important;
+    border-inline-start-width: 4px !important;
     box-shadow: var(--shadow-md);
 }
 
@@ -930,7 +941,7 @@ body.wbgl-lock-scroll {
 .timeline-source-badge {
     margin: 6px 0;
     border-radius: 3px;
-    border-left: 3px solid var(--timeline-source-color, var(--text-muted));
+    border-inline-start: 3px solid var(--timeline-source-color, var(--text-muted));
     padding: 4px 8px;
     font-size: 11px;
     font-weight: 500;
@@ -950,6 +961,9 @@ body.wbgl-lock-scroll {
 
 .timeline-change-row {
     margin-bottom: 4px;
+    direction: inherit;
+    text-align: start;
+    unicode-bidi: plaintext;
 }
 
 .timeline-change-label {
@@ -965,6 +979,8 @@ body.wbgl-lock-scroll {
 .timeline-change-arrow {
     margin: 0 4px;
     color: var(--text-muted);
+    display: inline-block;
+    transform-origin: center;
 }
 
 .timeline-change-new {
@@ -973,7 +989,8 @@ body.wbgl-lock-scroll {
 }
 
 .timeline-change-confidence {
-    margin-left: 4px;
+    margin-inline-start: 4px;
+    margin-inline-end: 0;
     font-size: 11px;
     color: var(--accent-primary);
 }
@@ -982,6 +999,9 @@ body.wbgl-lock-scroll {
     margin-top: 6px;
     border-top: 1px solid var(--border-primary);
     padding-top: 6px;
+    direction: inherit;
+    text-align: start;
+    unicode-bidi: plaintext;
 }
 
 .timeline-event-meta {
@@ -992,6 +1012,7 @@ body.wbgl-lock-scroll {
     color: var(--text-muted);
     display: flex;
     justify-content: space-between;
+    direction: inherit;
 }
 
 .timeline-event-user {
@@ -1003,6 +1024,8 @@ body.wbgl-lock-scroll {
     font-size: 10px;
     text-align: center;
     color: var(--text-light);
+    direction: inherit;
+    unicode-bidi: plaintext;
 }
 
 .timeline-readonly-input {
