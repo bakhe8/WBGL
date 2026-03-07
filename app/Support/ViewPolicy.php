@@ -27,7 +27,6 @@ class ViewPolicy
      * @var string[]
      */
     private const DEVELOPER_ONLY_VIEWS = [
-        'confidence-demo.php',
     ];
 
     /**

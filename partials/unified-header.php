@@ -485,20 +485,6 @@ $isDeveloperUser = \App\Support\ViewPolicy::isCurrentUserDeveloper();
                             </div>
                         <?php endif; ?>
 
-                        <?php if ($isDeveloperUser): ?>
-                            <div class="user-menu-section">
-                                <p class="user-menu-section-title" data-i18n="user.developer_group">أدوات المطور</p>
-                                <a href="<?= $basePath ?>views/confidence-demo.php"
-                                    class="user-menu-item <?= isActive('confidence-demo', $currentPage, $currentDir) ? 'active' : '' ?>"
-                                    data-user-menu-close>
-                                    <span class="user-menu-item-main">
-                                        <span class="user-menu-icon">🎯</span>
-                                        <span data-i18n="nav.confidence_demo">عرض الثقة (Demo)</span>
-                                    </span>
-                                </a>
-                            </div>
-                        <?php endif; ?>
-
                         <div class="user-menu-section">
                             <a href="<?= $basePath ?>api/logout.php"
                                 class="user-menu-item user-menu-item-danger"
