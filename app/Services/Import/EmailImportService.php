@@ -2,7 +2,9 @@
 
 namespace App\Services\Import;
 
+use App\Support\Settings;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use RuntimeException;
 
 class EmailImportService
 {
@@ -18,6 +20,10 @@ class EmailImportService
      */
     public function processMsgFile(string $filePath): array
     {
+        if (!(bool)Settings::getInstance()->get('EMAIL_MSG_IMPORT_ENABLED', false)) {
+            throw new RuntimeException('MSG import is disabled by system policy.');
+        }
+
         // 1. Extract MSG Content
         // Create a dedicated folder for this import to keep attachments together
         $importId = uniqid('import_');

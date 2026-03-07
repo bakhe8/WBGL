@@ -92,6 +92,7 @@ class Settings
         'PARSE_PASTE_V1_ENABLED' => true,             // Keep legacy parse endpoint available during transition to V2
         'PARSE_PASTE_USAGE_AUDIT_ENABLED' => true,    // Record parse endpoint version usage in audit trail
         'PARSE_PASTE_V1_SAFE_THRESHOLD_PERCENT' => 5, // V1 usage considered safe for retirement when it drops below this ratio
+        'EMAIL_MSG_IMPORT_ENABLED' => false,          // Disable legacy .msg import channel by default
         'LOG_FORMAT' => 'json',                       // Application log format: json|text
         'DEFAULT_LOCALE' => 'ar',                     // Organization-level UI locale default
         'DEFAULT_THEME' => 'system',                  // Organization-level UI theme default
