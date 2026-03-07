@@ -135,19 +135,33 @@ async function parsePasteData() {
     setHidden(document.getElementById('smartPasteError'), true);
 
     try {
-        // Call the parse API (now with built-in confidence support)
-        const response = await fetch('/api/parse-paste.php', {
+        const payload = {
+            text: text,
+            is_test_data: document.getElementById('pasteIsTestData')?.checked ? 1 : 0,
+            test_batch_id: document.getElementById('pasteTestBatchId')?.value,
+            test_note: document.getElementById('pasteTestNote')?.value
+        };
+
+        const sendParseRequest = (endpoint, clientHint) => fetch(endpoint, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-WBGL-Parse-Client': clientHint
             },
-            body: JSON.stringify({
-                text: text,
-                is_test_data: document.getElementById('pasteIsTestData')?.checked ? 1 : 0,
-                test_batch_id: document.getElementById('pasteTestBatchId')?.value,
-                test_note: document.getElementById('pasteTestNote')?.value
-            })
+            body: JSON.stringify(payload)
         });
+
+        let response;
+        try {
+            response = await sendParseRequest('/api/parse-paste-v2.php', 'ui-v2-primary');
+        } catch (primaryError) {
+            response = await sendParseRequest('/api/parse-paste.php', 'ui-v2-fallback-v1-network');
+        }
+
+        const fallbackStatuses = [404, 410, 500, 502, 503, 504];
+        if (response && !response.ok && fallbackStatuses.includes(response.status)) {
+            response = await sendParseRequest('/api/parse-paste.php', 'ui-v2-fallback-v1-status');
+        }
 
         const data = await response.json();
 

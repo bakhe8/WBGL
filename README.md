@@ -155,7 +155,7 @@ WBGL/
 | File Upload      | Extension + MIME dual validation + Random filename + `storage/` خارج public     |
 | Passwords        | `password_hash()` bcrypt                                                        |
 | Security Headers | CSP, HSTS, X-Frame-Options, X-Content-Type, CORP, COOP                          |
-| DB SSL           | `sslmode=prefer` ⚠️ — يُوصى بتغييره إلى `require`                               |
+| DB SSL           | `sslmode=require` افتراضياً + حارس إنتاجي يمنع أوضاع TLS الضعيفة على المضيفات غير المحلية |
 
 ---
 

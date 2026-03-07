@@ -128,7 +128,8 @@ class FuzzySignalFeeder implements SignalFeederInterface
     /**
      * Calculate similarity between two normalized strings
      * 
-     * Uses Levenshtein distance normalized to 0-1 range
+     * Uses Unicode-safe Levenshtein distance normalized to 0-1 range.
+     * Native levenshtein() is byte-oriented and can mis-score Arabic UTF-8 text.
      * 
      * @param string $str1
      * @param string $str2
@@ -140,16 +141,15 @@ class FuzzySignalFeeder implements SignalFeederInterface
             return 1.0; // Exact match
         }
 
-        $maxLength = max(mb_strlen($str1), mb_strlen($str2));
+        $chars1 = $this->toUnicodeChars($str1);
+        $chars2 = $this->toUnicodeChars($str2);
+        $maxLength = max(count($chars1), count($chars2));
         
         if ($maxLength === 0) {
             return 0.0;
         }
 
-        $distance = levenshtein($str1, $str2);
-        if ($distance < 0) {
-            return 0.0; // Guardrail: invalid distance should not produce a perfect match
-        }
+        $distance = $this->unicodeLevenshteinDistance($chars1, $chars2);
 
         // Convert distance to similarity (0-1)
         $similarity = 1 - ($distance / $maxLength);
@@ -189,16 +189,21 @@ class FuzzySignalFeeder implements SignalFeederInterface
     private function hasDistinctiveKeywordMatch(string $input, string $supplierName): bool
     {
         // Extract words (split by spaces, ignore empty)
-        $inputWords = array_filter(explode(' ', strtolower($input)));
-        $supplierWords = array_filter(explode(' ', strtolower($supplierName)));
+        $inputWords = $this->tokenizeWords($input);
+        $supplierWords = $this->tokenizeWords($supplierName);
         
         // Filter out generic words from both
         $inputDistinctive = array_diff($inputWords, self::GENERIC_WORDS);
         $supplierDistinctive = array_diff($supplierWords, self::GENERIC_WORDS);
         
-        // If either has NO distinctive words (all generic), allow match
+        // If both names are generic-only, only allow exact generic equality.
+        if (empty($inputDistinctive) && empty($supplierDistinctive)) {
+            return trim($input) === trim($supplierName);
+        }
+
+        // If one side has no distinctive tokens, do not trust fuzzy similarity alone.
         if (empty($inputDistinctive) || empty($supplierDistinctive)) {
-            return true;
+            return false;
         }
         
         // Check if at least ONE distinctive word is common
@@ -212,11 +217,71 @@ class FuzzySignalFeeder implements SignalFeederInterface
      */
     private function extractDistinctiveTokens(string $input): array
     {
-        $tokens = array_filter(explode(' ', strtolower(trim($input))));
+        $tokens = $this->tokenizeWords($input);
         $distinctive = array_values(array_diff($tokens, self::GENERIC_WORDS));
         return array_values(array_unique(array_filter(
             $distinctive,
             static fn(string $token): bool => mb_strlen($token) >= 3
         )));
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function tokenizeWords(string $value): array
+    {
+        $parts = preg_split('/\s+/u', trim(mb_strtolower($value, 'UTF-8')));
+        if (!is_array($parts)) {
+            return [];
+        }
+
+        return array_values(array_filter($parts, static fn(string $token): bool => $token !== ''));
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function toUnicodeChars(string $value): array
+    {
+        $chars = preg_split('//u', $value, -1, PREG_SPLIT_NO_EMPTY);
+        if (is_array($chars)) {
+            return $chars;
+        }
+
+        // Fallback for invalid UTF-8 payloads.
+        return str_split($value);
+    }
+
+    /**
+     * @param array<int,string> $a
+     * @param array<int,string> $b
+     */
+    private function unicodeLevenshteinDistance(array $a, array $b): int
+    {
+        $aLen = count($a);
+        $bLen = count($b);
+
+        if ($aLen === 0) {
+            return $bLen;
+        }
+        if ($bLen === 0) {
+            return $aLen;
+        }
+
+        $previous = range(0, $bLen);
+        for ($i = 1; $i <= $aLen; $i++) {
+            $current = [$i];
+            for ($j = 1; $j <= $bLen; $j++) {
+                $cost = ($a[$i - 1] === $b[$j - 1]) ? 0 : 1;
+                $current[$j] = min(
+                    $current[$j - 1] + 1,     // insertion
+                    $previous[$j] + 1,        // deletion
+                    $previous[$j - 1] + $cost // substitution
+                );
+            }
+            $previous = $current;
+        }
+
+        return (int)$previous[$bLen];
     }
 }

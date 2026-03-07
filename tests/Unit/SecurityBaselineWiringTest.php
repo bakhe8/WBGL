@@ -64,6 +64,13 @@ final class SecurityBaselineWiringTest extends TestCase
         $this->assertStringContainsString('self::clientIp() . \'|\' . self::clientUserAgent()', $rateLimiter);
     }
 
+    public function testSecurityHeadersExposeStrictReportOnlyCspPath(): void
+    {
+        $securityHeaders = $this->readFile('app/Support/SecurityHeaders.php');
+        $this->assertStringContainsString('Content-Security-Policy-Report-Only', $securityHeaders);
+        $this->assertStringContainsString('/api/csp-report.php', $securityHeaders);
+    }
+
     private function readFile(string $relativePath): string
     {
         $path = $this->root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);

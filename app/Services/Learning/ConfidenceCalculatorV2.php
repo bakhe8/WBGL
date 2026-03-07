@@ -67,7 +67,7 @@ class ConfidenceCalculatorV2
         }
 
         // 1. Identify primary signal (highest base score)
-        $primarySignal = $this->identifyPrimarySignal($signals);
+        $primarySignal = $this->resolvePrimarySignal($signals);
 
         // 2. Get base score
         $baseScore = $this->getBaseScore($primarySignal->signal_type, $primarySignal->raw_strength);
@@ -87,6 +87,21 @@ class ConfidenceCalculatorV2
 
         // 7. Clamp to valid range
         return max(0, min(100, $finalConfidence));
+    }
+
+    /**
+     * Resolve the primary signal using the same base-score semantics
+     * used by confidence computation.
+     *
+     * @param array<SignalDTO> $signals
+     */
+    public function resolvePrimarySignal(array $signals): SignalDTO
+    {
+        if (empty($signals)) {
+            throw new \InvalidArgumentException('Signals list cannot be empty');
+        }
+
+        return $this->identifyPrimarySignal($signals);
     }
 
     /**

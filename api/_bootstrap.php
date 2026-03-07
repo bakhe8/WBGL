@@ -8,6 +8,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../app/Support/autoload.php';
 
 use App\Support\AuthService;
+use App\Support\ApiTokenRateLimiter;
 use App\Support\ApiTokenService;
 use App\Support\CsrfGuard;
 use App\Support\Guard;
@@ -102,6 +103,63 @@ if (!function_exists('wbgl_api_fail')) {
             ['request_id' => $requestId],
             wbgl_api_error_type_from_status($statusCode)
         );
+    }
+}
+
+if (!function_exists('wbgl_api_token_rate_limited')) {
+    /**
+     * @param array<string,mixed> $context
+     */
+    function wbgl_api_token_rate_limited(int $retryAfter, array $context = []): void
+    {
+        $retryAfter = max(1, $retryAfter);
+        header('Retry-After: ' . $retryAfter);
+        wbgl_api_emit_token_rate_limit_headers($context, 0);
+
+        if ((bool)Settings::getInstance()->get('API_TOKEN_RATE_LIMIT_AUDIT_ENABLED', true)) {
+            AuditTrailService::record(
+                'api_token_rate_limited',
+                'deny',
+                'token_auth',
+                (string)($context['token_fingerprint'] ?? ''),
+                [
+                    'retry_after' => $retryAfter,
+                    'limit' => (int)($context['limit'] ?? 0),
+                    'window_seconds' => (int)($context['window_seconds'] ?? 0),
+                    'request_id' => wbgl_api_request_id(),
+                    'method' => (string)($_SERVER['REQUEST_METHOD'] ?? 'GET'),
+                    'endpoint' => (string)($_SERVER['REQUEST_URI'] ?? ''),
+                ],
+                'high'
+            );
+        }
+
+        $message = 'تم تجاوز حد محاولات المصادقة بالرمز. حاول مرة أخرى لاحقًا.';
+        wbgl_api_compat_fail(429, $message, [
+            'message' => $message,
+            'retry_after' => $retryAfter,
+        ], 'validation');
+    }
+}
+
+if (!function_exists('wbgl_api_emit_token_rate_limit_headers')) {
+    /**
+     * @param array<string,mixed> $rate
+     */
+    function wbgl_api_emit_token_rate_limit_headers(array $rate, ?int $remaining = null): void
+    {
+        $limit = (int)($rate['limit'] ?? 0);
+        $windowSeconds = (int)($rate['window_seconds'] ?? 0);
+        $resolvedRemaining = $remaining ?? (int)($rate['remaining'] ?? 0);
+
+        if ($limit > 0) {
+            header('X-RateLimit-Limit: ' . $limit);
+        }
+        header('X-RateLimit-Remaining: ' . max(0, $resolvedRemaining));
+        if ($windowSeconds > 0) {
+            header('X-RateLimit-Window: ' . $windowSeconds);
+        }
+        header('X-RateLimit-Scope: api_token_auth');
     }
 }
 
@@ -204,9 +262,29 @@ if (!function_exists('wbgl_api_require_login')) {
             return;
         }
 
-        $tokenUser = ApiTokenService::authenticateRequest();
-        if ($tokenUser !== null) {
-            return;
+        $token = ApiTokenService::extractBearerToken();
+        if ($token !== null) {
+            $rate = ApiTokenRateLimiter::check($token);
+            if (empty($rate['allowlisted'])) {
+                wbgl_api_emit_token_rate_limit_headers($rate);
+            }
+            if (empty($rate['allowed'])) {
+                wbgl_api_token_rate_limited((int)($rate['retry_after'] ?? 60), $rate);
+            }
+
+            $tokenUser = ApiTokenService::authenticateToken($token);
+            if ($tokenUser !== null) {
+                ApiTokenRateLimiter::clear($token);
+                return;
+            }
+
+            $failure = ApiTokenRateLimiter::recordFailure($token);
+            if (empty($failure['allowlisted'])) {
+                wbgl_api_emit_token_rate_limit_headers($failure);
+            }
+            if (!empty($failure['locked'])) {
+                wbgl_api_token_rate_limited((int)($failure['retry_after'] ?? 60), $failure);
+            }
         }
 
         wbgl_api_fail(401, 'Unauthorized');

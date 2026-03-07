@@ -59,7 +59,17 @@ class ApiTokenService
         if ($token === null) {
             return null;
         }
-        $user = self::resolveUserByToken($token);
+        return self::authenticateToken($token);
+    }
+
+    public static function authenticateToken(string $plainToken): ?User
+    {
+        $plainToken = trim($plainToken);
+        if ($plainToken === '') {
+            return null;
+        }
+
+        $user = self::resolveUserByToken($plainToken);
         if ($user !== null) {
             AuthService::forceAuthenticatedUser($user);
         }
@@ -174,4 +184,3 @@ class ApiTokenService
         return '';
     }
 }
-

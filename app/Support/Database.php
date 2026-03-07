@@ -78,7 +78,7 @@ class Database
         $summary['host'] = (string)($meta['host'] ?? '');
         $summary['port'] = (int)($meta['port'] ?? 5432);
         $summary['database'] = (string)($meta['database'] ?? '');
-        $summary['sslmode'] = (string)($meta['sslmode'] ?? 'prefer');
+        $summary['sslmode'] = (string)($meta['sslmode'] ?? 'require');
 
         return $summary;
     }
@@ -105,14 +105,19 @@ class Database
             );
         }
 
+        $host = (string)self::pickConfigValue('WBGL_DB_HOST', $settings, 'DB_HOST', '127.0.0.1');
+        $sslModeRaw = (string)self::pickConfigValue('WBGL_DB_SSLMODE', $settings, 'DB_SSLMODE', 'require');
+        $sslMode = self::normalizeSslMode($sslModeRaw);
+        self::assertTlsPolicyForProduction($settings, $host, $sslMode);
+
         return [
             'driver' => 'pgsql',
-            'host' => (string)self::pickConfigValue('WBGL_DB_HOST', $settings, 'DB_HOST', '127.0.0.1'),
+            'host' => $host,
             'port' => (int)self::pickConfigValue('WBGL_DB_PORT', $settings, 'DB_PORT', 5432),
             'database' => (string)self::pickConfigValue('WBGL_DB_NAME', $settings, 'DB_NAME', 'wbgl'),
             'username' => (string)self::pickConfigValue('WBGL_DB_USER', $settings, 'DB_USER', ''),
             'password' => (string)self::pickConfigValue('WBGL_DB_PASS', $settings, 'DB_PASS', ''),
-            'sslmode' => (string)self::pickConfigValue('WBGL_DB_SSLMODE', $settings, 'DB_SSLMODE', 'prefer'),
+            'sslmode' => $sslMode,
         ];
     }
 
@@ -124,7 +129,7 @@ class Database
         $host = (string)($config['host'] ?? '127.0.0.1');
         $port = (int)($config['port'] ?? 5432);
         $database = (string)($config['database'] ?? 'wbgl');
-        $sslmode = (string)($config['sslmode'] ?? 'prefer');
+        $sslmode = self::normalizeSslMode((string)($config['sslmode'] ?? 'require'));
         $username = (string)($config['username'] ?? '');
         $password = (string)($config['password'] ?? '');
 
@@ -146,6 +151,43 @@ class Database
     {
         $normalized = strtolower(trim($driver));
         return $normalized === 'pgsql' ? 'pgsql' : $normalized;
+    }
+
+    private static function normalizeSslMode(string $sslMode): string
+    {
+        $normalized = strtolower(trim($sslMode));
+        return $normalized !== '' ? $normalized : 'require';
+    }
+
+    /**
+     * In production, insecure sslmode values are blocked for non-local hosts.
+     *
+     * @param mixed $settings
+     */
+    private static function assertTlsPolicyForProduction(mixed $settings, string $host, string $sslMode): void
+    {
+        if (!($settings instanceof Settings) || !$settings->isProductionMode()) {
+            return;
+        }
+
+        $insecureModes = ['disable', 'allow', 'prefer'];
+        if (!in_array($sslMode, $insecureModes, true)) {
+            return;
+        }
+
+        if (self::isLoopbackHost($host)) {
+            return;
+        }
+
+        throw new RuntimeException(
+            'Production DB connection requires TLS. Set DB_SSLMODE to require, verify-ca, or verify-full.'
+        );
+    }
+
+    private static function isLoopbackHost(string $host): bool
+    {
+        $host = strtolower(trim($host));
+        return in_array($host, ['127.0.0.1', '::1', 'localhost'], true);
     }
 
     /**

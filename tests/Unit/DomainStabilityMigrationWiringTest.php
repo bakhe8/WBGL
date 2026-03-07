@@ -36,4 +36,25 @@ final class DomainStabilityMigrationWiringTest extends TestCase
         $this->assertStringContainsString('chk_guarantee_decisions_active_action_domain', $sql);
         $this->assertStringContainsString('chk_undo_requests_status_domain', $sql);
     }
+
+    public function testA14SchemaHardeningMigrationDeclaresTypeAndConstraintUpgrades(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR
+            . 'database' . DIRECTORY_SEPARATOR
+            . 'migrations' . DIRECTORY_SEPARATOR
+            . '20260307_000031_harden_schema_temporal_types_and_alias_constraints.sql';
+
+        $this->assertFileExists($path, 'A14 migration file must exist.');
+
+        $sql = (string) file_get_contents($path);
+
+        $this->assertStringContainsString(
+            'idx_supplier_alternative_names_supplier_normalized_unique',
+            $sql
+        );
+        $this->assertStringContainsString('chk_guarantees_raw_data_object', $sql);
+        $this->assertStringContainsString('ALTER COLUMN active_action_set_at TYPE TIMESTAMPTZ', $sql);
+        $this->assertStringContainsString('ALTER COLUMN window_started_at TYPE TIMESTAMPTZ', $sql);
+        $this->assertStringContainsString('ALTER COLUMN created_at TYPE TIMESTAMPTZ', $sql);
+    }
 }

@@ -1834,7 +1834,7 @@ $formattedSuppliers = array_map(function ($s) {
                                             <div class="note-content attachment-name"><?= htmlspecialchars($file['file_name'] ?? $indexT('index.ui.txt_ae56c3a5', '—')) ?></div>
                                             <div class="note-time"><?= substr($file['created_at'] ?? '', 0, 10) ?></div>
                                         </div>
-                                        <a href="/V3/storage/<?= htmlspecialchars($file['file_path'] ?? '') ?>"
+                                        <a href="/api/attachment-file.php?id=<?= (int)($file['id'] ?? 0) ?>&amp;inline=1"
                                             target="_blank"
                                             class="attachment-download-link"
                                             title=""

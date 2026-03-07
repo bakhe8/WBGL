@@ -63,22 +63,70 @@ window.SmartWorkstation = {
         this.state.draftId = draftData.id;
         this.state.currentIndex = 0;
 
-        // Find best PDF among attachments
-        let pdfFile = null;
-        if (draftData.evidence_files) {
-            pdfFile = draftData.evidence_files.find(f => f.name.toLowerCase().endsWith('.pdf'));
-        }
+        const normalizeEvidenceFiles = (rawEvidenceFiles) => {
+            if (Array.isArray(rawEvidenceFiles)) {
+                return rawEvidenceFiles;
+            }
+
+            if (rawEvidenceFiles && typeof rawEvidenceFiles === 'object') {
+                return Object.entries(rawEvidenceFiles)
+                    .filter(([, value]) => value)
+                    .map(([type, value]) => {
+                        if (typeof value === 'string') {
+                            const fallbackName = type.toLowerCase() === 'pdf' ? 'evidence.pdf' : `${type}.bin`;
+                            return { type, name: fallbackName, url: value, path: value };
+                        }
+                        if (value && typeof value === 'object') {
+                            return {
+                                type,
+                                name: value.name || `${type}.bin`,
+                                url: value.url || null,
+                                path: value.path || value.temp_path || null,
+                                id: value.id || null
+                            };
+                        }
+                        return null;
+                    })
+                    .filter(Boolean);
+            }
+
+            return [];
+        };
+
+        const resolveEvidenceViewerUrl = (file) => {
+            if (!file || typeof file !== 'object') {
+                return null;
+            }
+            if (typeof file.url === 'string' && file.url.trim() !== '') {
+                return file.url;
+            }
+            if (file.id) {
+                return `/api/attachment-file.php?id=${encodeURIComponent(String(file.id))}&inline=1`;
+            }
+            if (typeof file.path === 'string' && file.path.trim() !== '') {
+                return `/api/evidence-file.php?temp_path=${encodeURIComponent(file.path)}&inline=1`;
+            }
+            return null;
+        };
+
+        const evidenceFiles = normalizeEvidenceFiles(draftData.evidence_files);
+        const pdfFile = evidenceFiles.find((file) => {
+            const fileName = String(file?.name || file?.path || '').toLowerCase();
+            return fileName.endsWith('.pdf');
+        });
 
         if (!pdfFile) {
             Swal.fire(wsT('index.workstation.alert.error_title', ''), wsT('index.workstation.errors.missing_pdf', ''), 'error');
             return;
         }
 
-        // Fix: resolve path relative to public uploads
-        // Paths from DB are like 'uploads/guarantees/ID/file.pdf'
-        this.state.pdfUrl = `/public/${pdfFile.path}`;
+        this.state.pdfUrl = resolveEvidenceViewerUrl(pdfFile);
+        if (!this.state.pdfUrl) {
+            Swal.fire(wsT('index.workstation.alert.error_title', ''), wsT('index.workstation.errors.missing_pdf', ''), 'error');
+            return;
+        }
 
-        document.getElementById('pdfFileName').textContent = pdfFile.name;
+        document.getElementById('pdfFileName').textContent = pdfFile.name || 'PDF';
         document.getElementById('workstationPdfViewer').src = this.state.pdfUrl;
 
         // Initialize with first entry from draft data

@@ -14,14 +14,26 @@ require_once __DIR__ . '/../app/Repositories/GuaranteeRepository.php';
 require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 require_once __DIR__ . '/_bootstrap.php';
 
+use App\Services\AuditTrailService;
+use App\Services\SmartPaste\ConfidenceCalculator;
+use App\Support\AuthService;
 use App\Support\Database;
 use App\Support\Input;
 use App\Support\Settings;
 use App\Services\ParseCoordinatorService;
-use App\Services\SmartPaste\ConfidenceCalculator;
+use App\Services\SmartPaste\ParseResponseConfidenceGuard;
 
 header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_permission('import_excel');
+
+$requestedEndpointVersion = defined('WBGL_PARSE_PASTE_REQUESTED_VERSION')
+    ? strtolower(trim((string)WBGL_PARSE_PASTE_REQUESTED_VERSION))
+    : 'v2';
+if ($requestedEndpointVersion === '') {
+    $requestedEndpointVersion = 'v2';
+}
+$effectiveEndpointVersion = 'v2';
+$clientHint = trim((string)($_SERVER['HTTP_X_WBGL_PARSE_CLIENT'] ?? 'unknown-client'));
 
 try {
     // Get input
@@ -35,6 +47,14 @@ try {
     // Production Mode: Block test data creation
     $settings = Settings::getInstance();
     if ($isTestData && $settings->isProductionMode()) {
+        wbgl_parse_paste_record_usage(
+            $requestedEndpointVersion,
+            $effectiveEndpointVersion,
+            $clientHint,
+            false,
+            403,
+            ['error' => 'production_mode_test_data_blocked']
+        );
         wbgl_api_compat_fail(403, 'لا يمكن إنشاء بيانات اختبار في وضع الإنتاج', [], 'permission');
     }
 
@@ -57,6 +77,21 @@ try {
 
     // Parse text using ParseCoordinatorService
     $result = ParseCoordinatorService::parseText($text, $db, $options);
+    if (is_array($result)) {
+        $result = ParseResponseConfidenceGuard::strengthen($result, $text);
+    }
+
+    if (!is_array($result)) {
+        wbgl_parse_paste_record_usage(
+            $requestedEndpointVersion,
+            $effectiveEndpointVersion,
+            $clientHint,
+            false,
+            500,
+            ['error' => 'parse_service_invalid_response']
+        );
+        wbgl_api_compat_fail(500, 'Parse service returned invalid response', [], 'internal');
+    }
 
     // Defense-in-depth: when parse resolves to an existing guarantee,
     // enforce object-level visibility before returning its id/details.
@@ -67,64 +102,6 @@ try {
         && is_numeric($result['id'])
     ) {
         wbgl_api_require_guarantee_visibility((int)$result['id']);
-    }
-    
-    // ✅ NEW: Calculate confidence scores for extracted fields
-    if ($result['success'] && !empty($result['extracted'])) {
-        $calculator = new ConfidenceCalculator();
-        $confidence = [];
-        $extracted = $result['extracted'];
-        
-        // Calculate confidence for supplier
-        if (!empty($extracted['supplier'])) {
-            $confidence['supplier'] = $calculator->calculateSupplierConfidence(
-                $text,
-                $extracted['supplier'],
-                'fuzzy', // We don't have match type from ParseCoordinator, assume fuzzy
-                85, // Assume decent similarity
-                0 // No historical count available
-            );
-        }
-        
-        // Calculate confidence for bank
-        if (!empty($extracted['bank'])) {
-            $confidence['bank'] = $calculator->calculateBankConfidence(
-                $text,
-                $extracted['bank'],
-                'fuzzy',
-                85
-            );
-        }
-        
-        // Calculate confidence for amount
-        if (!empty($extracted['amount'])) {
-            $confidence['amount'] = $calculator->calculateAmountConfidence(
-                $text,
-                floatval($extracted['amount'])
-            );
-        }
-        
-        // Calculate confidence for dates
-        if (!empty($extracted['expiry_date'])) {
-            $confidence['expiry_date'] = $calculator->calculateDateConfidence(
-                $text,
-                $extracted['expiry_date']
-            );
-        }
-        
-        if (!empty($extracted['issue_date'])) {
-            $confidence['issue_date'] = $calculator->calculateDateConfidence(
-                $text,
-                $extracted['issue_date']
-            );
-        }
-        
-        // Add confidence to result
-        $result['confidence'] = $confidence;
-        
-        // Calculate overall confidence (average of all field confidences)
-        $scores = array_column($confidence, 'confidence');
-        $result['overall_confidence'] = !empty($scores) ? round(array_sum($scores) / count($scores)) : 0;
     }
     
     // ✅ NEW (Phase 2): Log confidence scores in timeline metadata
@@ -139,7 +116,7 @@ try {
             foreach ($result['confidence'] as $field => $data) {
                 $confidenceSummary['fields'][$field] = [
                     'score' => $data['confidence'] ?? 0,
-                    'level' => \App\Services\SmartPaste\ConfidenceCalculator::getConfidenceLevel($data['confidence'] ?? 0)
+                    'level' => \App\Services\SmartPaste\ConfidenceCalculator::getConfidenceLevel((int)($data['confidence'] ?? 0))
                 ];
             }
             
@@ -160,25 +137,94 @@ try {
         }
     }
     
-    if (!is_array($result)) {
-        wbgl_api_compat_fail(500, 'Parse service returned invalid response', [], 'internal');
-    }
-
     if (!($result['success'] ?? false)) {
         $message = (string)($result['error'] ?? 'فشل تحليل النص');
+        wbgl_parse_paste_record_usage(
+            $requestedEndpointVersion,
+            $effectiveEndpointVersion,
+            $clientHint,
+            false,
+            400,
+            ['error' => $message]
+        );
         wbgl_api_compat_fail(400, $message, $result, 'validation');
     }
 
     // Return result with confidence scores
+    wbgl_parse_paste_record_usage(
+        $requestedEndpointVersion,
+        $effectiveEndpointVersion,
+        $clientHint,
+        true,
+        200,
+        [
+            'exists_before' => !empty($result['exists_before']),
+            'is_multi' => !empty($result['multi']),
+        ]
+    );
     wbgl_api_compat_success($result);
 
 } catch (\Throwable $e) {
     // Error handling
     error_log("Parse-paste-v2 error: " . $e->getMessage());
+
+    wbgl_parse_paste_record_usage(
+        $requestedEndpointVersion,
+        $effectiveEndpointVersion,
+        $clientHint,
+        false,
+        400,
+        [
+            'error' => $e->getMessage(),
+            'exception' => get_class($e),
+        ]
+    );
     
     wbgl_api_compat_fail(400, $e->getMessage(), [
         'extracted' => [],
         'field_status' => [],
         'confidence' => [],
     ], 'validation');
+}
+
+if (!function_exists('wbgl_parse_paste_record_usage')) {
+    /**
+     * @param array<string,mixed> $extra
+     */
+    function wbgl_parse_paste_record_usage(
+        string $requestedVersion,
+        string $effectiveVersion,
+        string $clientHint,
+        bool $success,
+        int $statusCode,
+        array $extra = []
+    ): void {
+        $settings = Settings::getInstance();
+        if (!(bool)$settings->get('PARSE_PASTE_USAGE_AUDIT_ENABLED', true)) {
+            return;
+        }
+
+        $user = AuthService::getCurrentUser();
+        $details = array_merge([
+            'requested_version' => $requestedVersion,
+            'effective_version' => $effectiveVersion,
+            'client_hint' => $clientHint,
+            'success' => $success,
+            'status_code' => $statusCode,
+            'request_id' => wbgl_api_request_id(),
+            'endpoint' => (string)($_SERVER['REQUEST_URI'] ?? ''),
+            'method' => (string)($_SERVER['REQUEST_METHOD'] ?? 'POST'),
+            'user_id' => $user?->id,
+            'username' => (string)($user?->username ?? ''),
+        ], $extra);
+
+        AuditTrailService::record(
+            'parse_paste_endpoint_usage',
+            'observe',
+            'parse_paste_endpoint',
+            $requestedVersion,
+            $details,
+            $success ? 'info' : 'medium'
+        );
+    }
 }

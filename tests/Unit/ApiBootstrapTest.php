@@ -18,6 +18,8 @@ final class ApiBootstrapTest extends TestCase
         $this->assertTrue(function_exists('wbgl_api_require_login'));
         $this->assertTrue(function_exists('wbgl_api_require_permission'));
         $this->assertTrue(function_exists('wbgl_api_require_csrf'));
+        $this->assertTrue(function_exists('wbgl_api_token_rate_limited'));
+        $this->assertTrue(function_exists('wbgl_api_emit_token_rate_limit_headers'));
         $this->assertTrue(function_exists('wbgl_api_current_user_display'));
     }
 

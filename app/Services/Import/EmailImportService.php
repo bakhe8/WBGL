@@ -21,10 +21,10 @@ class EmailImportService
         // 1. Extract MSG Content
         // Create a dedicated folder for this import to keep attachments together
         $importId = uniqid('import_');
-        $outputDir = __DIR__ . '/../../../public/uploads/temp/' . $importId;
+        $outputDir = __DIR__ . '/../../../storage/uploads/temp/' . $importId;
         
         if (!is_dir($outputDir)) {
-            mkdir($outputDir, 0777, true);
+            mkdir($outputDir, 0755, true);
         }
 
         // Save the original MSG file to this directory
@@ -245,11 +245,32 @@ class EmailImportService
     
     private function getFileUrl($path)
     {
-        // Convert absolute path to relative public URL
-        $publicPos = strpos($path, 'public');
-        if ($publicPos !== false) {
-            return substr($path, $publicPos + 6); // remove 'public'
+        $relativePath = $this->toRelativeProjectPath((string)$path);
+        if ($relativePath !== '') {
+            return '/api/evidence-file.php?temp_path='
+                . rawurlencode($relativePath)
+                . '&name='
+                . rawurlencode((string)basename((string)$path))
+                . '&inline=1';
         }
         return basename($path);
+    }
+
+    private function toRelativeProjectPath(string $absolutePath): string
+    {
+        $projectRoot = realpath(__DIR__ . '/../../../');
+        $realPath = realpath($absolutePath);
+        if ($projectRoot === false || $realPath === false) {
+            return '';
+        }
+
+        $projectRoot = str_replace('\\', '/', $projectRoot);
+        $realPath = str_replace('\\', '/', $realPath);
+        $projectRootPrefix = rtrim($projectRoot, '/') . '/';
+        if (!str_starts_with($realPath, $projectRootPrefix)) {
+            return '';
+        }
+
+        return ltrim(substr($realPath, strlen($projectRootPrefix)), '/');
     }
 }

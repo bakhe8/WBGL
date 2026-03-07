@@ -221,9 +221,7 @@ class UnifiedLearningAuthority
      */
     private function identifyPrimarySignal(array $signals): SignalDTO
     {
-        // Use same logic as ConfidenceCalculatorV2
-        // For now, return first (will be refined)
-        return $signals[0];
+        return $this->calculator->resolvePrimarySignal($signals);
     }
 
     /**

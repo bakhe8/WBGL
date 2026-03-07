@@ -8,6 +8,161 @@ use App\Services\ImportService;
 use App\Services\TimelineRecorder;
 use App\Support\TypeNormalizer;
 
+/**
+ * Resolve legacy/new evidence paths to absolute filesystem paths.
+ *
+ * Supported inputs:
+ * - /api/evidence-file.php?temp_path=... (secured temp evidence URL)
+ * - /uploads/... (legacy public temp)
+ * - uploads/...  (legacy public temp)
+ * - /storage/uploads/... (new storage temp)
+ * - storage/uploads/...  (new storage temp)
+ */
+function wbgl_resolve_evidence_source_path(string $relativePath): ?string
+{
+    $relativePath = trim($relativePath);
+    if ($relativePath === '') {
+        return null;
+    }
+    $tempPathFromReference = wbgl_extract_temp_path_from_evidence_reference($relativePath);
+    if (is_string($tempPathFromReference) && $tempPathFromReference !== '') {
+        $relativePath = $tempPathFromReference;
+    }
+
+    $projectRoot = realpath(__DIR__ . '/..');
+    if ($projectRoot === false) {
+        return null;
+    }
+
+    $normalized = str_replace('\\', '/', $relativePath);
+    $normalized = preg_replace('#/+#', '/', $normalized) ?: $normalized;
+    $normalized = ltrim($normalized);
+
+    $candidates = [];
+    if (str_starts_with($normalized, '/storage/')) {
+        $candidates[] = $projectRoot . $normalized;
+    }
+    if (str_starts_with($normalized, 'storage/')) {
+        $candidates[] = $projectRoot . '/' . $normalized;
+    }
+    if (str_starts_with($normalized, '/uploads/')) {
+        $candidates[] = $projectRoot . '/public' . $normalized;
+    }
+    if (str_starts_with($normalized, 'uploads/')) {
+        $candidates[] = $projectRoot . '/public/' . $normalized;
+    }
+    if (str_starts_with($normalized, '/public/uploads/')) {
+        $candidates[] = $projectRoot . $normalized;
+    }
+    if (str_starts_with($normalized, 'public/uploads/')) {
+        $candidates[] = $projectRoot . '/' . $normalized;
+    }
+
+    foreach ($candidates as $candidate) {
+        $real = realpath($candidate);
+        if ($real === false || !is_file($real)) {
+            continue;
+        }
+
+        $realNormalized = str_replace('\\', '/', $real);
+        $allowedRoots = [
+            str_replace('\\', '/', $projectRoot . '/public/uploads/'),
+            str_replace('\\', '/', $projectRoot . '/storage/uploads/'),
+        ];
+        foreach ($allowedRoots as $root) {
+            if (str_starts_with($realNormalized, $root)) {
+                return $real;
+            }
+        }
+    }
+
+    return null;
+}
+
+function wbgl_extract_temp_path_from_evidence_reference(string $reference): ?string
+{
+    $reference = trim($reference);
+    if ($reference === '') {
+        return null;
+    }
+
+    $parts = @parse_url($reference);
+    if (!is_array($parts)) {
+        return null;
+    }
+
+    $path = trim((string)($parts['path'] ?? ''));
+    if ($path === '') {
+        return null;
+    }
+
+    if (!preg_match('#(^|/)api/evidence-file\.php$#i', $path)) {
+        return null;
+    }
+
+    $query = (string)($parts['query'] ?? '');
+    if ($query === '') {
+        return null;
+    }
+
+    $parsedQuery = [];
+    parse_str($query, $parsedQuery);
+    $tempPath = trim((string)($parsedQuery['temp_path'] ?? ''));
+    return $tempPath !== '' ? $tempPath : null;
+}
+
+function wbgl_extract_original_name_from_evidence_reference(string $reference): ?string
+{
+    $reference = trim($reference);
+    if ($reference === '') {
+        return null;
+    }
+
+    $parts = @parse_url($reference);
+    if (!is_array($parts)) {
+        return null;
+    }
+
+    $query = (string)($parts['query'] ?? '');
+    if ($query === '') {
+        return null;
+    }
+
+    $parsedQuery = [];
+    parse_str($query, $parsedQuery);
+    $name = trim((string)($parsedQuery['name'] ?? ''));
+    return $name !== '' ? basename($name) : null;
+}
+
+function wbgl_resolve_evidence_original_name(string $reference, string $absTempPath): string
+{
+    $nameFromReference = wbgl_extract_original_name_from_evidence_reference($reference);
+    if (is_string($nameFromReference) && $nameFromReference !== '') {
+        return $nameFromReference;
+    }
+
+    $fromReferencePath = basename((string)(parse_url($reference, PHP_URL_PATH) ?: ''));
+    if ($fromReferencePath !== '' && strtolower($fromReferencePath) !== 'evidence-file.php') {
+        return $fromReferencePath;
+    }
+
+    return basename($absTempPath);
+}
+
+function wbgl_is_allowed_evidence_extension(string $filename): bool
+{
+    $ext = strtolower((string)pathinfo($filename, PATHINFO_EXTENSION));
+    if ($ext === '') {
+        return false;
+    }
+
+    $allowed = [
+        'pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'msg',
+    ];
+
+    return in_array($ext, $allowed, true);
+}
+
 wbgl_api_require_permission('import_excel');
 
 try {
@@ -120,22 +275,29 @@ try {
         foreach ($evidenceFiles as $type => $tempRelPath) {
             if (!$tempRelPath) continue;
 
-            $publicDir = realpath(__DIR__ . '/../public');
-            $absTempPath = $publicDir . '/' . ltrim($tempRelPath, '/');
+            $absTempPath = wbgl_resolve_evidence_source_path((string)$tempRelPath);
             
-            if (file_exists($absTempPath)) {
-                $ext = pathinfo($tempRelPath, PATHINFO_EXTENSION);
-                $origName = basename($tempRelPath);
+            if (is_string($absTempPath) && file_exists($absTempPath)) {
+                $origName = wbgl_resolve_evidence_original_name((string)$tempRelPath, $absTempPath);
+                if (!wbgl_is_allowed_evidence_extension($origName)) {
+                    continue;
+                }
+                $ext = strtolower((string)pathinfo($origName, PATHINFO_EXTENSION));
                 
-                // Target Dir: public/uploads/guarantees/{id}
-                $targetDirRel = 'uploads/guarantees/' . $guaranteeId;
-                $targetDirAbs = $publicDir . '/' . $targetDirRel;
+                // Target Dir: storage/attachments/guarantees/{id}
+                $storageRoot = realpath(__DIR__ . '/../storage');
+                if ($storageRoot === false) {
+                    throw new RuntimeException('Storage directory is missing');
+                }
+                $targetDirRel = 'attachments/guarantees/' . $guaranteeId;
+                $targetDirAbs = $storageRoot . '/' . $targetDirRel;
                 
                 if (!is_dir($targetDirAbs)) {
-                    mkdir($targetDirAbs, 0777, true);
+                    mkdir($targetDirAbs, 0755, true);
                 }
                 
-                $newFileName = $type . '_' . time() . '.' . $ext;
+                $safeType = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)$type) ?: 'evidence';
+                $newFileName = $safeType . '_' . time() . '.' . $ext;
                 $targetPathAbs = $targetDirAbs . '/' . $newFileName;
                 $targetPathRel = $targetDirRel . '/' . $newFileName;
                 
@@ -178,18 +340,25 @@ try {
         foreach ($evidenceFiles as $type => $tempRelPath) {
             if (!$tempRelPath) continue;
 
-            $publicDir = realpath(__DIR__ . '/../public');
-            $absTempPath = $publicDir . '/' . ltrim($tempRelPath, '/');
+            $absTempPath = wbgl_resolve_evidence_source_path((string)$tempRelPath);
             
-            if (file_exists($absTempPath)) {
-                $ext = pathinfo($tempRelPath, PATHINFO_EXTENSION);
-                $origName = basename($tempRelPath);
-                $targetDirRel = 'uploads/guarantees/' . $guaranteeId;
-                $targetDirAbs = $publicDir . '/' . $targetDirRel;
+            if (is_string($absTempPath) && file_exists($absTempPath)) {
+                $origName = wbgl_resolve_evidence_original_name((string)$tempRelPath, $absTempPath);
+                if (!wbgl_is_allowed_evidence_extension($origName)) {
+                    continue;
+                }
+                $ext = strtolower((string)pathinfo($origName, PATHINFO_EXTENSION));
+                $storageRoot = realpath(__DIR__ . '/../storage');
+                if ($storageRoot === false) {
+                    throw new RuntimeException('Storage directory is missing');
+                }
+                $targetDirRel = 'attachments/guarantees/' . $guaranteeId;
+                $targetDirAbs = $storageRoot . '/' . $targetDirRel;
                 
-                if (!is_dir($targetDirAbs)) mkdir($targetDirAbs, 0777, true);
+                if (!is_dir($targetDirAbs)) mkdir($targetDirAbs, 0755, true);
                 
-                $newFileName = $type . '_' . time() . '.' . $ext;
+                $safeType = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)$type) ?: 'evidence';
+                $newFileName = $safeType . '_' . time() . '.' . $ext;
                 $targetPathAbs = $targetDirAbs . '/' . $newFileName;
                 $targetPathRel = $targetDirRel . '/' . $newFileName;
                 

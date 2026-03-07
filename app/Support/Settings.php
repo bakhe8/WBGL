@@ -81,6 +81,17 @@ class Settings
         'CSRF_ENFORCE_MUTATING' => true,              // Enforce CSRF token for POST/PUT/PATCH/DELETE
         'SESSION_IDLE_TIMEOUT_SECONDS' => 1800,       // Inactive user session timeout (30 minutes)
         'SESSION_ABSOLUTE_TIMEOUT_SECONDS' => 43200,  // Absolute session timeout (12 hours)
+        'CSP_REPORT_ONLY' => true,                    // Keep strict CSP in report-only mode during hardening
+        'CSP_STRICT_ENFORCE' => false,                // Toggle strict CSP enforcement after violations are cleared
+        'API_TOKEN_RATE_LIMIT_MAX_ATTEMPTS' => 12,    // Failed bearer-token auth attempts allowed per window
+        'API_TOKEN_RATE_LIMIT_WINDOW_SECONDS' => 60,  // Sliding window size for bearer-token auth throttling
+        'API_TOKEN_RATE_LIMIT_LOCKOUT_SECONDS' => 120,// Lock duration after exceeding bearer-token attempts
+        'API_TOKEN_RATE_LIMIT_ALLOWLIST_IPS' => [],   // Optional IP/CIDR allowlist to bypass token limiter for trusted integrations
+        'API_TOKEN_RATE_LIMIT_ALLOWLIST_TOKEN_PREFIXES' => [], // Optional token-prefix allowlist for trusted machine clients
+        'API_TOKEN_RATE_LIMIT_AUDIT_ENABLED' => true, // Emit audit trail records when token auth gets rate-limited
+        'PARSE_PASTE_V1_ENABLED' => true,             // Keep legacy parse endpoint available during transition to V2
+        'PARSE_PASTE_USAGE_AUDIT_ENABLED' => true,    // Record parse endpoint version usage in audit trail
+        'PARSE_PASTE_V1_SAFE_THRESHOLD_PERCENT' => 5, // V1 usage considered safe for retirement when it drops below this ratio
         'LOG_FORMAT' => 'json',                       // Application log format: json|text
         'DEFAULT_LOCALE' => 'ar',                     // Organization-level UI locale default
         'DEFAULT_THEME' => 'system',                  // Organization-level UI theme default
@@ -106,7 +117,7 @@ class Settings
         'DB_NAME' => 'wbgl',
         'DB_USER' => '',
         'DB_PASS' => '',
-        'DB_SSLMODE' => 'prefer',
+        'DB_SSLMODE' => 'require',
 
         // Limits
         'CANDIDATES_LIMIT' => 20,        // Max suggestions shown
