@@ -68,6 +68,22 @@ function closeAllModals() {
     });
 }
 
+function showSmartPasteErrorInline(message, detailsHtml = '') {
+    const errorDiv = document.getElementById('smartPasteError');
+    const errorMsg = document.getElementById('errorMessage');
+    const missingList = document.getElementById('missingFieldsList');
+
+    if (errorMsg) {
+        errorMsg.textContent = message || t('modals.modal.txt_f2ca37e9');
+    }
+
+    if (missingList) {
+        missingList.innerHTML = detailsHtml;
+    }
+
+    setHidden(errorDiv, false);
+}
+
 // دالة لمعالجة الإدخال اليدوي
 async function submitManualEntry() {
     const supplier = document.getElementById('manualSupplier')?.value;
@@ -133,6 +149,14 @@ async function parsePasteData() {
     // Hide previous results
     setHidden(document.getElementById('extractionPreview'), true);
     setHidden(document.getElementById('smartPasteError'), true);
+    const errorMsgEl = document.getElementById('errorMessage');
+    const missingFieldsEl = document.getElementById('missingFieldsList');
+    if (errorMsgEl) {
+        errorMsgEl.textContent = '';
+    }
+    if (missingFieldsEl) {
+        missingFieldsEl.innerHTML = '';
+    }
 
     try {
         const payload = {
@@ -163,11 +187,31 @@ async function parsePasteData() {
             response = await sendParseRequest('/api/parse-paste.php', 'ui-v2-fallback-v1-status');
         }
 
-        const data = await response.json();
+        const responseText = await response.text();
+        let data = null;
+        try {
+            data = responseText ? JSON.parse(responseText) : null;
+        } catch (jsonError) {
+            const requestId = response.headers.get('x-request-id') || '';
+            const details = `
+                <div class="wbgl-field-status">
+                    <strong>تفاصيل فنية:</strong>
+                    <div class="wbgl-field-status-grid">
+                        <div class="wbgl-field-status-item wbgl-field-status-item--missing">HTTP: ${response.status}</div>
+                        ${requestId ? `<div class="wbgl-field-status-item wbgl-field-status-item--missing">Request ID: ${requestId}</div>` : ''}
+                    </div>
+                </div>
+            `;
+            showSmartPasteErrorInline('تعذر قراءة استجابة الخادم. حاول مرة أخرى أو راجع مسؤول النظام.', details);
+            showToast('فشل تحليل الاستجابة من الخادم', 'error');
+            return;
+        }
 
-        // Reset button
-        btnProcess.innerHTML = originalText;
-        btnProcess.disabled = false;
+        if (!data || typeof data !== 'object') {
+            showSmartPasteErrorInline('لم تصل استجابة صالحة من الخادم. حاول مرة أخرى.');
+            showToast('تعذر إتمام عملية التحليل', 'error');
+            return;
+        }
 
         if (data.success) {
             // Check if multi-guarantee import
@@ -327,10 +371,12 @@ async function parsePasteData() {
             showToast(t('modals.modal.txt_127b2b67'), 'error');
         }
     } catch (error) {
+        console.error('Error:', error);
+        showSmartPasteErrorInline('تعذر الاتصال بالخادم أثناء التحليل. تحقق من الاتصال ثم أعد المحاولة.');
+        showToast(t('modals.modal.txt_355ec77a'), 'error');
+    } finally {
         btnProcess.innerHTML = originalText;
         btnProcess.disabled = false;
-        console.error('Error:', error);
-        showToast(t('modals.modal.txt_355ec77a'), 'error');
     }
 }
 
