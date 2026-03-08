@@ -6,6 +6,8 @@ require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 
 use App\Repositories\GuaranteeRepository;
 use App\Repositories\AttachmentRepository;
+use App\Repositories\BatchMetadataRepository;
+use App\Services\ImportService;
 use App\Support\Database;
 use App\Support\TypeNormalizer;
 use App\Models\Guarantee;
@@ -23,6 +25,7 @@ try {
 
     $repo = new GuaranteeRepository($db);
     $attachRepo = new AttachmentRepository($db);
+    $batchMetaRepo = new BatchMetadataRepository($db);
     $actor = wbgl_api_current_user_display();
     $sourceDraftId = (int)$input['draft_id'];
     $sourceGuarantees = $input['guarantees'];
@@ -31,6 +34,20 @@ try {
 
     // 1. Get source attachments
     $sourceAttachments = $attachRepo->getByGuaranteeId($sourceDraftId);
+
+    // Resolve source class so batch isolation rules remain intact.
+    $sourceClassStmt = $db->prepare("SELECT COALESCE(is_test_data, 0) AS is_test_data FROM guarantees WHERE id = ?");
+    $sourceClassStmt->execute([$sourceDraftId]);
+    $sourceClass = $sourceClassStmt->fetch(PDO::FETCH_ASSOC) ?: ['is_test_data' => 0];
+    $isTestData = ((int)($sourceClass['is_test_data'] ?? 0)) === 1;
+
+    $batchPrefix = $isTestData ? 'test_workstation_batch_' : 'workstation_batch_';
+    $baseBatchId = $batchPrefix . date('Ymd');
+    $batchIdentifier = ImportService::resolveCompatibleBatchIdentifier($db, $baseBatchId, $isTestData);
+    $batchName = $isTestData
+        ? 'دفعة اختبار: محطة العمل (' . date('Y/m/d') . ')'
+        : 'دفعة محطة العمل (' . date('Y/m/d') . ')';
+    $batchMetaRepo->ensureBatchName($batchIdentifier, $batchName);
 
     $createdIds = [];
 
@@ -54,9 +71,10 @@ try {
             $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($sourceDraftId);
             $repo->updateRawData($sourceDraftId, json_encode($rawData, JSON_UNESCAPED_UNICODE));
             
-            // Set guarantee_number on the canonical guarantees schema (no legacy status_flags write).
-            $stmt = $db->prepare("UPDATE guarantees SET guarantee_number = ? WHERE id = ?");
-            $stmt->execute([$gData['guarantee_number'], $sourceDraftId]);
+            // Keep canonical record aligned with new workstation batch context.
+            $stmt = $db->prepare("UPDATE guarantees SET guarantee_number = ?, import_source = ?, imported_at = CURRENT_TIMESTAMP WHERE id = ?");
+            $stmt->execute([$gData['guarantee_number'], $batchIdentifier, $sourceDraftId]);
+            ImportService::recordOccurrence($sourceDraftId, $batchIdentifier, 'workstation', null, $db);
             
             $createdIds[] = $sourceDraftId;
             
@@ -72,13 +90,14 @@ try {
                 id: null,
                 guaranteeNumber: $gData['guarantee_number'],
                 rawData: $rawData,
-                importSource: 'workstation_batch_' . date('Ymd'),
+                importSource: $batchIdentifier,
                 importedAt: date('Y-m-d H:i:s'),
                 importedBy: $actor
             );
             
             $saved = $repo->create($model);
             $newId = $saved->id;
+            ImportService::recordOccurrence((int)$newId, $batchIdentifier, 'workstation', null, $db);
             $createdIds[] = $newId;
 
             // Clone Attachments from source to new record

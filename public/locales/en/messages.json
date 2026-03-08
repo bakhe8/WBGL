@@ -17,6 +17,8 @@
     "messages.records.preview.full_intro.final": "Reference to the final bank guarantee shown above",
     "messages.records.preview.full_intro.reduction": "Request to reduce the bank guarantee shown above",
     "messages.records.preview.full_intro.release": "Request to release the bank guarantee shown above",
+    "messages.print.blocked_before_signed": "Printing is unavailable before final signature completion.",
+    "messages.print.permission_denied": "You do not have permission to print letters.",
     "messages.records.preview.no_action": "No action has been executed yet",
     "messages.records.preview.related_label.contract": "For contract no.",
     "messages.records.preview.related_label.purchase_order": "For purchase order no.",

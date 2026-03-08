@@ -221,13 +221,7 @@ class ImportService
                         }
 
                         $existingId = (int)$existing->id;
-                        // ✅ [NEW] Record Re-Occurrence (The core of Batch-as-Context)
-                        $this->recordOccurrence($existingId, $batchIdentifier, 'excel', null, $db);
-
-                        $duplicateEventId = TimelineRecorder::recordDuplicateImportEvent($existingId, 'excel');
-                        if (!$duplicateEventId) {
-                            throw new RuntimeException('Failed to record duplicate import timeline event');
-                        }
+                        DuplicateImportLifecycleService::handle($existingId, $batchIdentifier, 'excel', $db);
 
                         return [
                             'kind' => 'duplicate',
@@ -341,30 +335,50 @@ class ImportService
         }
 
         try {
-            $created = $this->guaranteeRepo->create($guarantee);
+            try {
+                $created = $this->guaranteeRepo->create($guarantee);
 
-            // ✅ NEW: Handle test data marking (Phase 1)
-            if ($isTestData) {
-                $this->guaranteeRepo->markAsTestData(
-                    $created->id,
-                    $data['test_batch_id'] ?? null,
-                    $data['test_note'] ?? null
-                );
+                // ✅ NEW: Handle test data marking (Phase 1)
+                if ($isTestData) {
+                    $this->guaranteeRepo->markAsTestData(
+                        $created->id,
+                        $data['test_batch_id'] ?? null,
+                        $data['test_note'] ?? null
+                    );
+                }
+
+                // ✅ [NEW] Record Occurrence for manual entry
+                $this->recordOccurrence($created->id, $batchIdentifier, 'manual', null, $db);
+
+                $importEventId = TimelineRecorder::recordImportEvent((int)$created->id, 'manual', $created->rawData);
+                if (!$importEventId) {
+                    throw new RuntimeException('Failed to record manual import timeline event');
+                }
+
+                if ($ownsTransaction) {
+                    $db->commit();
+                }
+
+                return (int)$created->id;
+            } catch (\PDOException $e) {
+                if (!self::isDuplicateGuaranteeConstraint($e)) {
+                    throw $e;
+                }
+
+                $existing = $this->guaranteeRepo->findByNumber((string)$data['guarantee_number']);
+                if (!$existing || (int)$existing->id <= 0) {
+                    throw $e;
+                }
+
+                $existingId = (int)$existing->id;
+                DuplicateImportLifecycleService::handle($existingId, $batchIdentifier, 'manual', $db);
+
+                if ($ownsTransaction) {
+                    $db->commit();
+                }
+
+                return $existingId;
             }
-
-            // ✅ [NEW] Record Occurrence for manual entry
-            $this->recordOccurrence($created->id, $batchIdentifier, 'manual', null, $db);
-
-            $importEventId = TimelineRecorder::recordImportEvent((int)$created->id, 'manual', $created->rawData);
-            if (!$importEventId) {
-                throw new RuntimeException('Failed to record manual import timeline event');
-            }
-
-            if ($ownsTransaction) {
-                $db->commit();
-            }
-
-            return $created->id;
         } catch (\Throwable $e) {
             if ($ownsTransaction && $db->inTransaction()) {
                 $db->rollBack();

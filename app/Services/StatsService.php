@@ -69,17 +69,19 @@ class StatsService
      * Returns counts for all guarantee statuses:
      * - total: All guarantees
      * - ready: Has supplier AND bank (not released)
+     * - print_ready: Signed workflow records ready for printing (not released)
      * - pending: Missing supplier OR bank (not released)
      * - released: Locked guarantees
      *
      * @param PDO $db Database connection
-     * @return array Stats: ['total' => int, 'ready' => int, 'pending' => int, 'released' => int]
+     * @return array Stats: ['total' => int, 'ready' => int, 'print_ready' => int, 'pending' => int, 'released' => int]
      */
     public static function getImportStats(PDO $db, bool $includeTestData = false): array
     {
         // Canonical counts: rely on the same predicate source used by list/navigation.
         $total = NavigationService::countByFilter($db, 'all', null, null, $includeTestData);
         $ready = NavigationService::countByFilter($db, 'ready', null, null, $includeTestData);
+        $printReady = NavigationService::countByFilter($db, 'print_ready', null, null, $includeTestData);
         $actionable = NavigationService::countByFilter($db, 'actionable', null, null, $includeTestData);
         $pending = NavigationService::countByFilter($db, 'pending', null, null, $includeTestData);
         $released = NavigationService::countByFilter($db, 'released', null, null, $includeTestData);
@@ -87,6 +89,7 @@ class StatsService
         return [
             'total' => $total,
             'ready' => $ready,
+            'print_ready' => $printReady,
             'actionable' => $actionable,
             'pending' => $pending,
             'released' => $released

@@ -154,18 +154,6 @@ class SaveAndNextApplicationService
         array $policyContext,
         array $surface
     ): array {
-        if (!($surface['can_execute_actions'] ?? false)) {
-            return self::buildFailure(403, 'Permission Denied', [
-                'message' => 'لا يمكن تنفيذ الحفظ على هذا السجل في حالته الحالية.',
-                'required_permission' => 'guarantee_save',
-                'current_step' => self::resolveCurrentWorkflowStep($db, $guaranteeId),
-                'reason_code' => 'SURFACE_NOT_GRANTED_CAN_EXECUTE_ACTIONS',
-                'policy' => $policyContext,
-                'surface' => $surface,
-                'reasons' => $policyContext['reasons'] ?? [],
-            ]);
-        }
-
         $guaranteeRepo = new GuaranteeRepository($db);
         $currentGuarantee = $guaranteeRepo->find($guaranteeId);
         if (!$currentGuarantee) {
@@ -579,7 +567,10 @@ class SaveAndNextApplicationService
     public static function buildFinishedResponse(
         array $policyContext,
         array $surface,
-        array $meta = []
+        array $meta = [],
+        ?string $nextFilter = null,
+        int $nextFilterCount = 0,
+        bool $returnToHome = false
     ): array {
         $response = [
             'finished' => true,
@@ -591,6 +582,13 @@ class SaveAndNextApplicationService
 
         if (!empty($meta)) {
             $response['meta'] = $meta;
+        }
+        if (is_string($nextFilter) && trim($nextFilter) !== '') {
+            $response['next_filter'] = $nextFilter;
+            $response['next_filter_count'] = max(0, $nextFilterCount);
+        }
+        if ($returnToHome) {
+            $response['return_to_home'] = true;
         }
 
         return $response;
@@ -609,7 +607,8 @@ class SaveAndNextApplicationService
         bool $includeTestData,
         array $policyContext,
         array $surface,
-        array $meta = []
+        array $meta = [],
+        ?string $nextFilter = null
     ): array {
         $guaranteeRepo = new GuaranteeRepository($db);
         $guarantee = $guaranteeRepo->find($nextGuaranteeId);
@@ -666,6 +665,9 @@ class SaveAndNextApplicationService
         if (!empty($meta)) {
             $response['meta'] = $meta;
         }
+        $response['next_filter'] = is_string($nextFilter) && trim($nextFilter) !== ''
+            ? $nextFilter
+            : $statusFilter;
 
         return $response;
     }
@@ -687,11 +689,77 @@ class SaveAndNextApplicationService
         array $surface,
         array $meta = []
     ): array {
+        $normalizedFilter = strtolower(trim($statusFilter));
+        $batchIdentifier = self::resolveLatestBatchIdentifier($db, $currentGuaranteeId);
+
+        // Batch-focused flow for data-entry completion:
+        // pending (same batch) -> data_entry (same batch) -> back to home.
+        if ($normalizedFilter === 'pending' && $batchIdentifier !== null && $batchIdentifier !== '') {
+            $nextPendingInBatch = self::findNextGuaranteeIdInBatchByFilter(
+                $db,
+                $batchIdentifier,
+                'pending',
+                $includeTestData,
+                $currentGuaranteeId
+            );
+            if ($nextPendingInBatch !== null) {
+                return self::buildNextRecordResponse(
+                    $db,
+                    $nextPendingInBatch,
+                    'pending',
+                    $includeTestData,
+                    $policyContext,
+                    $surface,
+                    ['batch_identifier' => $batchIdentifier],
+                    'pending'
+                );
+            }
+
+            $nextActionInBatch = self::findFirstGuaranteeIdInBatchByFilter(
+                $db,
+                $batchIdentifier,
+                'data_entry',
+                $includeTestData
+            );
+            if ($nextActionInBatch !== null) {
+                return self::buildNextRecordResponse(
+                    $db,
+                    $nextActionInBatch,
+                    'data_entry',
+                    $includeTestData,
+                    $policyContext,
+                    $surface,
+                    ['batch_identifier' => $batchIdentifier],
+                    'data_entry'
+                );
+            }
+
+            return self::buildFinishedResponse(
+                $policyContext,
+                $surface,
+                ['batch_identifier' => $batchIdentifier],
+                null,
+                0,
+                true
+            );
+        }
+
         $navInfo = NavigationService::getNavigationInfo($db, $currentGuaranteeId, $statusFilter, null, null, $includeTestData);
         $nextGuaranteeId = (int)($navInfo['nextId'] ?? 0);
 
         if ($nextGuaranteeId <= 0) {
-            return self::buildFinishedResponse($policyContext, $surface, $meta);
+            [$nextFilter, $nextFilterCount] = self::suggestFallbackFilter(
+                $db,
+                $statusFilter,
+                $includeTestData
+            );
+            return self::buildFinishedResponse(
+                $policyContext,
+                $surface,
+                $meta,
+                $nextFilter,
+                $nextFilterCount
+            );
         }
 
         return self::buildNextRecordResponse(
@@ -701,7 +769,8 @@ class SaveAndNextApplicationService
             $includeTestData,
             $policyContext,
             $surface,
-            $meta
+            $meta,
+            $statusFilter
         );
     }
 
@@ -747,6 +816,135 @@ class SaveAndNextApplicationService
         }
 
         return null;
+    }
+
+    /**
+     * Suggest next non-empty filter when current filter is exhausted.
+     *
+     * @return array{0:?string,1:int}
+     */
+    private static function suggestFallbackFilter(PDO $db, string $currentFilter, bool $includeTestData): array
+    {
+        $current = strtolower(trim($currentFilter));
+        $priority = match ($current) {
+            // Data entry flow: after finishing pending matching, move to action-selection bucket.
+            'pending' => ['data_entry', 'actionable', 'ready', 'all'],
+            'data_entry' => ['actionable', 'ready', 'all', 'pending'],
+            'actionable' => ['data_entry', 'ready', 'all', 'pending'],
+            default => ['data_entry', 'actionable', 'ready', 'pending', 'all'],
+        };
+
+        foreach ($priority as $filter) {
+            $count = NavigationService::countByFilter(
+                $db,
+                $filter,
+                null,
+                null,
+                $includeTestData
+            );
+            if ($count > 0) {
+                return [$filter, (int)$count];
+            }
+        }
+
+        return [null, 0];
+    }
+
+    private static function resolveLatestBatchIdentifier(PDO $db, int $guaranteeId): ?string
+    {
+        if ($guaranteeId <= 0) {
+            return null;
+        }
+
+        $stmt = $db->prepare(
+            'SELECT batch_identifier
+             FROM guarantee_occurrences
+             WHERE guarantee_id = ?
+             ORDER BY occurred_at DESC, id DESC
+             LIMIT 1'
+        );
+        $stmt->execute([$guaranteeId]);
+        $batchIdentifier = $stmt->fetchColumn();
+        if (!is_string($batchIdentifier)) {
+            return null;
+        }
+        $batchIdentifier = trim($batchIdentifier);
+        return $batchIdentifier !== '' ? $batchIdentifier : null;
+    }
+
+    private static function findNextGuaranteeIdInBatchByFilter(
+        PDO $db,
+        string $batchIdentifier,
+        string $statusFilter,
+        bool $includeTestData,
+        int $currentGuaranteeId
+    ): ?int {
+        if ($batchIdentifier === '' || $currentGuaranteeId <= 0) {
+            return null;
+        }
+
+        $filter = NavigationService::buildFilterConditions($statusFilter, null, null, $includeTestData);
+        $sql = '
+            SELECT g.id
+            FROM guarantees g
+            INNER JOIN guarantee_occurrences o ON o.guarantee_id = g.id
+            LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
+            LEFT JOIN suppliers s ON d.supplier_id = s.id
+            WHERE o.batch_identifier = :batch_identifier
+              AND g.id > :current_id
+              ' . $filter['sql'] . '
+            GROUP BY g.id
+            ORDER BY g.id ASC
+            LIMIT 1
+        ';
+        $stmt = $db->prepare($sql);
+        $params = array_merge([
+            'batch_identifier' => $batchIdentifier,
+            'current_id' => $currentGuaranteeId,
+        ], $filter['params']);
+        $stmt->execute($params);
+        $nextId = $stmt->fetchColumn();
+        if ($nextId === false || $nextId === null) {
+            return null;
+        }
+        $resolved = (int)$nextId;
+        return $resolved > 0 ? $resolved : null;
+    }
+
+    private static function findFirstGuaranteeIdInBatchByFilter(
+        PDO $db,
+        string $batchIdentifier,
+        string $statusFilter,
+        bool $includeTestData
+    ): ?int {
+        if ($batchIdentifier === '') {
+            return null;
+        }
+
+        $filter = NavigationService::buildFilterConditions($statusFilter, null, null, $includeTestData);
+        $sql = '
+            SELECT g.id
+            FROM guarantees g
+            INNER JOIN guarantee_occurrences o ON o.guarantee_id = g.id
+            LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
+            LEFT JOIN suppliers s ON d.supplier_id = s.id
+            WHERE o.batch_identifier = :batch_identifier
+              ' . $filter['sql'] . '
+            GROUP BY g.id
+            ORDER BY g.id ASC
+            LIMIT 1
+        ';
+        $stmt = $db->prepare($sql);
+        $params = array_merge([
+            'batch_identifier' => $batchIdentifier,
+        ], $filter['params']);
+        $stmt->execute($params);
+        $firstId = $stmt->fetchColumn();
+        if ($firstId === false || $firstId === null) {
+            return null;
+        }
+        $resolved = (int)$firstId;
+        return $resolved > 0 ? $resolved : null;
     }
 
     private static function updateRawBankName(PDO $db, int $guaranteeId, string $officialBankName): void

@@ -10,9 +10,12 @@ use App\Support\Database;
 use App\Support\ViewPolicy;
 use App\Support\Settings;
 use App\Support\TestDataVisibility;
+use App\Support\Guard;
+use App\Support\AuthService;
 use App\Repositories\GuaranteeRepository;
 use App\Repositories\BankRepository;
 use App\Repositories\SupplierRepository;
+use App\Repositories\RoleRepository;
 
 ViewPolicy::guardView('batch-print.php');
 
@@ -87,6 +90,22 @@ if (empty($guaranteeIds)) {
 }
 
 $db = Database::connect();
+$currentUserRoleSlug = '';
+try {
+    $currentUser = AuthService::getCurrentUser();
+    if ($currentUser && $currentUser->roleId !== null) {
+        $roleRepo = new RoleRepository($db);
+        $role = $roleRepo->find((int)$currentUser->roleId);
+        $currentUserRoleSlug = strtolower(trim((string)($role->slug ?? '')));
+    }
+} catch (\Throwable) {
+    $currentUserRoleSlug = '';
+}
+$legacyPrintRoleDefault = in_array($currentUserRoleSlug, ['developer', 'admin', 'system_admin'], true);
+$printBypassForSystemManager = in_array($currentUserRoleSlug, ['developer', 'admin', 'system_admin'], true);
+if (!Guard::hasOrLegacy('letters_print', $legacyPrintRoleDefault)) {
+    batchPrintAbort('لا تملك صلاحية طباعة الخطابات.');
+}
 
 // Default mode: filter out test guarantees unless explicitly requested.
 if (!$includeTestData && !empty($guaranteeIds)) {
@@ -253,7 +272,10 @@ if (!empty($guaranteeIds)) {
     </style>
 </head>
 
-<body data-i18n-namespaces="common,batch_print">
+<body
+    data-i18n-namespaces="common,batch_print"
+    data-print-permission="1"
+    data-print-audit-bypass="<?= $printBypassForSystemManager ? '1' : '0' ?>">
 
     <div class="floating-actions no-print">
         <button onclick="handleBatchPrint()" class="action-btn">
@@ -275,9 +297,25 @@ if (!empty($guaranteeIds)) {
         $decisionStmt = $db->prepare("SELECT * FROM guarantee_decisions WHERE guarantee_id = ? LIMIT 1");
         $decisionStmt->execute([$guaranteeId]);
         $decision = $decisionStmt->fetch(PDO::FETCH_ASSOC);
+        $decision = is_array($decision) ? $decision : [];
 
-        $lastAction = $lastActions[(int) $guaranteeId] ?? null;
-        if (!$lastAction) {
+        $decisionStatus = strtolower(trim((string)($decision['status'] ?? 'pending')));
+        $decisionStep = strtolower(trim((string)($decision['workflow_step'] ?? 'draft')));
+        $decisionAction = strtolower(trim((string)($decision['active_action'] ?? '')));
+        $decisionSignatures = (int)($decision['signatures_received'] ?? 0);
+        $lastAction = strtolower(trim((string)($lastActions[(int)$guaranteeId] ?? '')));
+
+        $effectiveAction = $decisionAction;
+        // Legacy fallback: old released records might miss active_action.
+        if ($effectiveAction === '' && $decisionStatus === 'released') {
+            $effectiveAction = $lastAction !== '' ? $lastAction : 'release';
+        }
+
+        $isPrintReady = $effectiveAction !== ''
+            && ($decisionStep === 'signed' || $decisionStatus === 'released')
+            && ($decisionStatus === 'released' || $decisionSignatures > 0);
+        $isBypassPrintable = $printBypassForSystemManager && $effectiveAction !== '';
+        if (!$isPrintReady && !$isBypassPrintable) {
             continue;
         }
 
@@ -292,7 +330,7 @@ if (!empty($guaranteeIds)) {
             'related_to' => $guarantee->rawData['related_to'] ?? 'contract',
             'supplier_name' => $guarantee->rawData['supplier'] ?? $batchPrintUnknownLabel,
             'bank_name' => $guarantee->rawData['bank'] ?? $batchPrintUnknownLabel,
-            'active_action' => $lastAction ?? ($decision['active_action'] ?? null), // ✅ No default
+            'active_action' => $effectiveAction,
         ];
 
         // Enrich with relations

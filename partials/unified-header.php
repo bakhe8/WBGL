@@ -6,6 +6,7 @@
  */
 
 use App\Support\Guard;
+use App\Support\AssetVersion;
 
 // Detect current page for active state
 $currentPage = basename($_SERVER['PHP_SELF'], '.php');
@@ -41,6 +42,7 @@ if ($currentUser && $currentUser->roleId) {
 
 $canManageUsers = $currentUser && Guard::has('manage_users');
 $isDeveloperUser = \App\Support\ViewPolicy::isCurrentUserDeveloper();
+$assetVersion = static fn(string $path): string => rawurlencode(AssetVersion::forPath($path));
 ?>
 <?php include __DIR__ . '/ui-bootstrap.php'; ?>
 
@@ -575,12 +577,12 @@ $isDeveloperUser = \App\Support\ViewPolicy::isCurrentUserDeveloper();
     })();
 </script>
 
-<script src="<?= $basePath ?>public/js/security.js?v=<?= time() ?>"></script>
-<script src="<?= $basePath ?>public/js/i18n.js?v=<?= time() ?>"></script>
-<script src="<?= $basePath ?>public/js/dialog-system.js?v=<?= time() ?>"></script>
-<script src="<?= $basePath ?>public/js/direction.js?v=<?= time() ?>"></script>
-<script src="<?= $basePath ?>public/js/theme.js?v=<?= time() ?>"></script>
-<script src="<?= $basePath ?>public/js/policy.js?v=<?= time() ?>"></script>
-<script src="<?= $basePath ?>public/js/nav-manifest.js?v=<?= time() ?>"></script>
-<script src="<?= $basePath ?>public/js/ui-runtime.js?v=<?= time() ?>"></script>
-<script src="<?= $basePath ?>public/js/global-shortcuts.js?v=<?= time() ?>"></script>
+<script src="<?= $basePath ?>public/js/security.js?v=<?= $assetVersion('public/js/security.js') ?>"></script>
+<script src="<?= $basePath ?>public/js/i18n.js?v=<?= $assetVersion('public/js/i18n.js') ?>"></script>
+<script src="<?= $basePath ?>public/js/dialog-system.js?v=<?= $assetVersion('public/js/dialog-system.js') ?>"></script>
+<script src="<?= $basePath ?>public/js/direction.js?v=<?= $assetVersion('public/js/direction.js') ?>"></script>
+<script src="<?= $basePath ?>public/js/theme.js?v=<?= $assetVersion('public/js/theme.js') ?>"></script>
+<script src="<?= $basePath ?>public/js/policy.js?v=<?= $assetVersion('public/js/policy.js') ?>"></script>
+<script src="<?= $basePath ?>public/js/nav-manifest.js?v=<?= $assetVersion('public/js/nav-manifest.js') ?>"></script>
+<script src="<?= $basePath ?>public/js/ui-runtime.js?v=<?= $assetVersion('public/js/ui-runtime.js') ?>"></script>
+<script src="<?= $basePath ?>public/js/global-shortcuts.js?v=<?= $assetVersion('public/js/global-shortcuts.js') ?>"></script>

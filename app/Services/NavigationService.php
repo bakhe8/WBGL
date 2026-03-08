@@ -12,7 +12,7 @@ use PDO;
  * NavigationService
  * 
  * Handles navigation and pagination logic for guarantees list
- * Supports filtering by status (all, ready, pending, released, actionable, data_entry)
+ * Supports filtering by status (all, ready, pending, released, actionable, data_entry, print_ready)
  * 
  * @version 1.0
  */
@@ -23,7 +23,7 @@ class NavigationService
      * 
      * @param PDO $db Database connection
      * @param int|null $currentId Current guarantee ID (null for first record)
-     * @param string $statusFilter Filter: 'all', 'ready', 'pending', 'released', 'actionable', 'data_entry'
+     * @param string $statusFilter Filter: 'all', 'ready', 'pending', 'released', 'actionable', 'data_entry', 'print_ready'
      * @param string|null $searchTerm Search query if active
      * @return array Navigation data with totalRecords, currentIndex, prevId, nextId
      */
@@ -101,13 +101,17 @@ class NavigationService
 
         // Role clamp: any role except data_entry/developer must stay in task scope only.
         if ($forceActionableScope) {
+            $allowedTaskFilters = ['actionable', 'data_entry'];
+            if (Guard::has('manage_data')) {
+                $allowedTaskFilters[] = 'print_ready';
+            }
             if ($filter === 'released') {
                 return [
                     'sql' => ' AND 1=0',
                     'params' => [],
                 ];
             }
-            if (!in_array($filter, ['actionable', 'data_entry'], true)) {
+            if (!in_array($filter, $allowedTaskFilters, true)) {
                 $filter = 'actionable';
             }
         }
@@ -168,7 +172,12 @@ class NavigationService
 
             // Apply specific status filter
             if ($filter === 'ready') {
+                // Canonical "ready without action" bucket:
+                // only records that are still in data-entry draft and have no selected action.
+                // This keeps bulk-selected actions (extension/reduction/release) out of ready.
                 $conditions .= " AND d.status = 'ready'";
+                $conditions .= " AND d.workflow_step = 'draft'";
+                $conditions .= " AND (d.active_action IS NULL OR d.active_action = '')";
             } elseif ($filter === 'actionable') {
                 $predicate = ActionabilityPolicyService::buildActionableSqlPredicate(
                     'd',
@@ -187,10 +196,21 @@ class NavigationService
                         'params' => [],
                     ];
                 }
-                // Data-entry task bucket: ready + draft + no active action selected yet.
+                // Data-entry task bucket (alias of "ready without action").
                 $conditions .= " AND d.status = 'ready'";
                 $conditions .= " AND d.workflow_step = 'draft'";
                 $conditions .= " AND (d.active_action IS NULL OR d.active_action = '')";
+            } elseif ($filter === 'print_ready') {
+                if (!Guard::has('manage_data')) {
+                    return [
+                        'sql' => ' AND 1=0',
+                        'params' => [],
+                    ];
+                }
+                // Signed and ready-for-print operational queue for data-entry.
+                $conditions .= " AND d.status = 'ready'";
+                $conditions .= " AND d.workflow_step = 'signed'";
+                $conditions .= " AND (d.active_action IS NOT NULL AND d.active_action <> '')";
             } elseif ($filter === 'expiring_30') {
                 $conditions .= " AND {$expiryDateExpr} IS NOT NULL AND ({$expiryDateExpr})::date BETWEEN CURRENT_DATE AND (CURRENT_DATE + INTERVAL '30 days')";
             } elseif ($filter === 'expiring_90') {

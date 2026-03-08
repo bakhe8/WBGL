@@ -56,6 +56,8 @@ class BatchService
                    d.bank_id,
                    d.active_action,
                    d.active_action_set_at,
+                   d.workflow_step,
+                   d.signatures_received,
                    d.is_locked,
                    d.locked_reason
             FROM guarantees g
@@ -280,7 +282,10 @@ class BatchService
     }
     
     /**
-     * Release guarantees in batch (each guarantee evaluated independently)
+     * Select "release" action for guarantees in batch (each guarantee evaluated independently).
+     *
+     * NOTE:
+     * This does NOT finalize release. It only starts release workflow from draft.
      */
     public function releaseBatch(string $importSource, ?string $reason = null, string $userId = 'system', ?array $guaranteeIds = null): array
     {
@@ -313,13 +318,11 @@ class BatchService
         $foundIds = array_map('intval', array_column($guarantees, 'id'));
         $invalidIds = $hasSelection ? array_values(array_diff($ids, $foundIds)) : [];
         
-        // All ready - release using INDIVIDUAL logic from release.php
-        $released = [];
+        // Start release action workflow (same semantics as individual release API).
+        $started = [];
         $errors = [];
         $blocked = [];
-        
-        $decisionRepo = new \App\Repositories\GuaranteeDecisionRepository($this->db);
-        
+
         foreach ($guarantees as $g) {
             try {
                 if (empty($g['decision_id'])) {
@@ -338,13 +341,30 @@ class BatchService
                     ];
                     continue;
                 }
-                // No longer checking for active_action lock
 
                 if (($g['status'] ?? '') !== 'ready' || !$g['supplier_id'] || !$g['bank_id']) {
                     $blocked[] = [
                         'guarantee_id' => $g['id'],
                         'guarantee_number' => $g['guarantee_number'],
                         'reason' => 'غير جاهز'
+                    ];
+                    continue;
+                }
+
+                if (trim((string)($g['active_action'] ?? '')) !== '') {
+                    $blocked[] = [
+                        'guarantee_id' => $g['id'],
+                        'guarantee_number' => $g['guarantee_number'],
+                        'reason' => 'إجراء محدد مسبقًا'
+                    ];
+                    continue;
+                }
+
+                if (trim((string)($g['workflow_step'] ?? 'draft')) !== 'draft') {
+                    $blocked[] = [
+                        'guarantee_id' => $g['id'],
+                        'guarantee_number' => $g['guarantee_number'],
+                        'reason' => 'خرج من مرحلة المسودة'
                     ];
                     continue;
                 }
@@ -356,37 +376,66 @@ class BatchService
                     if (!$oldSnapshot) {
                         throw new \RuntimeException('تعذر إنشاء Snapshot');
                     }
-                    
-                    // 2. Lock the guarantee + status
-                    $decisionRepo->lock($g['id'], 'released');
-                    $statusStmt = $this->db->prepare("
+
+                    // 2. Select action + reset workflow counters (no final release here).
+                    $actionStmt = $this->db->prepare("
                         UPDATE guarantee_decisions
-                        SET status = 'released',
+                        SET active_action = 'release',
+                            active_action_set_at = CURRENT_TIMESTAMP,
+                            workflow_step = 'draft',
+                            signatures_received = 0,
                             decision_source = 'manual',
                             decided_by = ?,
                             last_modified_by = ?,
                             last_modified_at = CURRENT_TIMESTAMP
                         WHERE guarantee_id = ?
                     ");
-                    $statusStmt->execute([$userId, $userId, $g['id']]);
-                    
-                    // Locked action setter re-enabled per user request to fix Batch Detail discrepancy
-                    $actionStmt = $this->db->prepare("
-                        UPDATE guarantee_decisions
-                        SET active_action = 'release',
-                            active_action_set_at = CURRENT_TIMESTAMP
-                        WHERE guarantee_id = ?
-                    ");
-                    $actionStmt->execute([$g['id']]);
-                    
-                    // 4. Record in Timeline
-                    $eventId = \App\Services\TimelineRecorder::recordReleaseEvent($g['id'], $oldSnapshot, $reason);
+                    $actionStmt->execute([$userId, $userId, $g['id']]);
+
+                    // 3. Record timeline event (action selected).
+                    $changes = [[
+                        'field' => 'active_action',
+                        'old_value' => null,
+                        'new_value' => 'release',
+                        'trigger' => 'release_action',
+                    ]];
+                    $previousStep = trim((string)($g['workflow_step'] ?? 'draft'));
+                    if ($previousStep !== 'draft') {
+                        $changes[] = [
+                            'field' => 'workflow_step',
+                            'old_value' => $previousStep,
+                            'new_value' => 'draft',
+                            'trigger' => 'release_action',
+                        ];
+                    }
+                    $previousSignatures = (int)($g['signatures_received'] ?? 0);
+                    if ($previousSignatures !== 0) {
+                        $changes[] = [
+                            'field' => 'signatures_received',
+                            'old_value' => $previousSignatures,
+                            'new_value' => 0,
+                            'trigger' => 'release_action',
+                        ];
+                    }
+                    $details = $reason !== null && trim($reason) !== '' ? ['reason_text' => $reason] : [];
+                    $afterSnapshot = \App\Services\TimelineRecorder::createSnapshot($g['id']);
+                    $eventId = \App\Services\TimelineRecorder::recordStructuredEvent(
+                        (int)$g['id'],
+                        'modified',
+                        'release',
+                        is_array($oldSnapshot) ? $oldSnapshot : [],
+                        $changes,
+                        $userId,
+                        $details,
+                        null,
+                        is_array($afterSnapshot) ? $afterSnapshot : null
+                    );
                     if (!$eventId) {
-                        throw new \RuntimeException('لم يتم تسجيل حدث الإفراج');
+                        throw new \RuntimeException('لم يتم تسجيل حدث اختيار الإفراج');
                     }
 
                     $this->db->commit();
-                    $released[] = $g['id'];
+                    $started[] = $g['id'];
                 } catch (\Throwable $e) {
                     if ($this->db->inTransaction()) {
                         $this->db->rollBack();
@@ -402,12 +451,12 @@ class BatchService
             }
         }
         
-        $success = count($released) > 0;
-        Logger::info('batch_release', [
+        $success = count($started) > 0;
+        Logger::info('batch_release_action_selected', [
             'import_source' => $importSource,
             'user_id' => $userId,
             'selected_ids' => $hasSelection ? $ids : null,
-            'processed_ids' => $released,
+            'processed_ids' => $started,
             'invalid_ids' => $invalidIds,
             'blocked' => $blocked,
             'errors' => $errors,
@@ -415,9 +464,12 @@ class BatchService
         ]);
         return [
             'success' => $success,
-            'error' => $success ? null : 'لا توجد ضمانات مؤهلة للإفراج',
-            'released_count' => count($released),
-            'released_ids' => $released,
+            'error' => $success ? null : 'لا توجد ضمانات مؤهلة لبدء إجراء الإفراج',
+            'release_started_count' => count($started),
+            'release_started_ids' => $started,
+            // Backward compatibility keys for existing frontend consumers.
+            'released_count' => count($started),
+            'released_ids' => $started,
             'blocked_count' => count($blocked),
             'blocked' => $blocked,
             'invalid_count' => count($invalidIds),

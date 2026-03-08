@@ -17,6 +17,8 @@
     "messages.records.preview.full_intro.final": "إشارة إلى الضمان البنكي النهائي الموضح أعلاه",
     "messages.records.preview.full_intro.reduction": "طلب تخفيض الضمان البنكي الموضح أعلاه",
     "messages.records.preview.full_intro.release": "طلب الإفراج عن الضمان البنكي الموضح أعلاه",
+    "messages.print.blocked_before_signed": "الطباعة غير متاحة قبل اكتمال التوقيع النهائي.",
+    "messages.print.permission_denied": "لا تملك صلاحية طباعة الخطابات.",
     "messages.records.preview.no_action": "لا يوجد إجراء تم تنفيذه بعد",
     "messages.records.preview.related_label.contract": "للعقد رقم",
     "messages.records.preview.related_label.purchase_order": "لأمر الشراء رقم",

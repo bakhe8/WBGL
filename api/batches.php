@@ -243,5 +243,25 @@ try {
     }
     
 } catch (\Throwable $e) {
-    wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
+    $message = trim((string)$e->getMessage());
+    $lower = mb_strtolower($message, 'UTF-8');
+
+    $statusCode = 500;
+    $errorType = 'internal';
+
+    if ($e instanceof \RuntimeException || $e instanceof \InvalidArgumentException) {
+        $statusCode = 400;
+        $errorType = 'validation';
+
+        if (
+            str_contains($lower, 'permission denied') ||
+            str_contains($lower, 'صلاحية') ||
+            str_contains($lower, 'ليس لديك')
+        ) {
+            $statusCode = 403;
+            $errorType = 'permission';
+        }
+    }
+
+    wbgl_api_compat_fail($statusCode, $message !== '' ? $message : 'Batch operation failed', [], $errorType);
 }

@@ -1,7 +1,36 @@
 
 // Toast Notification Helper (Unified)
 window.Toast = {
+    _recent: new Map(),
+    _defaultDedupeMs: 2200,
     show(message, type = 'info', duration = 3500) {
+        const normalizedMessage = String(message || '').trim();
+        if (normalizedMessage === '') {
+            return;
+        }
+
+        const dedupeStore = (window.Toast && window.Toast._recent instanceof Map)
+            ? window.Toast._recent
+            : (window.Toast._recent = new Map());
+
+        const key = `${String(type || 'info')}::${normalizedMessage}`;
+        const now = Date.now();
+        const lastSeen = Number(dedupeStore.get(key) || 0);
+        if (now - lastSeen < this._defaultDedupeMs) {
+            return;
+        }
+        dedupeStore.set(key, now);
+
+        // Keep dedupe map bounded.
+        if (dedupeStore.size > 200) {
+            const cutoff = now - 60000;
+            for (const [recentKey, recentTs] of dedupeStore.entries()) {
+                if (Number(recentTs) < cutoff) {
+                    dedupeStore.delete(recentKey);
+                }
+            }
+        }
+
         let container = document.getElementById('toast-container');
         if (!container) {
             const isRtl = (document.documentElement.getAttribute('dir') || 'rtl') === 'rtl';
@@ -12,20 +41,59 @@ window.Toast = {
             document.body.appendChild(container);
         }
 
-        const icons = {
-            success: 'OK',
-            error: 'ERR',
-            warning: 'WARN',
-            info: 'INFO'
-        };
+        const computedContainerStyle = window.getComputedStyle(container);
+        const containerStyled = computedContainerStyle.position === 'fixed';
+        if (!containerStyled) {
+            container.style.position = 'fixed';
+            container.style.top = '20px';
+            container.style.right = '20px';
+            container.style.left = 'auto';
+            container.style.zIndex = '12000';
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+            container.style.gap = '8px';
+            container.style.maxWidth = '420px';
+        }
 
         const toast = document.createElement('div');
         toast.setAttribute('role', 'status');
         toast.setAttribute('aria-live', 'polite');
         toast.className = `toast toast--inline toast-${type || 'info'}`;
 
-        const icon = icons[type] || icons.info;
-        toast.textContent = `${icon}: ${message}`;
+        const computedToastStyle = window.getComputedStyle(toast);
+        const toastStyled = computedToastStyle.position !== 'static'
+            || computedToastStyle.boxShadow !== 'none'
+            || computedToastStyle.borderInlineStartWidth !== '0px';
+        if (!toastStyled) {
+            toast.style.background = '#ffffff';
+            toast.style.color = '#1f2937';
+            toast.style.borderRadius = '8px';
+            toast.style.padding = '12px 14px';
+            toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)';
+            toast.style.borderInlineStart = '4px solid #0891b2';
+            toast.style.transform = 'translateY(-8px)';
+            toast.style.opacity = '0';
+            toast.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+        }
+
+        const iconByType = {
+            success: '✓',
+            error: '✕',
+            warning: '⚠',
+            info: 'ℹ'
+        };
+        const accentByType = {
+            success: '#16a34a',
+            error: '#dc2626',
+            warning: '#d97706',
+            info: '#0891b2'
+        };
+
+        if (!toastStyled) {
+            toast.style.borderInlineStartColor = accentByType[type] || accentByType.info;
+        }
+
+        toast.textContent = `${iconByType[type] || iconByType.info} ${normalizedMessage}`;
 
         while (container.children.length >= 4) {
             container.removeChild(container.firstChild);
@@ -43,7 +111,12 @@ window.Toast = {
         }, duration);
     }
 };
-window.showToast = window.Toast.show;
+window.showToast = function showToastBridge(message, type = 'info', duration = 3500) {
+    if (!window.Toast || typeof window.Toast.show !== 'function') {
+        return;
+    }
+    return window.Toast.show(message, type, duration);
+};
 
 // Debug logger (disabled by default)
 window.BGL_DEBUG = window.BGL_DEBUG ?? false;
@@ -277,39 +350,101 @@ document.addEventListener('DOMContentLoaded', () => {
             ? wbglT('index.workflow.reject.in_progress', '')
             : wbglT('index.workflow.execute_next_step', '');
 
+        let navigated = false;
+        const safeReload = (delayMs = 0) => {
+            if (navigated) return;
+            navigated = true;
+            const run = () => location.reload();
+            if (delayMs > 0) {
+                setTimeout(run, delayMs);
+            } else {
+                run();
+            }
+        };
+
+        // Safety net: if request hangs after applying backend action, don't leave button stuck forever.
+        const hangFallbackTimer = setTimeout(() => {
+            if (btn.disabled && !navigated) {
+                showToast(
+                    wbglT('index.workflow.refreshing_after_action', 'تم استلام الطلب. جاري تحديث الصفحة...'),
+                    'info'
+                );
+                safeReload(80);
+            }
+        }, 9000);
+
+        let requestTimeoutId = null;
         try {
+            const abortController = new AbortController();
+            requestTimeoutId = setTimeout(() => abortController.abort(), 12000);
+
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify(requestBody),
+                signal: abortController.signal
             });
 
-            const data = await response.json();
-
-            if (data.success) {
-                showToast(data.message, 'success');
-
-                // Refresh the current state to reflect changes (badge, button, timeline)
-                if (window.timelineController) {
-                    await window.timelineController.loadCurrentState();
-
-                    // Also refresh the timeline area to show the new event
-                    // Assuming there is a global way to refresh the sidebar
-                    // If not, a simple reload is a safe fallback
-                    setTimeout(() => location.reload(), 800);
-                } else {
-                    location.reload();
-                }
-                } else {
-                showToast(wbglT('messages.records.error.prefix', '') + (data.error || data.message || wbglT('messages.error.unknown', '')), 'error');
-                btn.disabled = false;
-                btn.textContent = originalText;
+            if (requestTimeoutId) {
+                clearTimeout(requestTimeoutId);
+                requestTimeoutId = null;
             }
+
+            const rawResponse = await response.text();
+            let data = null;
+            try {
+                data = rawResponse ? JSON.parse(rawResponse) : {};
+            } catch (parseErr) {
+                data = {
+                    success: response.ok,
+                    message: '',
+                    error: rawResponse || ''
+                };
+            }
+
+            if (data && data.success) {
+                showToast(
+                    data.message || wbglT('index.workflow.advance_success', 'تم تنفيذ الإجراء بنجاح.'),
+                    'success'
+                );
+
+                // Skip timeline refresh here: workflow success immediately navigates/reloads.
+                // Calling loadCurrentState() in this transition window can hit 403 for roles
+                // that just lost access to the current record after stage advancement.
+                clearTimeout(hangFallbackTimer);
+                safeReload(450);
+                return;
+            }
+
+            showToast(
+                wbglT('messages.records.error.prefix', '') + (data?.error || data?.message || wbglT('messages.error.unknown', '')),
+                'error'
+            );
+            btn.disabled = false;
+            btn.textContent = originalText;
         } catch (err) {
+            if (requestTimeoutId) {
+                clearTimeout(requestTimeoutId);
+                requestTimeoutId = null;
+            }
+
+            const isAbort = err && (err.name === 'AbortError' || String(err.message || '').toLowerCase().includes('abort'));
+            if (isAbort) {
+                showToast(
+                    wbglT('index.workflow.request_timeout_refresh', 'تأخر الرد. جاري تحديث الصفحة للتحقق من الحالة...'),
+                    'warning'
+                );
+                clearTimeout(hangFallbackTimer);
+                safeReload(120);
+                return;
+            }
+
             console.error('WORKFLOW_ERROR', err);
             showToast(wbglT('messages.records.error.network', ''), 'error');
             btn.disabled = false;
             btn.textContent = originalText;
+        } finally {
+            clearTimeout(hangFallbackTimer);
         }
     });
 

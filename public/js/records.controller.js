@@ -16,6 +16,8 @@ if (!window.RecordsController) {
             this.bindGlobalEvents();
             this.initializeState();
             this.syncSuggestionVisibility();
+            this.syncPreviewPrintButtonVisibility();
+            this.capturePreviewBaseline(true);
             this.flushPendingToast();
             // ADR-007: No auto-preview. Preview only shows after explicit action.
         }
@@ -219,28 +221,84 @@ if (!window.RecordsController) {
 
         syncPreviewPrintButtonVisibility() {
             const previewSection = document.getElementById('preview-section');
-            if (!(previewSection instanceof HTMLElement)) {
-                return;
-            }
-
-            const printButtons = previewSection.querySelectorAll('button.btn-print-overlay');
-            if (printButtons.length === 0) {
-                return;
-            }
+            const printButtons = (previewSection instanceof HTMLElement)
+                ? previewSection.querySelectorAll('button.btn-print-overlay')
+                : [];
+            const recordHolder = document.getElementById('record-form-sec');
 
             const decisionStatusInput = document.getElementById('decisionStatus');
             const workflowStepInput = document.getElementById('workflowStep');
-            const statusValue = this.normalizeDecisionStatus(decisionStatusInput ? decisionStatusInput.value : '');
-            const workflowStep = String(workflowStepInput ? workflowStepInput.value : '').trim().toLowerCase();
+            const activeActionInput = document.getElementById('activeAction');
+            const signaturesReceivedInput = document.getElementById('signaturesReceived');
+            const statusRaw = decisionStatusInput
+                ? decisionStatusInput.value
+                : (recordHolder instanceof HTMLElement ? String(recordHolder.dataset.decisionStatus || '') : '');
+            const workflowRaw = workflowStepInput
+                ? workflowStepInput.value
+                : (recordHolder instanceof HTMLElement ? String(recordHolder.dataset.workflowStep || '') : '');
+            const activeActionRaw = activeActionInput
+                ? activeActionInput.value
+                : (recordHolder instanceof HTMLElement ? String(recordHolder.dataset.activeAction || '') : '');
+            const signaturesRaw = signaturesReceivedInput
+                ? signaturesReceivedInput.value
+                : (recordHolder instanceof HTMLElement ? String(recordHolder.dataset.signaturesReceived || '0') : '0');
 
-            const section = document.getElementById('record-form-section');
-            const canExecute = String(section?.getAttribute('data-surface-can-execute-actions') || '0') === '1';
+            const statusValue = this.normalizeDecisionStatus(statusRaw);
+            const workflowStep = String(workflowRaw || '').trim().toLowerCase();
+            const activeAction = String(activeActionRaw || '').trim().toLowerCase();
+            const signaturesReceived = Number.parseInt(
+                String(signaturesRaw || '0'),
+                10
+            );
 
-            const canShowPrint = statusValue === 'ready' && workflowStep === 'signed' && canExecute;
-            printButtons.forEach((button) => {
-                button.style.display = canShowPrint ? '' : 'none';
-                button.setAttribute('aria-hidden', canShowPrint ? 'false' : 'true');
-            });
+            const hasAction = activeAction !== '';
+            const hasSignature = Number.isFinite(signaturesReceived) && signaturesReceived > 0;
+            const isHistorical = this.isHistoricalMode();
+            const hasPrintPermission = document.body && document.body.dataset
+                ? String(document.body.dataset.printPermission || '').trim() !== '0'
+                : true;
+            const hasPrintBypass = document.body && document.body.dataset
+                ? String(document.body.dataset.printAuditBypass || '').trim() === '1'
+                : false;
+            const previousPrintAllowed = document.body && document.body.dataset
+                ? String(document.body.dataset.printAllowed || '').trim()
+                : '';
+            const hasCompleteDecisionContext = Boolean(
+                decisionStatusInput && workflowStepInput && activeActionInput && signaturesReceivedInput
+            );
+
+            let canShowPrint = hasPrintBypass
+                || (
+                    hasPrintPermission
+                    && !isHistorical
+                    && statusValue === 'ready'
+                    && workflowStep === 'signed'
+                    && hasAction
+                    && hasSignature
+                );
+
+            // During client-side re-render, hidden decision inputs may be temporarily missing.
+            // Never downgrade server-approved print state in that transient window.
+            if (!hasPrintBypass && !isHistorical && hasPrintPermission && !hasCompleteDecisionContext) {
+                if (previousPrintAllowed === '1' || previousPrintAllowed === '0') {
+                    canShowPrint = previousPrintAllowed === '1';
+                }
+            }
+            if (printButtons.length > 0) {
+                printButtons.forEach((button) => {
+                    button.style.display = canShowPrint ? '' : 'none';
+                    button.setAttribute('aria-hidden', canShowPrint ? 'false' : 'true');
+                });
+            }
+
+            if (document.body && document.body.dataset) {
+                if (hasCompleteDecisionContext || hasPrintBypass || !hasPrintPermission || isHistorical) {
+                    document.body.dataset.printAllowed = canShowPrint ? '1' : '0';
+                }
+                document.body.dataset.printGuardMode = hasPrintBypass
+                    ? 'bypass'
+                    : (hasPrintPermission ? 'record' : 'permission');
+            }
         }
 
         // UI Actions
@@ -518,6 +576,14 @@ if (!window.RecordsController) {
 
         print(target) {
             const audit = window.WBGLPrintAudit;
+            if (audit && typeof audit.isPrintAllowed === 'function' && !audit.isPrintAllowed()) {
+                if (typeof audit.notifyPrintBlocked === 'function') {
+                    audit.notifyPrintBlocked();
+                }
+                this.closePrintDropdown();
+                return;
+            }
+
             if (audit && typeof audit.recordSinglePrint === 'function') {
                 const guaranteeId = (typeof audit.currentRecordId === 'function')
                     ? audit.currentRecordId()
@@ -608,10 +674,15 @@ if (!window.RecordsController) {
                         setTimeout(() => {
                             const nextParams = new URLSearchParams(window.location.search);
                             nextParams.delete('id');
-                            if (statusFilter === 'all') {
+                            const targetFilter = String(data.next_filter || statusFilter || 'all').trim().toLowerCase();
+                            if (data.return_to_home) {
+                                nextParams.delete('filter');
+                                nextParams.delete('search');
+                                nextParams.delete('stage');
+                            } else if (targetFilter === 'all') {
                                 nextParams.delete('filter');
                             } else {
-                                nextParams.set('filter', statusFilter);
+                                nextParams.set('filter', targetFilter);
                             }
                             window.location.href = `?${nextParams.toString()}`;
                         }, 1000);
@@ -622,10 +693,11 @@ if (!window.RecordsController) {
                     if (data.record && data.record.id) {
                         const nextParams = new URLSearchParams(window.location.search);
                         nextParams.set('id', String(data.record.id));
-                        if (statusFilter === 'all') {
+                        const targetFilter = String(data.next_filter || statusFilter || 'all').trim().toLowerCase();
+                        if (targetFilter === 'all') {
                             nextParams.delete('filter');
                         } else {
-                            nextParams.set('filter', statusFilter);
+                            nextParams.set('filter', targetFilter);
                         }
                         window.location.href = `?${nextParams.toString()}`;
                     } else {

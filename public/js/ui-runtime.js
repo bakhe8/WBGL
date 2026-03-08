@@ -101,11 +101,17 @@
         document.addEventListener('wbgl:http-auth-error', function (event) {
             const detail = event && event.detail ? event.detail : {};
             const status = Number(detail.status || 0);
+            const url = String(detail.url || '');
             if (status === 401 && !document.body.classList.contains('login-page')) {
                 window.location.href = '/views/login.php';
                 return;
             }
             if (status === 403 && typeof window.showToast === 'function') {
+                // save-and-next returns business-policy 403 in some cases with a richer
+                // endpoint-specific message already shown by the caller.
+                if (url.includes('/api/save-and-next.php')) {
+                    return;
+                }
                 window.showToast(runtimeT('policy.denied.default', 'policy.denied.default'), 'error');
             }
         });

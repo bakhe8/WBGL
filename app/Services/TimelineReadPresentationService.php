@@ -166,10 +166,14 @@ class TimelineReadPresentationService
         $this->hydrateBankNameAndDetails($record, $snapshot);
 
         $eventSubtype = trim((string)($event['event_subtype'] ?? ''));
-        $previewAction = $this->resolvePreviewAction($guaranteeId, $eventSubtype, $decisionRow);
+        $previewAction = $this->resolvePreviewAction($eventSubtype, $snapshot);
         $record['active_action'] = $previewAction;
-        $record['workflow_step'] = (string)($decisionRow['workflow_step'] ?? 'draft');
-        $record['signatures_received'] = (int)($decisionRow['signatures_received'] ?? 0);
+        if (!array_key_exists('workflow_step', $snapshot)) {
+            $record['workflow_step'] = (string)($decisionRow['workflow_step'] ?? 'draft');
+        }
+        if (!array_key_exists('signatures_received', $snapshot)) {
+            $record['signatures_received'] = (int)($decisionRow['signatures_received'] ?? 0);
+        }
 
         $isHistorical = true;
         $bannerData = [
@@ -455,30 +459,16 @@ class TimelineReadPresentationService
     /**
      * @param array<string,mixed> $decisionRow
      */
-    private function resolvePreviewAction(int $guaranteeId, string $eventSubtype, array $decisionRow): string
+    private function resolvePreviewAction(string $eventSubtype, array $snapshot): string
     {
         $actionSubtypes = ['extension', 'reduction', 'release'];
         if (in_array($eventSubtype, $actionSubtypes, true)) {
             return $eventSubtype;
         }
 
-        $decisionAction = trim((string)($decisionRow['active_action'] ?? ''));
-        if (in_array($decisionAction, $actionSubtypes, true)) {
-            return $decisionAction;
-        }
-
-        $lastActionStmt = $this->db->prepare(
-            "SELECT event_subtype
-             FROM guarantee_history
-             WHERE guarantee_id = ?
-               AND event_subtype IN ('extension', 'reduction', 'release')
-             ORDER BY id DESC
-             LIMIT 1"
-        );
-        $lastActionStmt->execute([$guaranteeId]);
-        $lastSubtype = trim((string)$lastActionStmt->fetchColumn());
-        if (in_array($lastSubtype, $actionSubtypes, true)) {
-            return $lastSubtype;
+        $snapshotAction = trim((string)($snapshot['active_action'] ?? ''));
+        if (in_array($snapshotAction, $actionSubtypes, true)) {
+            return $snapshotAction;
         }
 
         return '';

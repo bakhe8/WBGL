@@ -33,8 +33,10 @@ use App\Support\Database;
 use App\Support\DirectionResolver;
 use App\Support\Guard;
 use App\Support\LocaleResolver;
+use App\Support\AssetVersion;
 use App\Support\Settings;
 use App\Support\TestDataVisibility;
+use App\Support\ThemeResolver;
 use App\Services\ActionabilityPolicyService;
 use App\Services\NotificationService;
 use App\Services\UiSurfacePolicyService;
@@ -59,6 +61,7 @@ $permissionCanCreateNotes = Guard::has('notes_create');
 $permissionCanViewAttachments = Guard::has('attachments_view');
 $permissionCanUploadAttachments = Guard::has('attachments_upload');
 $permissionCanReopenGuarantee = Guard::has('reopen_guarantee');
+$permissionCanPrintLetters = false;
 
 $recordPolicy = [
     'visible' => false,
@@ -87,7 +90,7 @@ $attachmentsPermissionHintKey = 'index.attachments.no_permission_upload';
 
 // Get filter parameter for status filtering (Defined EARLY)
 $requestedStatusFilter = isset($_GET['filter']) ? trim((string)$_GET['filter']) : '';
-$statusFilter = $requestedStatusFilter !== '' ? $requestedStatusFilter : 'all'; // all, ready, pending
+$statusFilter = $requestedStatusFilter !== '' ? $requestedStatusFilter : 'all'; // all, ready, print_ready, pending
 $stageFilter = $_GET['stage'] ?? null;    // specific workflow stage
 $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : null;
 $currentUserRoleSlug = '';
@@ -113,6 +116,8 @@ $hasFullFilterException = Guard::has('ui_full_filters_view');
     $showFiltersForCurrentUser = in_array($currentUserRoleSlug, ['data_entry', 'developer'], true)
         || $hasFullFilterException;
     $isTaskOnlyUser = !$showFiltersForCurrentUser;
+    $legacyPrintRoleDefault = in_array(strtolower(trim((string)$currentUserRoleSlug)), ['developer', 'admin', 'system_admin'], true);
+    $permissionCanPrintLetters = Guard::hasOrLegacy('letters_print', $legacyPrintRoleDefault);
     if ($isTaskOnlyUser) {
         // Enforced at UI level too: task-only roles are always actionable.
         $statusFilter = 'actionable';
@@ -123,6 +128,13 @@ $hasFullFilterException = Guard::has('ui_full_filters_view');
 
 // Production Mode: Auto-exclude test data
 $settings = Settings::getInstance();
+$themeInfo = ThemeResolver::resolve(
+    AuthService::getCurrentUser()?->preferredTheme ?? null,
+    $settings
+);
+$indexThemePreference = (string)($themeInfo['theme'] ?? 'system');
+$indexThemeResolved = $indexThemePreference === 'system' ? 'light' : $indexThemePreference;
+$assetVersion = static fn(string $path): string => rawurlencode(AssetVersion::forPath($path));
 $notificationUiLimit = max(10, min(200, (int)$settings->get('NOTIFICATION_UI_MAX_ITEMS', 40)));
 $includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
 $localeInfo = LocaleResolver::resolve(
@@ -327,11 +339,18 @@ if ($currentUser) {
     $unreadNotifications = NotificationService::countUnreadForCurrentUser();
 }
 
-// Keep actionable counter aligned with user-scoped actionable decision.
-$importStats['actionable'] = $personalTaskCount;
+// Keep actionable counter aligned with canonical actionable filter semantics.
+// Personal task progress remains separate (includes data-entry prep bucket).
+$importStats['actionable'] = \App\Services\NavigationService::countByFilter(
+    $db,
+    'actionable',
+    null,
+    null,
+    $includeTestData
+);
 
-// Update total to exclude released for display consistency with filters
-$displayTotal = $importStats['ready'] + $importStats['pending'];
+// Total open operational scope (non-released) from canonical navigation filter.
+$displayTotal = $importStats['total'];
 
 // Sidebar progress must reflect user tasks (actionable scope), not global records.
 $taskTotalRecords = (int)$personalTaskCount;
@@ -551,6 +570,28 @@ $displayGuaranteeNumber = ($recordSurface['can_view_identity'] ?? false)
     ? (string)($mockRecord['guarantee_number'] ?? '—')
     : '—';
 
+$statusForPrintGate = strtolower(trim((string)($mockRecord['status'] ?? 'pending')));
+if ($statusForPrintGate === 'approved') {
+    $statusForPrintGate = 'ready';
+}
+$workflowForPrintGate = strtolower(trim((string)($mockRecord['workflow_step'] ?? 'draft')));
+$activeActionForPrintGate = strtolower(trim((string)($mockRecord['active_action'] ?? '')));
+$signaturesForPrintGate = (int)($mockRecord['signatures_received'] ?? 0);
+$printBypassForSystemManager = in_array(strtolower(trim((string)$currentUserRoleSlug)), ['developer', 'admin', 'system_admin'], true);
+$canPrintCurrentRecord = (
+    ($permissionCanPrintLetters && $printBypassForSystemManager)
+    || (
+        $permissionCanPrintLetters
+        && $statusForPrintGate === 'ready'
+        && $workflowForPrintGate === 'signed'
+        && $activeActionForPrintGate !== ''
+        && $signaturesForPrintGate > 0
+    )
+);
+$printBlockMessage = $permissionCanPrintLetters
+    ? $indexT('messages.print.blocked_before_signed', 'الطباعة غير متاحة قبل اكتمال التوقيع النهائي.')
+    : $indexT('messages.print.permission_denied', 'لا تملك صلاحية طباعة الخطابات.');
+
 // Get initial suggestions for the current record
 $initialSupplierSuggestions = [];
 $normalizedDecisionStatus = strtolower(trim((string)($mockRecord['status'] ?? 'pending')));
@@ -594,12 +635,27 @@ $formattedSuppliers = array_map(function ($s) {
 }, $initialSupplierSuggestions);
 ?>
 <!DOCTYPE html>
-<html lang="<?= htmlspecialchars($indexLocaleCode, ENT_QUOTES, 'UTF-8') ?>" dir="<?= htmlspecialchars($indexPageDirection, ENT_QUOTES, 'UTF-8') ?>">
+<html
+    lang="<?= htmlspecialchars($indexLocaleCode, ENT_QUOTES, 'UTF-8') ?>"
+    dir="<?= htmlspecialchars($indexPageDirection, ENT_QUOTES, 'UTF-8') ?>"
+    data-theme="<?= htmlspecialchars($indexThemeResolved, ENT_QUOTES, 'UTF-8') ?>"
+    data-theme-preference="<?= htmlspecialchars($indexThemePreference, ENT_QUOTES, 'UTF-8') ?>">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title data-i18n="index.meta.title">WBGL System v3.0</title>
+    <script>
+        (function () {
+            var preference = <?= json_encode($indexThemePreference, JSON_UNESCAPED_UNICODE) ?>;
+            var resolved = preference;
+            if (preference === 'system') {
+                resolved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+            }
+            document.documentElement.setAttribute('data-theme-preference', preference);
+            document.documentElement.setAttribute('data-theme', resolved);
+        })();
+    </script>
 
     <!-- ✅ COMPLIANCE: Server-Driven Partials (Hidden) -->
     <?php include __DIR__ . '/partials/confirm-modal.php'; ?>
@@ -620,9 +676,10 @@ $formattedSuppliers = array_map(function ($s) {
     <!-- Main Application Styles -->
     <link rel="stylesheet" href="public/css/a11y.css">
     <link rel="stylesheet" href="public/css/design-system.css">
+    <link rel="stylesheet" href="public/css/components.css">
     <link rel="stylesheet" href="public/css/themes.css">
     <link rel="stylesheet" href="public/css/index-main.css">
-    <link rel="stylesheet" href="public/css/mobile.css?v=<?= time() + 7 ?>"> <!-- Mobile Retrofit (Cache Busted V8) -->
+    <link rel="stylesheet" href="public/css/mobile.css?v=<?= $assetVersion('public/css/mobile.css') ?>"> <!-- Mobile Retrofit -->
 
     <!-- Mobile Logic -->
     <script src="public/js/mobile.js"></script>
@@ -886,6 +943,10 @@ $formattedSuppliers = array_map(function ($s) {
             background: var(--accent-success-light);
         }
 
+        .status-filter-link.is-active.status-filter-link--print-ready {
+            background: var(--accent-info-light);
+        }
+
         .status-filter-link.is-active.status-filter-link--pending {
             background: var(--accent-warning-light);
         }
@@ -904,6 +965,10 @@ $formattedSuppliers = array_map(function ($s) {
 
         .status-filter-value--actionable {
             color: var(--accent-primary);
+        }
+
+        .status-filter-value--print-ready {
+            color: var(--accent-info);
         }
 
         .status-filter-value--pending {
@@ -1237,9 +1302,36 @@ $formattedSuppliers = array_map(function ($s) {
             }
         }
 
+        body[data-print-permission="0"] #preview-section [data-print-overlay="1"],
+        body[data-print-allowed="0"] #preview-section [data-print-overlay="1"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
         @media print {
             #notificationsSection.notifications-overlay {
                 display: none !important;
+            }
+
+            body[data-print-allowed="0"] #preview-section .letter-preview,
+            body[data-print-allowed="0"] #preview-section .letter-paper {
+                display: none !important;
+            }
+
+            body[data-print-allowed="0"] #preview-section::before {
+                content: attr(data-print-block-message);
+                display: block;
+                margin: 24px auto;
+                max-width: 640px;
+                padding: 14px 18px;
+                border: 1px solid #f59e0b;
+                border-radius: 10px;
+                background: #fff7ed;
+                color: #7c2d12;
+                text-align: center;
+                font-weight: 700;
             }
         }
 
@@ -1344,7 +1436,13 @@ $formattedSuppliers = array_map(function ($s) {
 
 </head>
 
-<body data-i18n-namespaces="common,index,timeline,modals,messages,batch_detail">
+<body
+    data-i18n-namespaces="common,index,timeline,modals,messages,batch_detail"
+    data-print-permission="<?= $permissionCanPrintLetters ? '1' : '0' ?>"
+    data-print-allowed="<?= $canPrintCurrentRecord ? '1' : '0' ?>"
+    data-print-guard-mode="<?= $printBypassForSystemManager ? 'bypass' : ($permissionCanPrintLetters ? 'record' : 'permission') ?>"
+    data-print-audit-bypass="<?= $printBypassForSystemManager ? '1' : '0' ?>"
+    data-print-block-message="<?= htmlspecialchars($printBlockMessage, ENT_QUOTES, 'UTF-8') ?>">
 
     <!-- Hidden File Input for Excel Import -->
     <input type="file" id="hiddenFileInput" accept=".xlsx,.xls" class="u-hidden">
@@ -1492,7 +1590,8 @@ $formattedSuppliers = array_map(function ($s) {
                         id="record-form-section"
                         data-policy-visible="<?= ($recordPolicy['visible'] ?? false) ? '1' : '0' ?>"
                         data-policy-actionable="<?= ($recordPolicy['actionable'] ?? false) ? '1' : '0' ?>"
-                        data-policy-executable="<?= ($recordPolicy['executable'] ?? false) ? '1' : '0' ?>">
+                        data-policy-executable="<?= ($recordPolicy['executable'] ?? false) ? '1' : '0' ?>"
+                        data-surface-can-execute-actions="<?= ($recordSurface['can_execute_actions'] ?? false) ? '1' : '0' ?>">
 
                         <?php
                         // Prepare data for record-form partial
@@ -1572,13 +1671,7 @@ $formattedSuppliers = array_map(function ($s) {
                     $statusForPreview = strtolower(trim((string)($mockRecord['status'] ?? 'pending')));
                     $statusForPreview = $statusForPreview === 'approved' ? 'ready' : $statusForPreview;
                     $workflowForPreview = strtolower(trim((string)($mockRecord['workflow_step'] ?? 'draft')));
-                    $showPrintButton = (
-                        $currentUserRoleSlug === 'data_entry'
-                        &&
-                        $statusForPreview === 'ready'
-                        && $workflowForPreview === 'signed'
-                        && (bool)($recordSurface['can_execute_actions'] ?? false)
-                    );
+                    $showPrintButton = $canPrintCurrentRecord;
                     ?>
                     <?php if (($recordSurface['can_view_preview'] ?? false) && in_array($statusForPreview, ['ready', 'issued', 'released', 'signed'], true)): ?>
                         <div id="preview-section">
@@ -1651,12 +1744,22 @@ $formattedSuppliers = array_map(function ($s) {
                                 class="status-filter-link status-filter-link--ready <?= $statusFilter === 'ready' ? 'is-active' : '' ?>">
                                 <span class="status-filter-value status-filter-value--ready">✅ <?= $importStats['ready'] ?? 0 ?></span>
                             </a>
-                            <a href="<?= htmlspecialchars($buildFilterHref('actionable')) ?>"
-                                title=""
-                                data-i18n-title="index.ui.txt_9d784327"
-                                class="status-filter-link status-filter-link--actionable <?= $statusFilter === 'actionable' ? 'is-active' : '' ?>">
-                                <span class="status-filter-value status-filter-value--actionable">⏳ <?= $importStats['actionable'] ?? 0 ?></span>
-                            </a>
+                            <?php if (Guard::has('manage_data')): ?>
+                                <a href="<?= htmlspecialchars($buildFilterHref('print_ready')) ?>"
+                                    title=""
+                                    data-i18n-title="index.ui.filter_print_ready_title"
+                                    class="status-filter-link status-filter-link--print-ready <?= $statusFilter === 'print_ready' ? 'is-active' : '' ?>">
+                                    <span class="status-filter-value status-filter-value--print-ready">🖨️ <?= $importStats['print_ready'] ?? 0 ?></span>
+                                </a>
+                            <?php endif; ?>
+                            <?php if ($currentUserRoleSlug !== 'data_entry'): ?>
+                                <a href="<?= htmlspecialchars($buildFilterHref('actionable')) ?>"
+                                    title=""
+                                    data-i18n-title="index.ui.txt_9d784327"
+                                    class="status-filter-link status-filter-link--actionable <?= $statusFilter === 'actionable' ? 'is-active' : '' ?>">
+                                    <span class="status-filter-value status-filter-value--actionable">⏳ <?= $importStats['actionable'] ?? 0 ?></span>
+                                </a>
+                            <?php endif; ?>
                             <a href="<?= htmlspecialchars($buildFilterHref('pending')) ?>"
                                 class="status-filter-link status-filter-link--pending <?= $statusFilter === 'pending' ? 'is-active' : '' ?>">
                                 <span class="status-filter-value status-filter-value--pending">⚠️ <?= $importStats['pending'] ?? 0 ?></span>
@@ -2730,19 +2833,19 @@ $formattedSuppliers = array_map(function ($s) {
     </script>
 
 
-    <script src="/public/js/pilot-auto-load.js?v=<?= time() ?>"></script>
+    <script src="/public/js/pilot-auto-load.js?v=<?= $assetVersion('public/js/pilot-auto-load.js') ?>"></script>
 
 
     <!-- ✅ UX UNIFICATION: Old Level B handler and modal removed -->
     <!-- Level B handler disabled by UX_UNIFICATION_ENABLED flag -->
     <!-- Modal no longer needed - Selection IS the confirmation -->
 
-    <script src="/public/js/preview-formatter.js?v=<?= time() ?>"></script>
-    <script src="/public/js/print-audit.js?v=<?= time() ?>"></script>
-    <script src="/public/js/main.js?v=<?= time() ?>"></script>
-    <script src="/public/js/input-modals.controller.js?v=<?= time() ?>"></script>
-    <script src="/public/js/timeline.controller.js?v=<?= time() ?>"></script>
-    <script src="/public/js/records.controller.js?v=<?= time() ?>"></script>
+    <script src="/public/js/preview-formatter.js?v=<?= $assetVersion('public/js/preview-formatter.js') ?>"></script>
+    <script src="/public/js/print-audit.js?v=<?= $assetVersion('public/js/print-audit.js') ?>"></script>
+    <script src="/public/js/main.js?v=<?= $assetVersion('public/js/main.js') ?>"></script>
+    <script src="/public/js/input-modals.controller.js?v=<?= $assetVersion('public/js/input-modals.controller.js') ?>"></script>
+    <script src="/public/js/timeline.controller.js?v=<?= $assetVersion('public/js/timeline.controller.js') ?>"></script>
+    <script src="/public/js/records.controller.js?v=<?= $assetVersion('public/js/records.controller.js') ?>"></script>
 </body>
 
 </html>

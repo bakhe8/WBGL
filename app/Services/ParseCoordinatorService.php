@@ -425,6 +425,9 @@ class ParseCoordinatorService
                 throw new \RuntimeException('Permission Denied');
             }
 
+            $duplicateSource = str_starts_with($source, 'smart_paste') ? 'smart_paste' : $source;
+            self::recordDuplicateSmartPasteOccurrence($repo, (int)$existing->id, $options, $duplicateSource);
+
             return [
                 'id' => $existing->id,
                 'guarantee_number' => $rowData['guarantee_number'],
@@ -531,12 +534,8 @@ class ParseCoordinatorService
             if (!GuaranteeVisibilityService::canAccessGuarantee((int)$existing->id)) {
                 throw new \RuntimeException('Permission Denied');
             }
-
-            $duplicateEventId = \App\Services\TimelineRecorder::recordDuplicateImportEvent($existing->id, 'smart_paste');
-            if (!$duplicateEventId) {
-                throw new \RuntimeException('Failed to record duplicate import event');
-            }
-            
+            self::recordDuplicateSmartPasteOccurrence($repo, (int)$existing->id, $options, 'smart_paste');
+             
             return [
                 'id' => $existing->id,
                 'exists_before' => true
@@ -626,7 +625,47 @@ class ParseCoordinatorService
             'exists_before' => false
         ];
     }
-    
+
+    /**
+     * Ensure duplicate smart-paste imports are attached to the current daily batch
+     * and recorded in timeline as duplicate import events.
+     */
+    private static function recordDuplicateSmartPasteOccurrence(
+        GuaranteeRepository $repo,
+        int $guaranteeId,
+        array $options = [],
+        string $duplicateSource = 'smart_paste'
+    ): void {
+        $db = $repo->getDb();
+        $isTestData = !empty($options['is_test_data']);
+        $batchPrefix = $isTestData ? 'test_paste_' : 'manual_paste_';
+        $batchId = ImportService::resolveCompatibleBatchIdentifier($db, $batchPrefix . date('Ymd'), $isTestData);
+
+        $arabicName = $isTestData
+            ? 'دفعة اختبار: إدخال/لصق (' . date('Y/m/d') . ')'
+            : 'دفعة إدخال يدوي/ذكي (' . date('Y/m/d') . ')';
+        $metaRepo = new BatchMetadataRepository($db);
+        $metaRepo->ensureBatchName($batchId, $arabicName);
+
+        $ownsTransaction = !$db->inTransaction();
+        if ($ownsTransaction) {
+            $db->beginTransaction();
+        }
+
+        try {
+            \App\Services\DuplicateImportLifecycleService::handle($guaranteeId, $batchId, $duplicateSource, $db);
+
+            if ($ownsTransaction) {
+                $db->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($ownsTransaction && $db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
+        }
+    }
+     
     /**
      * Trigger auto-matching for created guarantees
      */

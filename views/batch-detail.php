@@ -10,6 +10,9 @@ use App\Support\Database;
 use App\Support\Settings;
 use App\Support\TestDataVisibility;
 use App\Support\ViewPolicy;
+use App\Support\Guard;
+use App\Support\AuthService;
+use App\Repositories\RoleRepository;
 
 ViewPolicy::guardView('batch-detail.php');
 
@@ -17,6 +20,21 @@ $db = Database::connect();
 $importSource = $_GET['import_source'] ?? '';
 $settings = Settings::getInstance();
 $includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
+$canReopenBatch = Guard::has('reopen_batch') || Guard::has('break_glass_override');
+$currentUserRoleSlug = '';
+try {
+    $currentUser = AuthService::getCurrentUser();
+    if ($currentUser && $currentUser->roleId !== null) {
+        $roleRepo = new RoleRepository($db);
+        $role = $roleRepo->find((int)$currentUser->roleId);
+        $currentUserRoleSlug = strtolower(trim((string)($role->slug ?? '')));
+    }
+} catch (\Throwable) {
+    $currentUserRoleSlug = '';
+}
+$legacyPrintRoleDefault = in_array($currentUserRoleSlug, ['developer', 'admin', 'system_admin'], true);
+$canPrintLetters = Guard::hasOrLegacy('letters_print', $legacyPrintRoleDefault);
+$printBypassForSystemManager = in_array($currentUserRoleSlug, ['developer', 'admin', 'system_admin'], true);
 $batchDetailLocaleCode = strtolower((string)$settings->get('DEFAULT_LOCALE', 'ar'));
 if (!in_array($batchDetailLocaleCode, ['ar', 'en'], true)) {
     $batchDetailLocaleCode = 'ar';
@@ -77,14 +95,10 @@ $stmt = $db->prepare("
            b.arabic_name as bank_name,
            d.status as decision_status,
            d.active_action,
+           d.workflow_step,
+           d.signatures_received,
            d.supplier_id,
            d.bank_id,
-           CASE
-               WHEN h.event_subtype IN ('extension', 'reduction', 'release') THEN h.event_subtype
-               WHEN h.event_type = 'release' THEN 'release'
-               ELSE NULL
-           END as last_action,
-           h.created_at as last_action_at,
            o_latest.occurred_at as occurrence_date
     FROM (
         SELECT
@@ -98,14 +112,6 @@ $stmt = $db->prepare("
     
     -- 1. Decision row (single-row per guarantee)
     LEFT JOIN guarantee_decisions d ON d.guarantee_id = g.id
-    LEFT JOIN guarantee_history h ON h.id = (
-        SELECT h_sub.id
-        FROM guarantee_history h_sub
-        WHERE h_sub.guarantee_id = g.id
-          AND (h_sub.event_subtype IN ('extension', 'reduction', 'release') OR h_sub.event_type = 'release')
-        ORDER BY h_sub.created_at DESC, h_sub.id DESC
-        LIMIT 1
-    )
     
     -- 2. Join Supplier from Decision (Highest Priority)
     LEFT JOIN suppliers s_decided ON d.supplier_id = s_decided.id
@@ -148,24 +154,46 @@ foreach ($guarantees as &$g) {
     $g['parsed'] = json_decode($g['raw_data'], true) ?? [];
     $g['supplier_name'] = $g['supplier_name'] ?: ($g['parsed']['supplier'] ?? '-');
     $g['bank_name'] = $g['bank_name'] ?: ($g['parsed']['bank'] ?? '-');
+    $statusValue = strtolower(trim((string)($g['decision_status'] ?? 'pending')));
+    $workflowStep = strtolower(trim((string)($g['workflow_step'] ?? 'draft')));
+    $activeAction = strtolower(trim((string)($g['active_action'] ?? '')));
+    $signaturesReceived = (int)($g['signatures_received'] ?? 0);
+    $hasBasicData = !empty($g['supplier_id']) && !empty($g['bank_id']);
+
+    $g['is_actionable'] = $statusValue === 'ready'
+        && $hasBasicData
+        && $activeAction === ''
+        && $workflowStep === 'draft';
+    $g['is_print_ready'] = $hasBasicData
+        && $activeAction !== ''
+        && ($workflowStep === 'signed' || $statusValue === 'released')
+        && ($statusValue === 'released' || $signaturesReceived > 0);
+
+    // Human-readable workflow stage for table display.
+    $stageMap = [
+        'draft' => ['label' => 'مسودة', 'class' => 'badge-neutral'],
+        'audited' => ['label' => 'تم التدقيق', 'class' => 'badge-info'],
+        'analyzed' => ['label' => 'تم التحليل', 'class' => 'badge-info'],
+        'supervised' => ['label' => 'تم الإشراف', 'class' => 'badge-info'],
+        'approved' => ['label' => 'تم الاعتماد', 'class' => 'badge-warning'],
+        'signed' => ['label' => 'تم التوقيع', 'class' => 'badge-success'],
+    ];
+    $stageUi = $stageMap[$workflowStep] ?? ['label' => strtoupper($workflowStep ?: '-'), 'class' => 'badge-neutral'];
+    $g['workflow_stage_label'] = $stageUi['label'];
+    $g['workflow_stage_class'] = $stageUi['class'];
 }
 unset($g);
 // Calculate counts for UI logic
-// 1. Actionable Count: Matched but no action yet (Ready for batch extend/release)
-$actionableCount = count(array_filter($guarantees, fn($g) => 
-    ($g['decision_status'] ?? '') === 'ready' && 
-    $g['supplier_id'] && 
-    $g['bank_id'] && 
-    empty($g['last_action'])
-));
+// 1. Actionable Count: current cycle ready, no action selected yet.
+$actionableCount = count(array_filter($guarantees, static fn(array $g): bool => !empty($g['is_actionable'])));
 
-// 2. Print Ready Count: Matched AND has action (from history)
-$printReadyCount = count(array_filter($guarantees, fn($g) => 
-    in_array($g['decision_status'] ?? '', ['ready', 'released']) && 
-    $g['supplier_id'] && 
-    $g['bank_id'] && 
-    !empty($g['last_action'])
+// 2. Print Ready Count: current cycle has selected action and reached signed/released.
+$printReadyCount = count(array_filter($guarantees, static fn(array $g): bool => !empty($g['is_print_ready'])));
+$printBypassCount = count(array_filter(
+    $guarantees,
+    static fn(array $g): bool => !empty($g['supplier_id']) && !empty($g['bank_id']) && !empty(trim((string)($g['active_action'] ?? '')))
 ));
+$batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $printReadyCount;
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -189,7 +217,10 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
     <!-- Lucide Icons (local, CSP-safe) -->
     <script src="../public/js/vendor/lucide.min.js"></script>
 </head>
-<body data-i18n-namespaces="common,batch_detail,messages">
+<body
+    data-i18n-namespaces="common,batch_detail,messages"
+    data-print-permission="<?= $canPrintLetters ? '1' : '0' ?>"
+    data-print-audit-bypass="<?= $printBypassForSystemManager ? '1' : '0' ?>">
 
     <!-- Unified Header -->
     <?php include __DIR__ . '/../partials/unified-header.php'; ?>
@@ -264,23 +295,25 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
 
                         <!-- Action Buttons -->
                         <div class="d-flex align-items-center gap-2">
-                            <button onclick="openMetadataModal()" class="btn btn-outline-secondary btn-sm" title="تعديل الاسم والملاحظات" aria-label="تعديل اسم وملاحظات الدفعة" data-i18n-title="batch_detail.ui.txt_c4f6223f" data-i18n-aria-label="batch_detail.ui.txt_9a4e8268">
+                            <button id="btn-edit-metadata" type="button" class="btn btn-outline-secondary btn-sm" title="تعديل الاسم والملاحظات" aria-label="تعديل اسم وملاحظات الدفعة" data-i18n-title="batch_detail.ui.txt_c4f6223f" data-i18n-aria-label="batch_detail.ui.txt_9a4e8268">
                                 <i data-lucide="edit-3" class="icon-16"></i>
                             </button>
                             
                             <?php if (!$isClosed): ?>
-                                <button onclick="handleBatchAction('close')" class="btn btn-outline-danger btn-sm" title="إغلاق الدفعة للأرشفة" aria-label="إغلاق الدفعة" data-i18n-title="batch_detail.ui.txt_ea3a670f" data-i18n-aria-label="batch_detail.ui.txt_a3475a01">
+                                <button id="btn-close-batch" type="button" class="btn btn-outline-danger btn-sm" title="إغلاق الدفعة للأرشفة" aria-label="إغلاق الدفعة" data-i18n-title="batch_detail.ui.txt_ea3a670f" data-i18n-aria-label="batch_detail.ui.txt_a3475a01">
                                     <i data-lucide="lock" class="icon-16"></i>
                                 </button>
-                                <?php if ($printReadyCount > 0): ?>
-                                <button onclick="printReadyGuarantees()" class="btn btn-success shadow-md">
-                                    <i data-lucide="printer" class="icon-18"></i> <span data-i18n="batch_detail.actions.print_letters_prefix">طباعة خطابات</span> (<?= $printReadyCount ?>)
+                                <?php if ($batchPrintableCount > 0 && $canPrintLetters): ?>
+                                <button id="btn-print-ready" type="button" class="btn btn-success shadow-md">
+                                    <i data-lucide="printer" class="icon-18"></i> <span data-i18n="batch_detail.actions.print_letters_prefix">طباعة خطابات</span> (<?= $batchPrintableCount ?>)
                                 </button>
                                 <?php endif; ?>
                             <?php else: ?>
-                                <button onclick="handleBatchAction('reopen')" class="btn btn-warning shadow-md">
+                                <?php if ($canReopenBatch): ?>
+                                <button id="btn-reopen-batch" type="button" class="btn btn-warning shadow-md">
                                     <i data-lucide="unlock" class="icon-16"></i> <span data-i18n="batch_detail.ui.txt_21e3561f">إعادة فتح الدفعة</span>
                                 </button>
+                                <?php endif; ?>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -293,18 +326,18 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
         <div class="card mb-4" id="actions-toolbar">
             <div class="card-body p-3 flex-between align-center">
                 <div class="flex-align-center gap-2">
-                    <button id="btn-extend" onclick="executeBulkAction('extend')" class="btn btn-primary btn-sm">
+                    <button id="btn-extend" type="button" class="btn btn-primary btn-sm">
                         <i data-lucide="calendar-plus" class="icon-16"></i> تمديد المحدد
                     </button>
-                    <button id="btn-release" onclick="executeBulkAction('release')" class="btn btn-success btn-sm">
+                    <button id="btn-release" type="button" class="btn btn-success btn-sm">
                         <i data-lucide="check-circle-2" class="icon-16"></i> إفراج المحدد
                     </button>
                 </div>
                 
                 <div class="text-sm">
-                    <button onclick="TableManager.toggleSelectAll(true)" class="btn-link" data-i18n="batch_detail.ui.txt_dc42087e">تحديد الكل</button>
+                    <button id="btn-select-all" type="button" class="btn-link" data-i18n="batch_detail.ui.txt_dc42087e">تحديد الكل</button>
                     <span class="text-muted mx-2">|</span>
-                    <button onclick="TableManager.toggleSelectAll(false)" class="btn-link" data-i18n="batch_detail.ui.txt_41640caf">إلغاء التحديد</button>
+                    <button id="btn-clear-selection" type="button" class="btn-link" data-i18n="batch_detail.ui.txt_41640caf">إلغاء التحديد</button>
                 </div>
             </div>
         </div>
@@ -322,13 +355,14 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                         <tr>
                             <?php if (!$isClosed): ?>
                                 <th class="bd-select-col">
-                                    <input type="checkbox" onchange="handleSelectAllChange(this.checked)" class="form-checkbox">
+                                    <input id="table-select-all" type="checkbox" class="form-checkbox">
                                 </th>
                             <?php endif; ?>
                             <th data-i18n="batch_detail.table.headers.guarantee_number">رقم الضمان</th>
                             <th data-i18n="batch_detail.table.headers.supplier">المورد</th>
                             <th data-i18n="batch_detail.table.headers.bank">البنك</th>
                             <th class="text-center" data-i18n="batch_detail.ui.txt_3b0975be">الإجراء</th>
+                            <th class="text-center">مرحلة السير</th>
                             <th class="text-left" data-i18n="batch_detail.ui.txt_1a39dcff">القيمة</th>
                             <th class="text-center" data-i18n="batch_detail.table.headers.status">الحالة</th>
                             <th class="text-center" data-i18n="batch_detail.ui.txt_171a27a1">تفاصيل</th>
@@ -346,13 +380,21 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                                 <td><?= htmlspecialchars($g['supplier_name']) ?></td>
                                 <td><?= htmlspecialchars($g['bank_name']) ?></td>
                                 <td class="text-center">
-                                    <?php if ($g['last_action'] == 'release'): ?>
+                                    <?php $rowAction = strtolower(trim((string)($g['active_action'] ?? ''))); ?>
+                                    <?php if ($rowAction === 'release'): ?>
                                         <span class="badge badge-success" data-i18n="batch_detail.ui.txt_08ba0a7c">إفراج</span>
-                                    <?php elseif ($g['last_action'] == 'extension'): ?>
+                                    <?php elseif ($rowAction === 'extension'): ?>
                                         <span class="badge badge-info" data-i18n="batch_detail.ui.txt_5e180f9f">تمديد</span>
+                                    <?php elseif ($rowAction === 'reduction'): ?>
+                                        <span class="badge badge-warning">تخفيض</span>
                                     <?php else: ?>
                                         <span class="text-muted">-</span>
                                     <?php endif; ?>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge <?= htmlspecialchars((string)$g['workflow_stage_class']) ?>">
+                                        <?= htmlspecialchars((string)$g['workflow_stage_label']) ?>
+                                    </span>
                                 </td>
                                 <td class="font-mono text-left" dir="ltr">
                                     <?= number_format((float)($g['parsed']['amount'] ?? 0), 2) ?>
@@ -457,6 +499,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
             open(html) {
                 this.lastFocusedEl = document.activeElement;
                 this.content.innerHTML = html;
+                this.el.classList.remove('is-hidden');
                 this.el.setAttribute('aria-hidden', 'false');
                 this.el.style.display = 'flex';
                 // Trigger reflow to enable transition
@@ -481,6 +524,7 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                 this.el.classList.remove('active');
                 this.el.setAttribute('aria-hidden', 'true');
                 setTimeout(() => {
+                    this.el.classList.add('is-hidden');
                     this.el.style.display = 'none';
                     this.content.innerHTML = '';
                     if (this.lastFocusedEl && typeof this.lastFocusedEl.focus === 'function') {
@@ -530,8 +574,14 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
 
                     const res = await fetch('/api/batches.php', options);
                     const json = await res.json();
-                    
-                    if (!json.success) throw new Error(json.error || 'Server Error');
+                     
+                    if (!json.success) {
+                        const requestId = (json && typeof json.request_id === 'string') ? json.request_id.trim() : '';
+                        const baseError = (json && typeof json.error === 'string' && json.error.trim() !== '')
+                            ? json.error.trim()
+                            : 'Server Error';
+                        throw new Error(requestId !== '' ? `${baseError} [${requestId}]` : baseError);
+                    }
                     return json;
                 } catch (e) {
                     throw e;
@@ -551,12 +601,101 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
             }
         };
 
-        function handleSelectAllChange(checked) {
-            TableManager.toggleSelectAll(checked);
-        }
-
         function closeModal() {
             Modal.close();
+        }
+
+        function bindModalActions() {
+            if (!Modal.content || Modal.content.dataset.modalActionsBound === '1') {
+                return;
+            }
+
+            Modal.content.dataset.modalActionsBound = '1';
+            Modal.content.addEventListener('click', (event) => {
+                const trigger = event.target.closest('[data-modal-action]');
+                if (!trigger) {
+                    return;
+                }
+
+                const modalAction = String(trigger.getAttribute('data-modal-action') || '');
+                if (modalAction === 'cancel') {
+                    closeModal();
+                    return;
+                }
+
+                if (modalAction === 'confirm-batch') {
+                    const batchAction = String(trigger.getAttribute('data-batch-action') || '');
+                    if (batchAction !== '') {
+                        confirmBatchAction(batchAction);
+                    }
+                    return;
+                }
+
+                if (modalAction === 'save-metadata') {
+                    saveMetadata();
+                }
+            });
+        }
+
+        function bindPageActions() {
+            const editMetadataBtn = document.getElementById('btn-edit-metadata');
+            if (editMetadataBtn) {
+                editMetadataBtn.addEventListener('click', openMetadataModal);
+            }
+
+            const closeBatchBtn = document.getElementById('btn-close-batch');
+            if (closeBatchBtn) {
+                closeBatchBtn.addEventListener('click', () => handleBatchAction('close'));
+            }
+
+            const reopenBatchBtn = document.getElementById('btn-reopen-batch');
+            if (reopenBatchBtn) {
+                reopenBatchBtn.addEventListener('click', () => handleBatchAction('reopen'));
+            }
+
+            const printReadyBtn = document.getElementById('btn-print-ready');
+            if (printReadyBtn) {
+                printReadyBtn.addEventListener('click', printReadyGuarantees);
+            }
+
+            const extendBtn = document.getElementById('btn-extend');
+            if (extendBtn) {
+                extendBtn.addEventListener('click', () => executeBulkAction('extend'));
+            }
+
+            const releaseBtn = document.getElementById('btn-release');
+            if (releaseBtn) {
+                releaseBtn.addEventListener('click', () => executeBulkAction('release'));
+            }
+
+            const selectAllBtn = document.getElementById('btn-select-all');
+            if (selectAllBtn) {
+                selectAllBtn.addEventListener('click', () => {
+                    TableManager.toggleSelectAll(true);
+                    const master = document.getElementById('table-select-all');
+                    if (master) {
+                        master.checked = true;
+                    }
+                });
+            }
+
+            const clearSelectionBtn = document.getElementById('btn-clear-selection');
+            if (clearSelectionBtn) {
+                clearSelectionBtn.addEventListener('click', () => {
+                    TableManager.toggleSelectAll(false);
+                    const master = document.getElementById('table-select-all');
+                    if (master) {
+                        master.checked = false;
+                    }
+                });
+            }
+
+            const selectAllCheckbox = document.getElementById('table-select-all');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.addEventListener('change', () => {
+                    TableManager.toggleSelectAll(Boolean(selectAllCheckbox.checked));
+                });
+            }
         }
 
         function handleBatchAction(action) {
@@ -589,8 +728,8 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                         </div>
                     </div>` : ''}
                     <div class="flex-center gap-3">
-                        <button onclick="closeModal()" class="btn btn-secondary w-32">${t('batch_detail.modal.cancel')}</button>
-                        <button onclick="confirmBatchAction('${action}')" class="btn btn-primary w-32">${t('batch_detail.ui.txt_3b2f27d2')}</button>
+                        <button type="button" data-modal-action="cancel" class="btn btn-secondary w-32">${t('batch_detail.modal.cancel')}</button>
+                        <button type="button" data-modal-action="confirm-batch" data-batch-action="${action}" class="btn btn-primary w-32">${t('batch_detail.ui.txt_3b2f27d2')}</button>
                     </div>
                 </div>
             `);
@@ -683,8 +822,8 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
                         <textarea id="modal-batch-notes" rows="3" class="form-textarea"><?= htmlspecialchars($batchNotes) ?></textarea>
                     </div>
                     <div class="flex-end gap-2 mt-4">
-                        <button onclick="closeModal()" class="btn btn-secondary">${t('batch_detail.modal.cancel')}</button>
-                        <button onclick="saveMetadata()" class="btn btn-primary">${t('batch_detail.ui.txt_33081e44')}</button>
+                        <button type="button" data-modal-action="cancel" class="btn btn-secondary">${t('batch_detail.modal.cancel')}</button>
+                        <button type="button" data-modal-action="save-metadata" class="btn btn-primary">${t('batch_detail.ui.txt_33081e44')}</button>
                     </div>
                 </div>
             `);
@@ -705,8 +844,22 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
         }
 
         function printReadyGuarantees() {
+            const canPrintLetters = <?= json_encode($canPrintLetters) ?>;
+            const printBypassForSystemManager = <?= json_encode($printBypassForSystemManager) ?>;
+            if (!canPrintLetters) {
+                Toast.show(t('messages.print.permission_denied', 'لا تملك صلاحية طباعة الخطابات.'), 'warning');
+                return;
+            }
+
             const guarantees = <?= json_encode($guarantees) ?>;
-            const ready = guarantees.filter(g => g.supplier_id && g.bank_id && g.last_action);
+            const ready = guarantees.filter((g) => {
+                if (printBypassForSystemManager) {
+                    const hasBasicData = Boolean(g.supplier_id) && Boolean(g.bank_id);
+                    const hasAction = String(g.active_action || '').trim() !== '';
+                    return hasBasicData && hasAction;
+                }
+                return Boolean(g.is_print_ready);
+            });
             
             if (ready.length === 0) {
                 Toast.show(t('batch_detail.ui.txt_d8a8cf26'), 'warning');
@@ -726,6 +879,8 @@ $printReadyCount = count(array_filter($guarantees, fn($g) =>
             Toast.show(`تم فتح نافذة الطباعة لـ ${ids.length} خطاب`, 'success');
         }
 
+        bindModalActions();
+        bindPageActions();
         // Initialize Icons
         safeCreateIcons();
 

@@ -107,6 +107,12 @@ class PermissionCapabilityCatalog
                 'surface' => 'زر التقدم من مرحلة approved',
                 'behavior' => 'توقيع الخطابات والإنهاء',
             ],
+            'letters_print' => [
+                'domain' => 'سير الاعتماد',
+                'control_scope' => 'تنفيذ',
+                'surface' => 'زر طباعة الخطاب الفردي + صفحة طباعة الدفعات',
+                'behavior' => 'السماح بطباعة الخطابات بعد اكتمال شروط التوقيع والدورة',
+            ],
             'manage_users' => [
                 'domain' => 'الحوكمة',
                 'control_scope' => 'رؤية + تنفيذ',

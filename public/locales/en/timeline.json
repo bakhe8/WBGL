@@ -18,6 +18,8 @@
     "timeline.fields.issue_date": "Issue date",
     "timeline.fields.status": "Status",
     "timeline.fields.workflow_step": "Approval stage",
+    "timeline.fields.active_action": "Action",
+    "timeline.fields.signatures_received": "Signatures count",
 
     "timeline.status.label": "Status",
     "timeline.status.pending": "Needs decision",
@@ -48,6 +50,7 @@
     "timeline.source.smart_paste_multi": "⚡ Smart paste (multi)",
     "timeline.source.duplicate_excel": "🔄 Duplicate import",
     "timeline.source.duplicate_smart_paste": "🔄 Duplicate paste",
+    "timeline.source.duplicate_manual": "🔄 Duplicate manual entry",
     "timeline.source.manual": "✍️ Manual entry",
     "timeline.source.file_import": "📁 File import",
 

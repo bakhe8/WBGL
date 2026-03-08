@@ -50,6 +50,17 @@ final class TimelinePresentationNormalizer
             $email = $legacy['email'];
         }
 
+        // Guardrail: if stored kind is incorrect but textual actor markers indicate system,
+        // always force system presentation to avoid leaking technical actor strings.
+        $displayCheck = is_string($display) ? $display : '';
+        if ($kind !== 'system' && (self::isSystemDisplay($displayCheck) || self::isSystemDisplay((string)$createdBy))) {
+            $kind = 'system';
+            $display = self::defaultActorDisplay('system');
+            $userId = null;
+            $username = null;
+            $email = null;
+        }
+
         // Ensure technical placeholder labels never leak to UI.
         if ($kind === 'user' && $display !== null && self::isGenericUserDisplay($display)) {
             $display = self::defaultActorDisplay('user');
@@ -315,7 +326,13 @@ final class TimelinePresentationNormalizer
 
     private static function isSystemDisplay(string $value): bool
     {
-        return in_array($value, ['system', 'system ai', 'النظام', 'بواسطة النظام'], true);
+        $normalized = mb_strtolower(trim($value), 'UTF-8');
+        if (in_array($normalized, ['system', 'system ai', 'النظام', 'بواسطة النظام'], true)) {
+            return true;
+        }
+
+        // Accept technical system actor markers produced by maintenance/backfill scripts.
+        return str_starts_with($normalized, 'system:') || str_starts_with($normalized, 'system_');
     }
 
     private static function isGenericUserDisplay(string $value): bool

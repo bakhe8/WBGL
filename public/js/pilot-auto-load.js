@@ -83,7 +83,18 @@
         // Trigger the existing suggestion mechanism
         const supplierInput = document.getElementById('supplierInput');
         if (supplierInput) {
-            // Set value and dispatch input event to trigger records controller
+            const currentValue = String(supplierInput.value || '').trim();
+            const hasStableVisibleValue = currentValue !== '' && currentValue !== '-';
+
+            // Keep visible data stable during initial load:
+            // if input already has a value from server-rendered state, do not overwrite it.
+            if (hasStableVisibleValue) {
+                safeLogger.debug('[Pilot] Keeping existing supplier value - no prefill overwrite');
+                supplierInput.dispatchEvent(new Event('input', { bubbles: true }));
+                return;
+            }
+
+            // Prefill only when the field is empty.
             supplierInput.value = rawSupplierName;
             supplierInput.dispatchEvent(new Event('input', { bubbles: true }));
 

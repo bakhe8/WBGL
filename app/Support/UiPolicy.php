@@ -24,6 +24,8 @@ class UiPolicy
         'guarantee:extend' => 'guarantee_extend',
         'guarantee:reduce' => 'guarantee_reduce',
         'guarantee:release' => 'guarantee_release',
+        'guarantee:print' => 'letters_print',
+        'batch:print' => 'letters_print',
         'supplier:manage' => 'supplier_manage',
         'bank:manage' => 'bank_manage',
         'batch:reopen' => 'reopen_batch',

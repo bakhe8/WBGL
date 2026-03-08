@@ -32,10 +32,11 @@
         
         <!-- Print Button Overlay (Only for screen) -->
         <button
+            type="button"
             onclick="return (window.WBGLPrintAudit && window.WBGLPrintAudit.handleOverlayPrint)
                 ? window.WBGLPrintAudit.handleOverlayPrint(this)
-                : (window.print(), false)"
-            class="btn-print-overlay"
+                : false"
+            class="btn-print-overlay no-print"
             data-print-overlay="1"
             title=""
             aria-label=""
@@ -107,7 +108,14 @@
                 border-color: #d1d5db;
             }
             @media print {
-                .btn-print-overlay { display: none !important; }
+                .btn-print-overlay,
+                [data-print-overlay="1"],
+                .no-print {
+                    display: none !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                }
             }
         </style>
         

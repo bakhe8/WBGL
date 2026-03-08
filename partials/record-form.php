@@ -34,12 +34,17 @@ $bannerData = $bannerData ?? null; // Should contain ['timestamp' => '...', 'rea
 <!-- Record Form Content -->
 <div id="record-form-sec"
     data-record-index="<?= $index ?? 1 ?>"
-    data-record-id="<?= $record['id'] ?? 0 ?>">
+    data-record-id="<?= $record['id'] ?? 0 ?>"
+    data-decision-status="<?= htmlspecialchars((string)($record['status'] ?? 'pending'), ENT_QUOTES, 'UTF-8') ?>"
+    data-active-action="<?= htmlspecialchars((string)($record['active_action'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+    data-workflow-step="<?= htmlspecialchars((string)($record['workflow_step'] ?? 'draft'), ENT_QUOTES, 'UTF-8') ?>"
+    data-signatures-received="<?= (int)($record['signatures_received'] ?? 0) ?>">
 
     <!-- Phase 4: Hidden Inputs from DB (Current View) -->
     <input type="hidden" id="decisionStatus" value="<?= htmlspecialchars($record['status'] ?? 'pending') ?>">
     <input type="hidden" id="activeAction" value="<?= htmlspecialchars($record['active_action'] ?? '') ?>">
     <input type="hidden" id="workflowStep" value="<?= htmlspecialchars($record['workflow_step'] ?? 'draft') ?>">
+    <input type="hidden" id="signaturesReceived" value="<?= (int)($record['signatures_received'] ?? 0) ?>">
     <input type="hidden" id="relatedTo" value="<?= htmlspecialchars($record['related_to'] ?? 'contract') ?>">
 
     <!-- Legacy: Keep for backward compatibility during transition -->
@@ -94,6 +99,12 @@ $isDataEntryRole = ($effectiveRoleSlug === 'data_entry');
 // Finalized operationally: released + signed -> read-only archive.
 $isFinalizedReleasedSigned = ($recordStatusNormalized === 'released' && $recordWorkflowStep === 'signed');
 
+// Save decision is a data-completeness action, not a workflow-actionability action.
+// It should follow guarantee_save permission + non-historical + non-finalized constraints.
+$canSaveDecision = !$isHistorical
+    && \App\Support\Guard::has('guarantee_save')
+    && !$isFinalizedReleasedSigned;
+
 // Data-entry can start a new lifecycle action when record is ready and has no active action.
 $canStartLifecycleAction = $isDataEntryRole
     && $isReady
@@ -103,8 +114,8 @@ $canStartLifecycleAction = $isDataEntryRole
 // Lifecycle mutation buttons are a data-entry surface only.
 $showLifecycleMutationButtons = $isDataEntryRole;
 $canMutateRecord = $canStartLifecycleAction;
-$saveDisabledAttr = !$recordCanExecuteActions ? 'disabled' : '';
-$saveDisabledClass = !$recordCanExecuteActions ? ' record-action-disabled' : '';
+$saveDisabledAttr = !$canSaveDecision ? 'disabled' : '';
+$saveDisabledClass = !$canSaveDecision ? ' record-action-disabled' : '';
 $disabledAttr = !$canMutateRecord ? 'disabled' : '';
 $disabledClass = !$canMutateRecord ? ' record-action-disabled' : '';
 $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable_before_ready" title="غير متاح قبل اكتمال بيانات الضمان"' : '';
@@ -285,7 +296,7 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
                         <span class="field-status-indicator field-status-ok" title="" data-i18n-title="index.fields.supplier_defined">✓</span>
                     <?php endif; ?>
                 </label>
-                <?php $supplierInputDisabled = ($isHistorical || $isDecisionMade || !$recordCanExecuteActions); ?>
+                <?php $supplierInputDisabled = ($isHistorical || $isDecisionMade || !$canSaveDecision); ?>
                 <input type="text"
                     class="field-input<?= $supplierInputDisabled ? ' field-input--readonly' : '' ?>"
                     id="supplierInput"

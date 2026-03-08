@@ -68,6 +68,8 @@ $fieldLabelKeys = [
     'expiry_date' => 'timeline.fields.expiry_date',
     'status' => 'timeline.fields.status',
     'workflow_step' => 'timeline.fields.workflow_step',
+    'active_action' => 'timeline.fields.active_action',
+    'signatures_received' => 'timeline.fields.signatures_received',
 ];
 
 ?>

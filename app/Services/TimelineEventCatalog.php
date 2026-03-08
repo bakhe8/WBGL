@@ -82,6 +82,8 @@ class TimelineEventCatalog
         if ($subtype !== '') {
             return match ($subtype) {
                 'excel', 'manual', 'smart_paste', 'smart_paste_multi' => 'استيراد',
+                'duplicate_excel', 'duplicate_smart_paste', 'duplicate_manual' => 'استيراد مكرر',
+                'duplicate_cycle_reset' => 'بدء دورة جديدة',
                 'extension' => 'تمديد',
                 'reduction' => 'تخفيض',
                 'release' => 'إفراج',
@@ -146,6 +148,7 @@ class TimelineEventCatalog
         return match ($label) {
             'استيراد' => '📥',
             'استيراد مكرر' => '🔁',
+            'بدء دورة جديدة' => '🧭',
             'تطابق تلقائي' => '🤖',
             'تطابق يدوي' => '✍️',
             'اعتماد' => '✔️',

@@ -18,6 +18,8 @@
     "timeline.fields.issue_date": "تاريخ الإصدار",
     "timeline.fields.status": "الحالة",
     "timeline.fields.workflow_step": "مرحلة الاعتماد",
+    "timeline.fields.active_action": "الإجراء",
+    "timeline.fields.signatures_received": "عدد التوقيعات",
 
     "timeline.status.label": "الحالة",
     "timeline.status.pending": "يحتاج قرار",
@@ -48,6 +50,7 @@
     "timeline.source.smart_paste_multi": "⚡ لصق ذكي متعدد",
     "timeline.source.duplicate_excel": "🔄 استيراد مكرر",
     "timeline.source.duplicate_smart_paste": "🔄 لصق مكرر",
+    "timeline.source.duplicate_manual": "🔄 إدخال يدوي مكرر",
     "timeline.source.manual": "✍️ إدخال يدوي",
     "timeline.source.file_import": "📁 استيراد ملف",
 

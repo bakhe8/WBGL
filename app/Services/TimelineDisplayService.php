@@ -178,7 +178,9 @@ class TimelineDisplayService
             $eventSubtype === 'release' ||
             in_array($eventType, ['release', 'released'], true)
         ) {
-            $allowedFields = ['status'];
+            $allowedFields = ['status', 'active_action', 'workflow_step', 'signatures_received'];
+        } elseif ($eventSubtype === 'duplicate_cycle_reset') {
+            $allowedFields = ['status', 'active_action', 'workflow_step', 'signatures_received'];
         } elseif ($eventSubtype === 'workflow_advance' || $eventType === 'status_change') {
             $allowedFields = ['workflow_step', 'signatures_received', 'status'];
         } elseif ($eventType === 'modified' && $eventSubtype === '') {
@@ -241,6 +243,7 @@ class TimelineDisplayService
             'smart_paste_multi' => ['label_key' => 'timeline.source.smart_paste_multi', 'tone' => 'violet'],
             'duplicate_smart_paste' => ['label_key' => 'timeline.source.duplicate_smart_paste', 'tone' => 'warning'],
             'duplicate_excel' => ['label_key' => 'timeline.source.duplicate_excel', 'tone' => 'warning'],
+            'duplicate_manual' => ['label_key' => 'timeline.source.duplicate_manual', 'tone' => 'warning'],
             'manual' => ['label_key' => 'timeline.source.manual', 'tone' => 'success'],
         ];
 
