@@ -57,6 +57,52 @@ register_shutdown_function(static function (): void {
     }
 });
 
+if (!function_exists('wbgl_parse_paste_record_usage')) {
+    /**
+     * @param array<string,mixed> $extra
+     */
+    function wbgl_parse_paste_record_usage(
+        string $requestedVersion,
+        string $effectiveVersion,
+        string $clientHint,
+        bool $success,
+        int $statusCode,
+        array $extra = []
+    ): void {
+        try {
+            $settings = Settings::getInstance();
+            if (!(bool)$settings->get('PARSE_PASTE_USAGE_AUDIT_ENABLED', true)) {
+                return;
+            }
+
+            $user = AuthService::getCurrentUser();
+            $details = array_merge([
+                'requested_version' => $requestedVersion,
+                'effective_version' => $effectiveVersion,
+                'client_hint' => $clientHint,
+                'success' => $success,
+                'status_code' => $statusCode,
+                'request_id' => wbgl_api_request_id(),
+                'endpoint' => (string)($_SERVER['REQUEST_URI'] ?? ''),
+                'method' => (string)($_SERVER['REQUEST_METHOD'] ?? 'POST'),
+                'user_id' => $user?->id,
+                'username' => (string)($user?->username ?? ''),
+            ], $extra);
+
+            AuditTrailService::record(
+                'parse_paste_endpoint_usage',
+                'observe',
+                'parse_paste_endpoint',
+                $requestedVersion,
+                $details,
+                $success ? 'info' : 'medium'
+            );
+        } catch (\Throwable $e) {
+            // Usage telemetry must never break the endpoint.
+        }
+    }
+}
+
 wbgl_api_require_permission('import_excel');
 
 $requestedEndpointVersion = defined('WBGL_PARSE_PASTE_REQUESTED_VERSION')
@@ -99,13 +145,13 @@ try {
     $db = Database::connect();
     
     // ✅ NEW: Extract test data parameters (Phase 1)
-    $testBatchId = Input::string($input, 'test_batch_id', null);
-    $testNote = Input::string($input, 'test_note', null);
+    $testBatchId = trim(Input::string($input, 'test_batch_id', ''));
+    $testNote = trim(Input::string($input, 'test_note', ''));
     
     $options = [
         'is_test_data' => $isTestData,
-        'test_batch_id' => $testBatchId,
-        'test_note' => $testNote,
+        'test_batch_id' => $testBatchId !== '' ? $testBatchId : null,
+        'test_note' => $testNote !== '' ? $testNote : null,
     ];
 
     // Parse text using ParseCoordinatorService
@@ -218,50 +264,4 @@ try {
         'field_status' => [],
         'confidence' => [],
     ], 'validation');
-}
-
-if (!function_exists('wbgl_parse_paste_record_usage')) {
-    /**
-     * @param array<string,mixed> $extra
-     */
-    function wbgl_parse_paste_record_usage(
-        string $requestedVersion,
-        string $effectiveVersion,
-        string $clientHint,
-        bool $success,
-        int $statusCode,
-        array $extra = []
-    ): void {
-        try {
-            $settings = Settings::getInstance();
-            if (!(bool)$settings->get('PARSE_PASTE_USAGE_AUDIT_ENABLED', true)) {
-                return;
-            }
-
-            $user = AuthService::getCurrentUser();
-            $details = array_merge([
-                'requested_version' => $requestedVersion,
-                'effective_version' => $effectiveVersion,
-                'client_hint' => $clientHint,
-                'success' => $success,
-                'status_code' => $statusCode,
-                'request_id' => wbgl_api_request_id(),
-                'endpoint' => (string)($_SERVER['REQUEST_URI'] ?? ''),
-                'method' => (string)($_SERVER['REQUEST_METHOD'] ?? 'POST'),
-                'user_id' => $user?->id,
-                'username' => (string)($user?->username ?? ''),
-            ], $extra);
-
-            AuditTrailService::record(
-                'parse_paste_endpoint_usage',
-                'observe',
-                'parse_paste_endpoint',
-                $requestedVersion,
-                $details,
-                $success ? 'info' : 'medium'
-            );
-        } catch (\Throwable $e) {
-            // Usage telemetry must never break the endpoint.
-        }
-    }
 }
