@@ -1,17 +1,13 @@
 <?php
 /**
  * V3 API - Smart Paste Parse (v2 - With Confidence Scores)
- * 
- * Enhanced version that includes confidence scores for extracted data
- * Uses ConfidenceCalculator to assess reliability of each field
- * 
+ *
+ * Enhanced version that includes confidence scores for extracted data.
+ * Uses ConfidenceCalculator to assess reliability of each field.
+ *
  * @version 2.0
  */
 
-require_once __DIR__ . '/../app/Support/Database.php';
-require_once __DIR__ . '/../app/Models/Guarantee.php';
-require_once __DIR__ . '/../app/Repositories/GuaranteeRepository.php';
-require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 require_once __DIR__ . '/_bootstrap.php';
 
 use App\Services\AuditTrailService;
@@ -24,6 +20,43 @@ use App\Services\ParseCoordinatorService;
 use App\Services\SmartPaste\ParseResponseConfidenceGuard;
 
 header('Content-Type: application/json; charset=utf-8');
+ini_set('display_errors', '0');
+error_reporting(E_ALL);
+
+register_shutdown_function(static function (): void {
+    $error = error_get_last();
+    if (!$error || !in_array((int)($error['type'] ?? 0), [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        return;
+    }
+
+    $logsDir = __DIR__ . '/../storage/logs';
+    if (!is_dir($logsDir)) {
+        @mkdir($logsDir, 0755, true);
+    }
+
+    @file_put_contents(
+        $logsDir . '/parse_paste_fatal.log',
+        date('Y-m-d H:i:s') . ' FATAL: ' . json_encode($error, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL,
+        FILE_APPEND
+    );
+
+    if (!headers_sent()) {
+        wbgl_api_compat_fail(
+            500,
+            'Fatal Error in parse-paste-v2',
+            [
+                'message' => 'حدث خطأ جسيم أثناء معالجة اللصق الذكي.',
+                'fatal' => [
+                    'type' => (int)($error['type'] ?? 0),
+                    'file' => basename((string)($error['file'] ?? '')),
+                    'line' => (int)($error['line'] ?? 0),
+                ],
+            ],
+            'internal'
+        );
+    }
+});
+
 wbgl_api_require_permission('import_excel');
 
 $requestedEndpointVersion = defined('WBGL_PARSE_PASTE_REQUESTED_VERSION')
@@ -199,32 +232,36 @@ if (!function_exists('wbgl_parse_paste_record_usage')) {
         int $statusCode,
         array $extra = []
     ): void {
-        $settings = Settings::getInstance();
-        if (!(bool)$settings->get('PARSE_PASTE_USAGE_AUDIT_ENABLED', true)) {
-            return;
+        try {
+            $settings = Settings::getInstance();
+            if (!(bool)$settings->get('PARSE_PASTE_USAGE_AUDIT_ENABLED', true)) {
+                return;
+            }
+
+            $user = AuthService::getCurrentUser();
+            $details = array_merge([
+                'requested_version' => $requestedVersion,
+                'effective_version' => $effectiveVersion,
+                'client_hint' => $clientHint,
+                'success' => $success,
+                'status_code' => $statusCode,
+                'request_id' => wbgl_api_request_id(),
+                'endpoint' => (string)($_SERVER['REQUEST_URI'] ?? ''),
+                'method' => (string)($_SERVER['REQUEST_METHOD'] ?? 'POST'),
+                'user_id' => $user?->id,
+                'username' => (string)($user?->username ?? ''),
+            ], $extra);
+
+            AuditTrailService::record(
+                'parse_paste_endpoint_usage',
+                'observe',
+                'parse_paste_endpoint',
+                $requestedVersion,
+                $details,
+                $success ? 'info' : 'medium'
+            );
+        } catch (\Throwable $e) {
+            // Usage telemetry must never break the endpoint.
         }
-
-        $user = AuthService::getCurrentUser();
-        $details = array_merge([
-            'requested_version' => $requestedVersion,
-            'effective_version' => $effectiveVersion,
-            'client_hint' => $clientHint,
-            'success' => $success,
-            'status_code' => $statusCode,
-            'request_id' => wbgl_api_request_id(),
-            'endpoint' => (string)($_SERVER['REQUEST_URI'] ?? ''),
-            'method' => (string)($_SERVER['REQUEST_METHOD'] ?? 'POST'),
-            'user_id' => $user?->id,
-            'username' => (string)($user?->username ?? ''),
-        ], $extra);
-
-        AuditTrailService::record(
-            'parse_paste_endpoint_usage',
-            'observe',
-            'parse_paste_endpoint',
-            $requestedVersion,
-            $details,
-            $success ? 'info' : 'medium'
-        );
     }
 }
