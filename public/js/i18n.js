@@ -275,7 +275,7 @@
     }
 
     function toggleLanguage() {
-        if (window.WBGLPolicy && typeof window.WBGLPolicy.can === 'function') {
+        if (hasAuthenticatedUser() && window.WBGLPolicy && typeof window.WBGLPolicy.can === 'function') {
             if (!window.WBGLPolicy.can('ui', 'change-language')) {
                 return Promise.resolve(store.locale);
             }

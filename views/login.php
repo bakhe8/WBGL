@@ -22,26 +22,52 @@ if (AuthService::isLoggedIn()) {
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/public/css/design-system.css">
     <style>
+        :root {
+            --login-bg-layer-a: var(--accent-primary-light, rgba(59, 130, 246, 0.2));
+            --login-bg-layer-b: var(--theme-overlay-soft, rgba(0, 0, 0, 0.06));
+            --login-bg-start: var(--bg-body, #f1f5f9);
+            --login-bg-end: var(--bg-secondary, #f8fafc);
+            --login-card-bg: var(--theme-glass-surface, var(--bg-card, #ffffff));
+            --login-card-border: var(--border-primary, #e2e8f0);
+            --login-card-shadow: var(--shadow-xl, 0 8px 30px rgba(0, 0, 0, 0.12));
+            --login-title-color: var(--text-primary, #1e293b);
+            --login-subtitle-color: var(--text-muted, #64748b);
+            --login-label-color: var(--text-secondary, #475569);
+            --login-input-bg: var(--bg-neutral, #fafbfc);
+            --login-input-border: var(--border-primary, #e2e8f0);
+            --login-input-focus-bg: var(--bg-card, #ffffff);
+            --login-input-text: var(--text-primary, #1e293b);
+            --login-input-placeholder: var(--text-light, #94a3b8);
+            --login-toggle-bg: var(--theme-overlay-soft, rgba(0, 0, 0, 0.05));
+            --login-toggle-bg-hover: var(--theme-overlay-medium, rgba(0, 0, 0, 0.1));
+            --login-toggle-border: var(--border-primary, #e2e8f0);
+            --login-toggle-text: var(--text-primary, #1e293b);
+            --login-focus-ring: var(--theme-focus-ring-medium, rgba(59, 130, 246, 0.2));
+        }
+
         body {
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            background:
+                radial-gradient(900px 420px at 8% 0%, var(--login-bg-layer-a) 0%, transparent 60%),
+                radial-gradient(720px 360px at 95% 100%, var(--login-bg-layer-b) 0%, transparent 70%),
+                linear-gradient(135deg, var(--login-bg-start) 0%, var(--login-bg-end) 100%);
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
             margin: 0;
-            padding: 20px;
+            padding: var(--space-lg);
         }
 
         .login-card {
-            background: rgba(255, 255, 255, 0.03);
+            background: var(--login-card-bg);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.125);
+            border: 1px solid var(--login-card-border);
             border-radius: var(--radius-xl);
             padding: var(--space-2xl);
             width: 100%;
             max-width: 420px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            box-shadow: var(--login-card-shadow);
             animation: fadeIn 0.6s ease-out;
         }
 
@@ -65,26 +91,26 @@ if (AuthService::isLoggedIn()) {
         .brand-logo {
             width: 64px;
             height: 64px;
-            background: linear-gradient(135deg, var(--accent-primary), #8b5cf6);
+            background: linear-gradient(135deg, var(--accent-primary), var(--theme-brand-gradient-end, var(--accent-primary-hover)));
             border-radius: var(--radius-lg);
             margin: 0 auto var(--space-lg);
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 28px;
-            color: white;
-            box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3);
+            color: var(--btn-primary-text, #ffffff);
+            box-shadow: 0 10px 20px var(--theme-primary-shadow-btn, rgba(37, 99, 235, 0.25));
         }
 
         .login-title {
-            color: white;
+            color: var(--login-title-color);
             font-size: var(--font-size-2xl);
             font-weight: var(--font-weight-black);
             margin-bottom: var(--space-xs);
         }
 
         .login-subtitle {
-            color: rgba(255, 255, 255, 0.5);
+            color: var(--login-subtitle-color);
             font-size: var(--font-size-base);
         }
 
@@ -94,7 +120,7 @@ if (AuthService::isLoggedIn()) {
 
         .form-label {
             display: block;
-            color: rgba(255, 255, 255, 0.8);
+            color: var(--login-label-color);
             font-size: var(--font-size-sm);
             font-weight: var(--font-weight-medium);
             margin-bottom: var(--space-sm);
@@ -102,27 +128,31 @@ if (AuthService::isLoggedIn()) {
 
         .form-control {
             width: 100%;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--login-input-bg);
+            border: 1px solid var(--login-input-border);
             border-radius: var(--radius-md);
             padding: var(--space-md);
-            color: white;
+            color: var(--login-input-text);
             font-family: inherit;
             font-size: var(--font-size-base);
             transition: all var(--transition-base);
         }
 
+        .form-control::placeholder {
+            color: var(--login-input-placeholder);
+        }
+
         .form-control:focus {
             outline: none;
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--login-input-focus-bg);
             border-color: var(--accent-primary);
-            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+            box-shadow: 0 0 0 4px var(--login-focus-ring);
         }
 
         .btn-login {
             width: 100%;
             background: var(--accent-primary);
-            color: white;
+            color: var(--btn-primary-text, #ffffff);
             border: none;
             border-radius: var(--radius-md);
             padding: var(--space-md);
@@ -140,7 +170,7 @@ if (AuthService::isLoggedIn()) {
         .btn-login:hover {
             background: var(--accent-primary-hover);
             transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3);
+            box-shadow: 0 10px 20px var(--theme-primary-shadow-btn, rgba(37, 99, 235, 0.25));
         }
 
         .btn-login:active {
@@ -154,9 +184,9 @@ if (AuthService::isLoggedIn()) {
         }
 
         .error-message {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.2);
-            color: #f87171;
+            background: var(--theme-danger-surface, rgba(239, 68, 68, 0.12));
+            border: 1px solid var(--theme-danger-border, rgba(239, 68, 68, 0.3));
+            color: var(--theme-danger-text, #991b1b);
             padding: var(--space-md);
             border-radius: var(--radius-md);
             font-size: var(--font-size-sm);
@@ -168,9 +198,9 @@ if (AuthService::isLoggedIn()) {
         .spinner {
             width: 20px;
             height: 20px;
-            border: 3px solid rgba(255, 255, 255, 0.3);
+            border: 3px solid var(--accent-primary-light);
             border-radius: 50%;
-            border-top-color: white;
+            border-top-color: var(--btn-primary-text, #ffffff);
             animation: spin 0.8s linear infinite;
             display: none;
         }
@@ -192,9 +222,9 @@ if (AuthService::isLoggedIn()) {
         }
 
         .lang-toggle {
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: white;
+            background: var(--login-toggle-bg);
+            border: 1px solid var(--login-toggle-border);
+            color: var(--login-toggle-text);
             border-radius: 999px;
             padding: 8px 12px;
             display: inline-flex;
@@ -203,10 +233,41 @@ if (AuthService::isLoggedIn()) {
             cursor: pointer;
             font-size: 12px;
             font-weight: 700;
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            transition: background var(--transition-base), border-color var(--transition-base), transform var(--transition-base);
         }
 
         .lang-toggle:hover {
-            background: rgba(255, 255, 255, 0.14);
+            background: var(--login-toggle-bg-hover);
+            border-color: var(--border-neutral, #cbd5e1);
+            transform: translateY(-1px);
+        }
+
+        .lang-toggle:focus-visible,
+        .btn-login:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 4px var(--login-focus-ring);
+        }
+
+        @media (max-width: 560px) {
+            body {
+                padding: var(--space-md);
+            }
+
+            .login-card {
+                padding: var(--space-xl);
+            }
+
+            .ui-toggle-group {
+                top: 12px;
+                inset-inline-start: 12px;
+                gap: 6px;
+            }
+
+            .lang-toggle {
+                padding: 6px 10px;
+            }
         }
     </style>
 </head>

@@ -119,7 +119,7 @@
     }
 
     function toggleTheme() {
-        if (window.WBGLPolicy && typeof window.WBGLPolicy.can === 'function') {
+        if (hasAuthenticatedUser() && window.WBGLPolicy && typeof window.WBGLPolicy.can === 'function') {
             if (!window.WBGLPolicy.can('ui', 'change-theme')) {
                 return Promise.resolve(state.selected);
             }
