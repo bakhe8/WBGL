@@ -481,7 +481,49 @@ class ParseCoordinatorService
         }
 
         try {
-            $saved = $repo->create($guaranteeModel);
+            $insertSavepoint = 'sp_smart_paste_table_insert';
+            $savepointActive = false;
+
+            try {
+                $db->exec("SAVEPOINT {$insertSavepoint}");
+                $savepointActive = true;
+                $saved = $repo->create($guaranteeModel);
+                $db->exec("RELEASE SAVEPOINT {$insertSavepoint}");
+                $savepointActive = false;
+            } catch (\PDOException $e) {
+                if ($savepointActive) {
+                    $db->exec("ROLLBACK TO SAVEPOINT {$insertSavepoint}");
+                    $db->exec("RELEASE SAVEPOINT {$insertSavepoint}");
+                    $savepointActive = false;
+                }
+
+                if (!self::isDuplicateGuaranteeConstraint($e)) {
+                    throw $e;
+                }
+
+                $existing = $repo->findByNumber($rowData['guarantee_number']);
+                if (!$existing || (int)$existing->id <= 0) {
+                    throw $e;
+                }
+                if (!GuaranteeVisibilityService::canAccessGuarantee((int)$existing->id)) {
+                    throw new \RuntimeException('Permission Denied');
+                }
+
+                $duplicateSource = str_starts_with($source, 'smart_paste') ? 'smart_paste' : $source;
+                self::recordDuplicateSmartPasteOccurrence($repo, (int)$existing->id, $options, $duplicateSource);
+
+                if ($ownsTransaction) {
+                    $db->commit();
+                }
+
+                return [
+                    'id' => $existing->id,
+                    'guarantee_number' => $rowData['guarantee_number'],
+                    'supplier' => $rowData['supplier'],
+                    'amount' => $amount,
+                    'exists_before' => true
+                ];
+            }
 
             if ($isTestData) {
                 $repo->markAsTestData(
@@ -592,7 +634,45 @@ class ParseCoordinatorService
         }
 
         try {
-            $saved = $repo->create($guaranteeModel);
+            $insertSavepoint = 'sp_smart_paste_single_insert';
+            $savepointActive = false;
+
+            try {
+                $db->exec("SAVEPOINT {$insertSavepoint}");
+                $savepointActive = true;
+                $saved = $repo->create($guaranteeModel);
+                $db->exec("RELEASE SAVEPOINT {$insertSavepoint}");
+                $savepointActive = false;
+            } catch (\PDOException $e) {
+                if ($savepointActive) {
+                    $db->exec("ROLLBACK TO SAVEPOINT {$insertSavepoint}");
+                    $db->exec("RELEASE SAVEPOINT {$insertSavepoint}");
+                    $savepointActive = false;
+                }
+
+                if (!self::isDuplicateGuaranteeConstraint($e)) {
+                    throw $e;
+                }
+
+                $existing = $repo->findByNumber($extracted['guarantee_number']);
+                if (!$existing || (int)$existing->id <= 0) {
+                    throw $e;
+                }
+                if (!GuaranteeVisibilityService::canAccessGuarantee((int)$existing->id)) {
+                    throw new \RuntimeException('Permission Denied');
+                }
+
+                self::recordDuplicateSmartPasteOccurrence($repo, (int)$existing->id, $options, 'smart_paste');
+
+                if ($ownsTransaction) {
+                    $db->commit();
+                }
+
+                return [
+                    'id' => $existing->id,
+                    'exists_before' => true
+                ];
+            }
 
             if ($isTestData) {
                 $repo->markAsTestData(
@@ -664,6 +744,23 @@ class ParseCoordinatorService
             }
             throw $e;
         }
+    }
+
+    private static function isDuplicateGuaranteeConstraint(\PDOException $e): bool
+    {
+        $message = strtolower((string)$e->getMessage());
+        $sqlState = strtoupper((string)$e->getCode());
+        $errorInfoState = strtoupper((string)($e->errorInfo[0] ?? ''));
+
+        if ($sqlState === '23505' || $errorInfoState === '23505') {
+            return true;
+        }
+
+        if (str_contains($message, 'unique constraint')) {
+            return true;
+        }
+
+        return str_contains($message, 'duplicate key value violates unique constraint');
     }
      
     /**

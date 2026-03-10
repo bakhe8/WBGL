@@ -16,6 +16,25 @@ use App\Support\TestDataVisibility;
 use App\Support\TypeNormalizer;
 use App\Models\Guarantee;
 
+if (!function_exists('wbgl_is_duplicate_guarantee_constraint')) {
+    function wbgl_is_duplicate_guarantee_constraint(\PDOException $e): bool
+    {
+        $message = strtolower((string)$e->getMessage());
+        $sqlState = strtoupper((string)$e->getCode());
+        $errorInfoState = strtoupper((string)($e->errorInfo[0] ?? ''));
+
+        if ($sqlState === '23505' || $errorInfoState === '23505') {
+            return true;
+        }
+
+        if (str_contains($message, 'unique constraint')) {
+            return true;
+        }
+
+        return str_contains($message, 'duplicate key value violates unique constraint');
+    }
+}
+
 wbgl_api_require_permission('manual_entry');
 
 try {
@@ -121,25 +140,59 @@ try {
                 importedBy: $actor
             );
 
-            $savedGuarantee = $repo->create($guaranteeModel);
-            $guaranteeId = (int)$savedGuarantee->id;
+            $insertSavepoint = 'sp_api_manual_create_insert';
+            $savepointActive = false;
 
-            // Record occurrence through the shared schema-aware contract path.
-            ImportService::recordOccurrence($guaranteeId, $batchId, 'manual', null, $db);
+            try {
+                $db->exec("SAVEPOINT {$insertSavepoint}");
+                $savepointActive = true;
 
-            // ✅ NEW: Handle test data marking (Phase 1)
-            if ($isTestData) {
-                $repo->markAsTestData(
-                    $guaranteeId,
-                    $input['test_batch_id'] ?? null,
-                    $input['test_note'] ?? null
-                );
+                $savedGuarantee = $repo->create($guaranteeModel);
+                $db->exec("RELEASE SAVEPOINT {$insertSavepoint}");
+                $savepointActive = false;
+
+                $guaranteeId = (int)$savedGuarantee->id;
+
+                // Record occurrence through the shared schema-aware contract path.
+                ImportService::recordOccurrence($guaranteeId, $batchId, 'manual', null, $db);
+
+                // ✅ NEW: Handle test data marking (Phase 1)
+                if ($isTestData) {
+                    $repo->markAsTestData(
+                        $guaranteeId,
+                        $input['test_batch_id'] ?? null,
+                        $input['test_note'] ?? null
+                    );
+                }
+
+                // Record History Event (SmartProcessingService will handle all matching & decision creation!)
+                // ✅ ARCHITECTURAL ENFORCEMENT: Use $savedGuarantee->rawData (Post-Persist State)
+                \App\Services\TimelineRecorder::recordImportEvent($guaranteeId, 'manual', $savedGuarantee->rawData);
+                $createdNew = true;
+            } catch (\PDOException $e) {
+                if ($savepointActive) {
+                    $db->exec("ROLLBACK TO SAVEPOINT {$insertSavepoint}");
+                    $db->exec("RELEASE SAVEPOINT {$insertSavepoint}");
+                    $savepointActive = false;
+                }
+
+                if (!wbgl_is_duplicate_guarantee_constraint($e)) {
+                    throw $e;
+                }
+
+                $existing = $repo->findByNumber($guaranteeNumber);
+                if (!$existing || (int)$existing->id <= 0) {
+                    throw $e;
+                }
+
+                $guaranteeId = (int)$existing->id;
+                if (!GuaranteeVisibilityService::canAccessGuarantee($guaranteeId)) {
+                    throw new \RuntimeException('Permission Denied');
+                }
+
+                DuplicateImportLifecycleService::handle($guaranteeId, $batchId, 'manual', $db);
+                $wasDuplicate = true;
             }
-
-            // Record History Event (SmartProcessingService will handle all matching & decision creation!)
-            // ✅ ARCHITECTURAL ENFORCEMENT: Use $savedGuarantee->rawData (Post-Persist State)
-            \App\Services\TimelineRecorder::recordImportEvent($guaranteeId, 'manual', $savedGuarantee->rawData);
-            $createdNew = true;
         }
 
         $db->commit();

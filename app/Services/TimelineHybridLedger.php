@@ -200,7 +200,7 @@ class TimelineHybridLedger
             'SELECT id
              FROM guarantee_history
              WHERE guarantee_id = ?
-             ORDER BY id DESC
+             ORDER BY created_at DESC NULLS LAST, id DESC
              LIMIT 1'
         );
         $stmt->execute([$guaranteeId]);
@@ -223,13 +223,27 @@ class TimelineHybridLedger
      */
     public static function reconstructStateUpToEvent(PDO $db, int $guaranteeId, int $eventId): array
     {
+        $marker = self::eventOrderMarker($db, $eventId);
+        if ($marker === null) {
+            return [];
+        }
+
         $stmt = $db->prepare(
             'SELECT id, event_details, snapshot_data, anchor_snapshot, patch_data
              FROM guarantee_history
-             WHERE guarantee_id = ? AND id <= ?
-             ORDER BY id ASC'
+             WHERE guarantee_id = ?
+               AND (
+                    created_at < ?
+                    OR (created_at = ? AND id <= ?)
+               )
+             ORDER BY created_at ASC, id ASC'
         );
-        $stmt->execute([$guaranteeId, $eventId]);
+        $stmt->execute([
+            $guaranteeId,
+            $marker['created_at'],
+            $marker['created_at'],
+            $eventId,
+        ]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $state = [];
@@ -266,13 +280,27 @@ class TimelineHybridLedger
      */
     public static function reconstructStateBeforeEvent(PDO $db, int $guaranteeId, int $eventId): array
     {
+        $marker = self::eventOrderMarker($db, $eventId);
+        if ($marker === null) {
+            return [];
+        }
+
         $stmt = $db->prepare(
             'SELECT id, event_details, snapshot_data, anchor_snapshot, patch_data
              FROM guarantee_history
-             WHERE guarantee_id = ? AND id < ?
-             ORDER BY id ASC'
+             WHERE guarantee_id = ?
+               AND (
+                    created_at < ?
+                    OR (created_at = ? AND id < ?)
+               )
+             ORDER BY created_at ASC, id ASC'
         );
-        $stmt->execute([$guaranteeId, $eventId]);
+        $stmt->execute([
+            $guaranteeId,
+            $marker['created_at'],
+            $marker['created_at'],
+            $eventId,
+        ]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $state = [];
@@ -512,5 +540,30 @@ class TimelineHybridLedger
         $stmt = $db->prepare('SELECT COUNT(*) FROM guarantee_history WHERE guarantee_id = ?');
         $stmt->execute([$guaranteeId]);
         return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * @return array{created_at:string}|null
+     */
+    private static function eventOrderMarker(PDO $db, int $eventId): ?array
+    {
+        $stmt = $db->prepare(
+            'SELECT created_at
+             FROM guarantee_history
+             WHERE id = ?
+             LIMIT 1'
+        );
+        $stmt->execute([$eventId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row) || !isset($row['created_at'])) {
+            return null;
+        }
+
+        $createdAt = trim((string) $row['created_at']);
+        if ($createdAt === '') {
+            return null;
+        }
+
+        return ['created_at' => $createdAt];
     }
 }

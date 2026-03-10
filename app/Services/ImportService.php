@@ -188,8 +188,19 @@ class ImportService
                     $batchIdentifier,
                     $db
                 ): array {
+                    $insertSavepoint = 'sp_import_row_insert';
+                    $savepointActive = false;
+
                     try {
+                        // PostgreSQL aborts the current transaction after a failed INSERT.
+                        // A savepoint lets us recover and continue through the duplicate path.
+                        $db->exec("SAVEPOINT {$insertSavepoint}");
+                        $savepointActive = true;
+
                         $created = $this->guaranteeRepo->create($guarantee);
+                        $db->exec("RELEASE SAVEPOINT {$insertSavepoint}");
+                        $savepointActive = false;
+
                         $createdId = (int)$created->id;
                         if ($createdId <= 0) {
                             throw new RuntimeException('Failed to persist imported guarantee');
@@ -209,6 +220,12 @@ class ImportService
                             'raw_data' => $created->rawData,
                         ];
                     } catch (\PDOException $e) {
+                        if ($savepointActive) {
+                            $db->exec("ROLLBACK TO SAVEPOINT {$insertSavepoint}");
+                            $db->exec("RELEASE SAVEPOINT {$insertSavepoint}");
+                            $savepointActive = false;
+                        }
+
                         // Decision #6: Handle duplicate guarantees (PostgreSQL + legacy compatibility)
                         if (!self::isDuplicateGuaranteeConstraint($e)) {
                             throw $e;
@@ -253,6 +270,7 @@ class ImportService
         }
 
         return [
+            'batch_identifier' => $batchIdentifier,
             'imported' => $imported,
             'duplicates' => $duplicates,  // Decision #6: Report duplicate count
             'imported_records' => $importedIdsWithData, // Canonical full tracking contract
@@ -336,7 +354,15 @@ class ImportService
 
         try {
             try {
+                $insertSavepoint = 'sp_manual_create_insert';
+                $savepointActive = false;
+
+                $db->exec("SAVEPOINT {$insertSavepoint}");
+                $savepointActive = true;
+
                 $created = $this->guaranteeRepo->create($guarantee);
+                $db->exec("RELEASE SAVEPOINT {$insertSavepoint}");
+                $savepointActive = false;
 
                 // ✅ NEW: Handle test data marking (Phase 1)
                 if ($isTestData) {
@@ -361,6 +387,12 @@ class ImportService
 
                 return (int)$created->id;
             } catch (\PDOException $e) {
+                if (!empty($savepointActive)) {
+                    $db->exec("ROLLBACK TO SAVEPOINT {$insertSavepoint}");
+                    $db->exec("RELEASE SAVEPOINT {$insertSavepoint}");
+                    $savepointActive = false;
+                }
+
                 if (!self::isDuplicateGuaranteeConstraint($e)) {
                     throw $e;
                 }

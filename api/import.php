@@ -9,6 +9,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/_bootstrap.php';
 
 use App\Services\ImportService;
+use App\Services\BatchAuditService;
 use App\Services\NotificationPolicyService;
 use App\Support\Settings;
 use App\Support\TestDataVisibility;
@@ -18,6 +19,32 @@ wbgl_api_require_permission('import_excel');
 ini_set('memory_limit', '512M');
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
+
+/**
+ * @return array{occurrence_rows:int,distinct_guarantees:int,real_guarantees:int,test_guarantees:int}
+ */
+function wbgl_import_fetch_batch_counts(PDO $db, string $batchIdentifier): array
+{
+    $stmt = $db->prepare(
+        "SELECT
+            COUNT(*) AS occurrence_rows,
+            COUNT(DISTINCT o.guarantee_id) AS distinct_guarantees,
+            COUNT(DISTINCT CASE WHEN COALESCE(g.is_test_data, 0) = 0 THEN o.guarantee_id END) AS real_guarantees,
+            COUNT(DISTINCT CASE WHEN COALESCE(g.is_test_data, 0) = 1 THEN o.guarantee_id END) AS test_guarantees
+         FROM guarantee_occurrences o
+         JOIN guarantees g ON g.id = o.guarantee_id
+         WHERE o.batch_identifier = ?"
+    );
+    $stmt->execute([$batchIdentifier]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    return [
+        'occurrence_rows' => (int)($row['occurrence_rows'] ?? 0),
+        'distinct_guarantees' => (int)($row['distinct_guarantees'] ?? 0),
+        'real_guarantees' => (int)($row['real_guarantees'] ?? 0),
+        'test_guarantees' => (int)($row['test_guarantees'] ?? 0),
+    ];
+}
 
 // Fatal Error Handler
 register_shutdown_function(function() {
@@ -99,6 +126,10 @@ try {
         $result = $service->importFromExcel($tempPath, $_POST['imported_by'] ?? $actor, $filename, $isTestData);
         $importedRecords = is_array($result['imported_records'] ?? null) ? $result['imported_records'] : [];
         $importedCount = count($importedRecords);
+        $duplicateCount = (int)($result['duplicates'] ?? 0);
+        $batchIdentifier = trim((string)($result['batch_identifier'] ?? ''));
+        $skippedDetails = is_array($result['skipped'] ?? null) ? array_values($result['skipped']) : [];
+        $errorDetails = is_array($result['errors'] ?? null) ? array_values($result['errors']) : [];
 
         // ✅ NEW: Mark as test data if requested (Phase 1)
         if ($isTestData && !empty($importedRecords)) {
@@ -125,18 +156,75 @@ try {
         } catch (\Throwable $e) { /* Ignore automation errors, keep import success */ }
         // ------------------------------
 
+        $batchCounts = [
+            'occurrence_rows' => 0,
+            'distinct_guarantees' => 0,
+            'real_guarantees' => 0,
+            'test_guarantees' => 0,
+        ];
+        $expectedBatchCount = $importedCount + $duplicateCount;
+        $actualBatchCount = 0;
+        $integrityWarning = false;
+        if ($batchIdentifier !== '') {
+            $batchCounts = wbgl_import_fetch_batch_counts($pdo, $batchIdentifier);
+            $actualBatchCount = $isTestData ? $batchCounts['test_guarantees'] : $batchCounts['real_guarantees'];
+            $integrityWarning = $actualBatchCount !== $expectedBatchCount;
+
+            try {
+                BatchAuditService::record(
+                    $batchIdentifier,
+                    $integrityWarning ? 'excel_import_completed_with_warning' : 'excel_import_completed',
+                    $actor,
+                    $integrityWarning ? 'IMPORT_COUNT_MISMATCH' : 'IMPORT_COMPLETED',
+                    [
+                        'file_name' => $filename,
+                        'is_test_data' => $isTestData,
+                        'imported' => $importedCount,
+                        'duplicates' => $duplicateCount,
+                        'skipped_count' => count($skippedDetails),
+                        'errors_count' => count($errorDetails),
+                        'expected_batch_count' => $expectedBatchCount,
+                        'actual_batch_count' => $actualBatchCount,
+                        'batch_counts' => $batchCounts,
+                        'skipped_details' => array_slice($skippedDetails, 0, 50),
+                        'error_details' => array_slice($errorDetails, 0, 50),
+                    ]
+                );
+            } catch (\Throwable) {
+                // Import result must still be returned even if batch audit insert fails.
+            }
+        }
+
+        $message = "تم استيراد {$importedCount} سجل، وتمت المطابقة التلقائية لـ {$autoMatchStats['auto_matched']} سجل!";
+        if ($duplicateCount > 0 || !empty($skippedDetails) || !empty($errorDetails) || $integrityWarning) {
+            $message = sprintf(
+                'تمت معالجة الملف: جديد %d، مكرر %d، متخطي %d، أخطاء %d%s',
+                $importedCount,
+                $duplicateCount,
+                count($skippedDetails),
+                count($errorDetails),
+                $integrityWarning ? '، مع تحذير تحقق يحتاج مراجعة' : ''
+            );
+        }
+
         wbgl_api_compat_success([
             'data' => [
+                'batch_identifier' => $batchIdentifier,
                 'imported' => $importedCount,
+                'duplicates' => $duplicateCount,
                 'imported_records' => $importedRecords,
                 'auto_matched' => $autoMatchStats['auto_matched'],
                 'total_rows' => $result['total_rows'],
-                'skipped' => count($result['skipped']),
-                'errors' => count($result['errors']),
-                'skipped_details' => $result['skipped'],
-                'error_details' => $result['errors'],
+                'skipped' => count($skippedDetails),
+                'errors' => count($errorDetails),
+                'skipped_details' => $skippedDetails,
+                'error_details' => $errorDetails,
+                'expected_batch_count' => $expectedBatchCount,
+                'actual_batch_count' => $actualBatchCount,
+                'batch_counts' => $batchCounts,
+                'integrity_warning' => $integrityWarning,
             ],
-            'message' => "تم استيراد {$importedCount} سجل، وتمت المطابقة التلقائية لـ {$autoMatchStats['auto_matched']} سجل!",
+            'message' => $message,
         ]);
         
     } finally {

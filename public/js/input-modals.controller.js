@@ -39,6 +39,36 @@ function t(key, params) {
     return output;
 }
 
+async function wbglHandleImportSuccess(responsePayload, fallbackMessage) {
+    const payload = responsePayload && typeof responsePayload === 'object' ? responsePayload : {};
+    const showSummary = typeof window.wbglShowImportSummary === 'function'
+        ? window.wbglShowImportSummary
+        : async (data, message) => {
+            const lines = [
+                String(message || '').trim(),
+                `جديد: ${Number(data.imported || 0)}`,
+                `مكرر: ${Number(data.duplicates || 0)}`,
+                `متخطي: ${Number(data.skipped || 0)}`,
+                `أخطاء: ${Number(data.errors || 0)}`
+            ].filter(Boolean);
+            showToast(lines.join('\n'), 'success', 7000);
+        };
+
+    await showSummary(payload, fallbackMessage || '');
+
+    const hasWarning = Boolean(payload.integrity_warning)
+        || Number(payload.duplicates || 0) > 0
+        || Number(payload.skipped || 0) > 0
+        || Number(payload.errors || 0) > 0;
+    const batchIdentifier = String(payload.batch_identifier || '').trim();
+    if (hasWarning && batchIdentifier !== '') {
+        window.location.href = `/views/batch-detail.php?${new URLSearchParams({ import_source: batchIdentifier }).toString()}`;
+        return;
+    }
+
+    setTimeout(() => window.location.reload(), 300);
+}
+
 function wbglNormalizeLocaleDigits(input) {
     const value = String(input || '');
     const arabicIndic = '٠١٢٣٤٥٦٧٨٩';
@@ -585,9 +615,10 @@ async function uploadExcelFile() {
         loadingMsg.remove();
 
         if (data.success) {
-            const importedCount = data.data?.imported || data.imported || 0;
-            showToast(t('modals.upload.import_success_count', { count: importedCount }), 'success');
-            setTimeout(() => window.location.reload(), 1500);
+            await wbglHandleImportSuccess(
+                data.data || {},
+                data.message || t('modals.upload.import_success_count', { count: data.data?.imported || data.imported || 0 })
+            );
         } else {
             showToast(`${t('modals.modal.txt_d3dc939a')} ${data.error || t('modals.modal.txt_9958af61')}`, 'error');
         }
@@ -736,9 +767,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 loadingMsg.remove();
 
                 if (data.success) {
-                    const importedCount = data.data?.imported || data.imported || 0;
-                    showToast(t('modals.upload.import_success_count', { count: importedCount }), 'success');
-                    setTimeout(() => window.location.reload(), 1500);
+                    await wbglHandleImportSuccess(
+                        data.data || {},
+                        data.message || t('modals.upload.import_success_count', { count: data.data?.imported || data.imported || 0 })
+                    );
                 } else {
                     showToast(`${t('modals.modal.txt_d3dc939a')} ${data.error || t('modals.modal.txt_9958af61')}`, 'error');
                 }

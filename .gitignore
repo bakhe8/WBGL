@@ -34,4 +34,3 @@ server.log
 /app/Scripts/__pycache__/
 .DS_Store
 Thumbs.db
-/.phpunit.cache/

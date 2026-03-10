@@ -829,7 +829,7 @@ class TimelineRecorder
     public static function getTimeline($guaranteeId)
     {
         $db = \App\Support\Database::connection();
-        $stmt = $db->prepare("SELECT * FROM guarantee_history WHERE guarantee_id = ? ORDER BY id DESC");
+        $stmt = $db->prepare("SELECT * FROM guarantee_history WHERE guarantee_id = ? ORDER BY created_at DESC, id DESC");
         $stmt->execute([$guaranteeId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

@@ -42,7 +42,7 @@ class TimelineDisplayService
             $stmt = $db->prepare('
                 SELECT * FROM guarantee_history
                 WHERE guarantee_id = ?
-                ORDER BY id DESC
+                ORDER BY created_at DESC, id DESC
             ');
             $stmt->execute([$guaranteeId]);
             $history = $stmt->fetchAll(PDO::FETCH_ASSOC);

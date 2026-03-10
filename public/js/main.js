@@ -118,6 +118,73 @@ window.showToast = function showToastBridge(message, type = 'info', duration = 3
     return window.Toast.show(message, type, duration);
 };
 
+function wbglBuildImportSummary(payload, fallbackMessage = '') {
+    const data = payload && typeof payload === 'object' ? payload : {};
+    const imported = Number(data.imported || 0);
+    const duplicates = Number(data.duplicates || 0);
+    const skipped = Number(data.skipped || 0);
+    const errors = Number(data.errors || 0);
+    const expectedBatchCount = Number(data.expected_batch_count || 0);
+    const actualBatchCount = Number(data.actual_batch_count || 0);
+    const integrityWarning = Boolean(data.integrity_warning);
+    const batchIdentifier = String(data.batch_identifier || '').trim();
+    const skippedDetails = Array.isArray(data.skipped_details) ? data.skipped_details.slice(0, 5) : [];
+    const errorDetails = Array.isArray(data.error_details) ? data.error_details.slice(0, 5) : [];
+
+    const lines = [];
+    if (fallbackMessage) {
+        lines.push(String(fallbackMessage).trim());
+    }
+    lines.push(`جديد: ${imported}`);
+    lines.push(`مكرر: ${duplicates}`);
+    lines.push(`متخطي: ${skipped}`);
+    lines.push(`أخطاء: ${errors}`);
+
+    if (batchIdentifier !== '') {
+        lines.push(`معرف الدفعة: ${batchIdentifier}`);
+    }
+    if (expectedBatchCount > 0 || actualBatchCount > 0) {
+        lines.push(`عدد الدفعة الفعلي/المتوقع: ${actualBatchCount}/${expectedBatchCount}`);
+    }
+    if (integrityWarning) {
+        lines.push('تحذير: يوجد فرق عددي يحتاج مراجعة فورية.');
+    }
+    if (skippedDetails.length > 0) {
+        lines.push('');
+        lines.push('أبرز المتخطي:');
+        skippedDetails.forEach((item) => lines.push(`- ${item}`));
+    }
+    if (errorDetails.length > 0) {
+        lines.push('');
+        lines.push('أبرز الأخطاء:');
+        errorDetails.forEach((item) => lines.push(`- ${item}`));
+    }
+
+    return lines.join('\n').trim();
+}
+
+async function wbglShowImportSummary(payload, fallbackMessage = '') {
+    const data = payload && typeof payload === 'object' ? payload : {};
+    const hasWarning = Boolean(data.integrity_warning)
+        || Number(data.duplicates || 0) > 0
+        || Number(data.skipped || 0) > 0
+        || Number(data.errors || 0) > 0;
+    const summary = wbglBuildImportSummary(data, fallbackMessage);
+
+    if (window.WBGLDialog && typeof window.WBGLDialog.alert === 'function') {
+        await window.WBGLDialog.alert(summary, {
+            title: hasWarning ? 'ملخص الاستيراد' : 'نجح الاستيراد',
+            confirmText: hasWarning ? 'متابعة' : 'إغلاق',
+        });
+        return;
+    }
+
+    window.showToast(summary, hasWarning ? 'warning' : 'success', 7000);
+}
+
+window.wbglBuildImportSummary = wbglBuildImportSummary;
+window.wbglShowImportSummary = wbglShowImportSummary;
+
 // Debug logger (disabled by default)
 window.BGL_DEBUG = window.BGL_DEBUG ?? false;
 window.BglLogger = window.BglLogger || {
@@ -301,8 +368,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         try {
                             const json = JSON.parse(txt);
                             if (json.success || json.status === 'success') {
-                                showToast(wbglT('common.ui.import_successful', ''), 'success');
-                                setTimeout(() => window.location.reload(), 1000); // Wait for toast
+                                const payload = json.data || {};
+                                await wbglShowImportSummary(payload, json.message || wbglT('common.ui.import_successful', ''));
+                                const hasWarning = Boolean(payload.integrity_warning)
+                                    || Number(payload.duplicates || 0) > 0
+                                    || Number(payload.skipped || 0) > 0
+                                    || Number(payload.errors || 0) > 0;
+                                const batchIdentifier = String(payload.batch_identifier || '').trim();
+                                if (hasWarning && batchIdentifier !== '') {
+                                    window.location.href = `/views/batch-detail.php?${new URLSearchParams({ import_source: batchIdentifier }).toString()}`;
+                                } else {
+                                    setTimeout(() => window.location.reload(), 300);
+                                }
                             } else {
                                 showToast(wbglT('common.ui.import_failed', '') + ' ' + (json.message || txt), 'error');
                             }
