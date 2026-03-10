@@ -190,9 +190,15 @@ if (!empty($guaranteeIds)) {
             margin-bottom: 30px;
         }
 
-        /* Hide the single-letter print button in batch mode */
-        .btn-print-overlay {
+        /* Hide per-letter overlay buttons only in batch mode.
+           Match letter.css specificity so single-preview pages stay unchanged. */
+        .letter-preview .btn-print-overlay,
+        .letter-preview .wbgl-unified-print-btn,
+        .letter-preview .print-icon-btn {
             display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
         }
 
         /* Floating Print Button */
