@@ -182,6 +182,9 @@ class UserRepository
     {
         $this->db->beginTransaction();
         try {
+            $lockStmt = $this->db->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
+            $lockStmt->execute(['user_permission_overrides:' . $userId]);
+
             // Clear existing
             $stmt = $this->db->prepare("DELETE FROM user_permissions WHERE user_id = ?");
             $stmt->execute([$userId]);

@@ -26,8 +26,8 @@ class FieldExtractionService
             '/\b(?:REFERENCE|REF|LG|NO|رقم|الرقم|ر\.ض)[:\h\-#]+([A-Z0-9\-\/]{4,25})/iu',
             // Pattern 2: Specific formats like 040XXXXXX
             '/\b(040[A-Z0-9]{5,})\b/i',
-            // Pattern 3: G- or BG- prefix
-            '/\b([GB]G?[\-\h]?[A-Z0-9]{5,20})\b/i',
+            // Pattern 3: G- or BG- style with at least one digit (prevents matching plain words like "Banque")
+            '/\b([GB]G?[\-\h]?(?=[A-Z0-9]{5,20}\b)(?=[A-Z0-9]*[0-9])[A-Z0-9]{5,20})\b/i',
             // Pattern 4: B followed by 6 digits (e.g., B323790)
             '/\b(B[0-9]{6,})\b/i',
             // Pattern 5: Alphanumeric with mix of letters and numbers (at least 8 chars)

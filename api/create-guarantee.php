@@ -12,6 +12,7 @@ use App\Services\GuaranteeVisibilityService;
 use App\Support\Database;
 use App\Support\Input;
 use App\Support\Settings;
+use App\Support\TestDataVisibility;
 use App\Support\TypeNormalizer;
 use App\Models\Guarantee;
 
@@ -25,7 +26,11 @@ try {
 
     // Production Mode: Block test data creation
     $settings = Settings::getInstance();
-    if (!empty($input['is_test_data']) && $settings->isProductionMode()) {
+    $isTestDataRequested = !empty($input['is_test_data']);
+    if ($isTestDataRequested && !TestDataVisibility::canCurrentUserAccessTestData()) {
+        wbgl_api_compat_fail(403, 'إنشاء بيانات الاختبار متاح للمطور فقط', [], 'permission');
+    }
+    if ($isTestDataRequested && $settings->isProductionMode()) {
         wbgl_api_compat_fail(403, 'لا يمكن إنشاء بيانات اختبار في وضع الإنتاج', [], 'permission');
     }
 
@@ -75,7 +80,7 @@ try {
     ];
 
     // 2. Create Guarantee Record (atomically with occurrence ledger write)
-    $isTestData = !empty($input['is_test_data']);
+    $isTestData = $isTestDataRequested && TestDataVisibility::canCurrentUserAccessTestData();
     $batchPrefix = $isTestData ? 'test_paste_' : 'manual_paste_';
     $baseBatchId = $batchPrefix . date('Ymd');
     $guaranteeId = 0;

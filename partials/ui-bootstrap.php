@@ -9,6 +9,7 @@ use App\Support\Settings;
 use App\Support\ThemeResolver;
 use App\Support\UiPolicy;
 use App\Support\ViewPolicy;
+use App\Services\BatchAccessPolicyService;
 
 $wbglUiSettings = Settings::getInstance();
 $wbglUiUser = AuthService::getCurrentUser();
@@ -38,7 +39,10 @@ $wbglViewPermission = ViewPolicy::requiredPermissionForView($wbglViewFile);
             required_permission: <?= json_encode($wbglViewPermission, JSON_UNESCAPED_UNICODE) ?>
         },
         policy: {
-            capability_map: <?= json_encode(UiPolicy::capabilityMap(), JSON_UNESCAPED_UNICODE) ?>
+            capability_map: <?= json_encode(UiPolicy::capabilityMap(), JSON_UNESCAPED_UNICODE) ?>,
+            batch: {
+                can_access_surfaces: <?= BatchAccessPolicyService::canAccessBatchSurfaces() ? 'true' : 'false' ?>
+            }
         },
         ui: {
             allowed: {

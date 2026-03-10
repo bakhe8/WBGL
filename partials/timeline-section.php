@@ -14,6 +14,9 @@ require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 if (!isset($timeline) || !is_array($timeline)) {
     $timeline = [];
 }
+if (!isset($canViewTimelineAdvanced)) {
+    $canViewTimelineAdvanced = false;
+}
 
 $eventCount = count($timeline);
 $eventLabelKeyMap = [
@@ -145,6 +148,22 @@ $fieldLabelKeys = [
                     $sourceInfo = $event['source_info'] ?? null;
                     $hasSnapshot = !empty($event['snapshot_data']) && $event['snapshot_data'] !== '{}' && $event['snapshot_data'] !== 'null';
                     $hasAnchor = !empty($event['anchor_snapshot']) && $event['anchor_snapshot'] !== '{}' && $event['anchor_snapshot'] !== 'null';
+                    $lifecycleScope = strtolower(trim((string)($event['lifecycle_scope'] ?? 'cycle')));
+                    if (!in_array($lifecycleScope, ['cycle', 'occurrence'], true)) {
+                        $lifecycleScope = 'cycle';
+                    }
+                    $cycleSequence = (int)($event['cycle_sequence'] ?? 0);
+                    $lifecycleBoundary = trim((string)($event['lifecycle_boundary'] ?? ''));
+                    $lifecycleBatchIdentifier = trim((string)($event['lifecycle_batch_identifier'] ?? ''));
+                    $lifecycleScopeKey = $lifecycleScope === 'occurrence'
+                        ? 'timeline.lifecycle.scope.occurrence'
+                        : 'timeline.lifecycle.scope.cycle';
+                    $lifecycleBoundaryKey = '';
+                    if ($lifecycleBoundary === 'cycle_restart') {
+                        $lifecycleBoundaryKey = 'timeline.lifecycle.boundary.cycle_restart';
+                    } elseif ($lifecycleBoundary === 'cycle_start_initial') {
+                        $lifecycleBoundaryKey = 'timeline.lifecycle.boundary.cycle_start_initial';
+                    }
                     ?>
 
                     <div class="timeline-event-wrapper timeline-event-wrapper--interactive"
@@ -178,6 +197,31 @@ $fieldLabelKeys = [
                             <?php if (is_array($sourceInfo) && isset($sourceInfo['label_key'], $sourceInfo['tone'])): ?>
                                 <div class="timeline-source-badge timeline-source--<?= htmlspecialchars((string)$sourceInfo['tone'], ENT_QUOTES, 'UTF-8') ?>">
                                     <span data-i18n="<?= htmlspecialchars((string)$sourceInfo['label_key'], ENT_QUOTES, 'UTF-8') ?>"></span>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($canViewTimelineAdvanced)): ?>
+                                <div class="timeline-lifecycle-row">
+                                    <span class="timeline-lifecycle-badge timeline-lifecycle-badge--<?= htmlspecialchars($lifecycleScope, ENT_QUOTES, 'UTF-8') ?>">
+                                        <span data-i18n="<?= htmlspecialchars($lifecycleScopeKey, ENT_QUOTES, 'UTF-8') ?>"></span>
+                                    </span>
+                                    <?php if ($cycleSequence > 0): ?>
+                                        <span class="timeline-lifecycle-badge timeline-lifecycle-badge--sequence">
+                                            <span data-i18n="timeline.lifecycle.cycle_label">الدورة</span>
+                                            #<?= (int)$cycleSequence ?>
+                                        </span>
+                                    <?php endif; ?>
+                                    <?php if ($lifecycleBoundaryKey !== ''): ?>
+                                        <span class="timeline-lifecycle-badge timeline-lifecycle-badge--boundary">
+                                            <span data-i18n="<?= htmlspecialchars($lifecycleBoundaryKey, ENT_QUOTES, 'UTF-8') ?>"></span>
+                                        </span>
+                                    <?php endif; ?>
+                                    <?php if ($lifecycleBatchIdentifier !== ''): ?>
+                                        <span class="timeline-lifecycle-badge timeline-lifecycle-badge--batch" title="<?= htmlspecialchars($lifecycleBatchIdentifier, ENT_QUOTES, 'UTF-8') ?>">
+                                            <span data-i18n="timeline.lifecycle.batch_label">دفعة</span>:
+                                            <span><?= htmlspecialchars($lifecycleBatchIdentifier, ENT_QUOTES, 'UTF-8') ?></span>
+                                        </span>
+                                    <?php endif; ?>
                                 </div>
                             <?php endif; ?>
 

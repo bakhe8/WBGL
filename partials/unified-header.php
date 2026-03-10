@@ -7,6 +7,7 @@
 
 use App\Support\Guard;
 use App\Support\AssetVersion;
+use App\Services\BatchAccessPolicyService;
 
 // Detect current page for active state
 $currentPage = basename($_SERVER['PHP_SELF'], '.php');
@@ -42,6 +43,7 @@ if ($currentUser && $currentUser->roleId) {
 
 $canManageUsers = $currentUser && Guard::has('manage_users');
 $isDeveloperUser = \App\Support\ViewPolicy::isCurrentUserDeveloper();
+$canAccessBatchSurfaces = BatchAccessPolicyService::canAccessBatchSurfaces();
 $assetVersion = static fn(string $path): string => rawurlencode(AssetVersion::forPath($path));
 ?>
 <?php include __DIR__ . '/ui-bootstrap.php'; ?>
@@ -347,11 +349,13 @@ $assetVersion = static fn(string $path): string => rawurlencode(AssetVersion::fo
                         <span class="nav-icon">🏠</span>
                         <span class="nav-label" data-i18n="nav.home">الرئيسية</span>
                     </a>
-                    <a href="<?= $basePath ?>views/batches.php"
-                        class="btn-global <?= isActive('batches', $currentPage, $currentDir) ? 'active' : '' ?>">
-                        <span class="nav-icon">📦</span>
-                        <span class="nav-label" data-i18n="nav.batches">الدفعات</span>
-                    </a>
+                    <?php if ($canAccessBatchSurfaces): ?>
+                        <a href="<?= $basePath ?>views/batches.php"
+                            class="btn-global <?= isActive('batches', $currentPage, $currentDir) ? 'active' : '' ?>">
+                            <span class="nav-icon">📦</span>
+                            <span class="nav-label" data-i18n="nav.batches">الدفعات</span>
+                        </a>
+                    <?php endif; ?>
                     <a href="<?= $basePath ?>views/statistics.php"
                         class="btn-global <?= isActive('statistics', $currentPage, $currentDir) ? 'active' : '' ?>">
                         <span class="nav-icon">📊</span>

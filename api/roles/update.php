@@ -5,6 +5,7 @@ require_once __DIR__ . '/../_bootstrap.php';
 
 use App\Repositories\RoleRepository;
 use App\Services\AuditTrailService;
+use App\Services\RoleGovernanceService;
 use App\Support\Database;
 
 wbgl_api_require_permission('manage_roles');
@@ -59,6 +60,11 @@ try {
     $existing = $repo->find($roleId);
     if (!$existing) {
         wbgl_api_compat_fail(404, 'الدور غير موجود');
+    }
+
+    $existingSlug = strtolower(trim((string)$existing->slug));
+    if (RoleGovernanceService::isProtectedRoleSlug($existingSlug) && $slug !== $existingSlug) {
+        wbgl_api_compat_fail(409, 'لا يمكن تغيير slug لدور نظام أساسي.');
     }
 
     $slugOwner = $repo->findBySlug($slug);

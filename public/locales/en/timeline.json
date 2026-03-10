@@ -5,6 +5,12 @@
     "timeline.empty.no_events": "No events in timeline",
     "timeline.hints.current_state": "👁️ Click to view current state",
     "timeline.hints.before_event": "🕐 Click to view state before this event",
+    "timeline.lifecycle.scope.cycle": "In cycle",
+    "timeline.lifecycle.scope.occurrence": "Out of cycle (batch context)",
+    "timeline.lifecycle.cycle_label": "Cycle",
+    "timeline.lifecycle.batch_label": "Batch",
+    "timeline.lifecycle.boundary.cycle_restart": "New cycle started",
+    "timeline.lifecycle.boundary.cycle_start_initial": "Initial cycle start",
 
     "timeline.actor.system": "System",
     "timeline.actor.user": "User",

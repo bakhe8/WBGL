@@ -117,6 +117,9 @@ class RoleRepository
 
         $this->db->beginTransaction();
         try {
+            $lockStmt = $this->db->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
+            $lockStmt->execute(['role_permissions:' . $roleId]);
+
             $delete = $this->db->prepare('DELETE FROM role_permissions WHERE role_id = ?');
             $delete->execute([$roleId]);
 

@@ -12,6 +12,7 @@ use App\Support\TransactionBoundary;
 use App\Support\Database;
 use App\Support\Input;
 use App\Support\Settings;
+use App\Support\TestDataVisibility;
 use App\Support\TypeNormalizer;
 use App\Models\Guarantee;
 
@@ -110,7 +111,7 @@ try {
         $params = [json_encode($newRaw, JSON_UNESCAPED_UNICODE), $guaranteeId];
 
         $settings = Settings::getInstance();
-        if (!$settings->isProductionMode()) {
+        if (!$settings->isProductionMode() && TestDataVisibility::canCurrentUserAccessTestData()) {
             $updateSql .= ", is_test_data = 1";
         }
 

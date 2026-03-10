@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Repositories\RoleRepository;
+use App\Support\AuthService;
 use App\Support\Guard;
 use PDO;
 
@@ -311,10 +313,29 @@ class TimelineReadPresentationService
 
     private function renderTimelinePartial(array $timeline): string
     {
+        $canViewTimelineAdvanced = $this->canViewTimelineAdvanced();
         ob_start();
         include __DIR__ . '/../../partials/timeline-section.php';
         $html = ob_get_clean();
         return is_string($html) ? $html : '';
+    }
+
+    private function canViewTimelineAdvanced(): bool
+    {
+        $legacyDefault = false;
+        $user = AuthService::getCurrentUser();
+        if ($user && $user->roleId !== null) {
+            try {
+                $roleRepo = new RoleRepository($this->db);
+                $role = $roleRepo->find((int)$user->roleId);
+                $roleSlug = strtolower(trim((string)($role->slug ?? '')));
+                $legacyDefault = in_array($roleSlug, ['developer', 'admin', 'system_admin'], true);
+            } catch (\Throwable) {
+                $legacyDefault = false;
+            }
+        }
+
+        return Guard::hasOrLegacy('timeline_advanced_view', $legacyDefault);
     }
 
     /**

@@ -19,6 +19,8 @@ class ViewPolicy
         'users.php' => 'manage_users',
         'settings.php' => 'manage_users',
         'maintenance.php' => 'manage_users',
+        'state-inspector.php' => 'manage_users',
+        'role-simulator.php' => 'manage_users',
     ];
 
     /**
@@ -27,11 +29,13 @@ class ViewPolicy
      * @var string[]
      */
     private const DEVELOPER_ONLY_VIEWS = [
+        'state-inspector.php',
+        'role-simulator.php',
     ];
 
     /**
      * Batch operation views are role-scoped by policy:
-     * default (data_entry/developer) + explicit override permission.
+     * only data_entry/developer are allowed.
      *
      * @var string[]
      */

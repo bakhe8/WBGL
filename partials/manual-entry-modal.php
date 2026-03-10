@@ -45,7 +45,9 @@
 
                 <div class="wbgl-input-field">
                     <label for="manualAmount" class="wbgl-input-label"><span data-i18n="modals.manual_entry.labels.amount">المبلغ</span> <span class="wbgl-required-star">*</span></label>
-                    <input type="text" id="manualAmount" class="wbgl-input-control" placeholder="50000.00" required>
+                    <input type="text" id="manualAmount" class="wbgl-input-control" placeholder="" data-i18n-placeholder="modals.manual_entry.placeholders.amount" inputmode="decimal" dir="ltr" autocomplete="off" required>
+                    <small class="wbgl-helper-text" data-i18n="modals.manual_entry.helper.amount_format">اكتب المبلغ وسيتم تنسيقه تلقائياً (مثال: 3,150,000.00)</small>
+                    <small id="manualAmountPreview" class="wbgl-helper-text wbgl-helper-text--amount-preview" aria-live="polite"></small>
                 </div>
 
                 <div class="wbgl-input-field">
@@ -75,7 +77,7 @@
 
             <?php
             $settings = \App\Support\Settings::getInstance();
-            if (!$settings->isProductionMode()):
+            if (!$settings->isProductionMode() && \App\Support\TestDataVisibility::canCurrentUserAccessTestData()):
             ?>
             <div class="wbgl-modal-note wbgl-modal-note--warning">
                 <label class="wbgl-radio-option wbgl-radio-option--top">
@@ -144,6 +146,11 @@
         const container = document.getElementById('testBatchIdContainer');
         if (container) {
             container.style.display = 'none';
+        }
+        const amountPreview = document.getElementById('manualAmountPreview');
+        if (amountPreview) {
+            amountPreview.textContent = '';
+            amountPreview.classList.remove('wbgl-helper-text--amount-error');
         }
         formModified = false;
     }

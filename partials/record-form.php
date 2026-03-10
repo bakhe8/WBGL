@@ -211,7 +211,7 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
                 'signed' => 'index.workflow.action.completed',
             ];
             $workflowStepLabelMap = [
-                'draft' => 'مسودة',
+                'draft' => 'بانتظار التدقيق',
                 'audited' => 'تم التدقيق',
                 'analyzed' => 'تم التحليل',
                 'supervised' => 'تم الإشراف',

@@ -34,6 +34,7 @@ use App\Support\DirectionResolver;
 use App\Support\Guard;
 use App\Support\LocaleResolver;
 use App\Support\AssetVersion;
+use App\Support\Logger;
 use App\Support\Settings;
 use App\Support\TestDataVisibility;
 use App\Support\ThemeResolver;
@@ -56,6 +57,7 @@ $db = Database::connect();
 // Effective permissions and policy defaults.
 $effectivePermissions = Guard::permissions();
 $permissionCanViewTimeline = Guard::has('timeline_view');
+$canViewTimelineAdvanced = false;
 $permissionCanViewNotes = Guard::has('notes_view');
 $permissionCanCreateNotes = Guard::has('notes_create');
 $permissionCanViewAttachments = Guard::has('attachments_view');
@@ -116,6 +118,8 @@ $hasFullFilterException = Guard::has('ui_full_filters_view');
     $showFiltersForCurrentUser = in_array($currentUserRoleSlug, ['data_entry', 'developer'], true)
         || $hasFullFilterException;
     $isTaskOnlyUser = !$showFiltersForCurrentUser;
+    $legacyTimelineAdvancedRoleDefault = in_array(strtolower(trim((string)$currentUserRoleSlug)), ['developer', 'admin', 'system_admin'], true);
+    $canViewTimelineAdvanced = Guard::hasOrLegacy('timeline_advanced_view', $legacyTimelineAdvancedRoleDefault);
     $legacyPrintRoleDefault = in_array(strtolower(trim((string)$currentUserRoleSlug)), ['developer', 'admin', 'system_admin'], true);
     $permissionCanPrintLetters = Guard::hasOrLegacy('letters_print', $legacyPrintRoleDefault);
     if ($isTaskOnlyUser) {
@@ -137,6 +141,7 @@ $indexThemeResolved = $indexThemePreference === 'system' ? 'light' : $indexTheme
 $assetVersion = static fn(string $path): string => rawurlencode(AssetVersion::forPath($path));
 $notificationUiLimit = max(10, min(200, (int)$settings->get('NOTIFICATION_UI_MAX_ITEMS', 40)));
 $includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
+$canAccessTestData = TestDataVisibility::canCurrentUserAccessTestData();
 $localeInfo = LocaleResolver::resolve(
     AuthService::getCurrentUser(),
     $settings,
@@ -199,6 +204,9 @@ $requestedId = isset($_GET['id']) ? (int)$_GET['id'] : null;
 $currentRecord = null;
 $mockNotes = [];
 $mockAttachments = [];
+$scopeFallbackRequestedId = null;
+$scopeFallbackTargetId = null;
+$scopeFallbackApplied = false;
 
 if ($requestedId) {
     // Minimal-load gate: validate forced id belongs to current scope first.
@@ -214,6 +222,55 @@ if ($requestedId) {
     if ($idMatchesScope) {
         // Load full record only after scope check passes.
         $currentRecord = $guaranteeRepo->find($requestedId);
+    } else {
+        // If a direct id points to a released record while user is in another filter
+        // (for example `all`), redirect to released scope instead of loading a wrong fallback record.
+        $canRedirectToReleasedScope = $statusFilter !== 'released'
+            && ($searchTerm === null || trim((string)$searchTerm) === '')
+            && \App\Services\NavigationService::isIdInFilter(
+                $db,
+                $requestedId,
+                'released',
+                null,
+                $stageFilter,
+                $includeTestData
+            );
+
+        if ($canRedirectToReleasedScope) {
+            $requestedRecordForRedirect = $guaranteeRepo->find($requestedId);
+            if ($requestedRecordForRedirect) {
+                $redirectParams = [
+                    'id' => $requestedId,
+                    'filter' => 'released',
+                ];
+
+                $redirectGuaranteeNumber = trim((string)$requestedRecordForRedirect->guaranteeNumber);
+                if ($redirectGuaranteeNumber !== '') {
+                    $redirectParams['search'] = $redirectGuaranteeNumber;
+                }
+
+                $redirectParams = TestDataVisibility::withQueryFlag($redirectParams, $includeTestData);
+                Logger::warning('index.scope_redirect_to_released_for_requested_id', [
+                    'requested_id' => $requestedId,
+                    'status_filter' => $statusFilter,
+                    'stage_filter' => $stageFilter,
+                    'include_test_data' => $includeTestData ? 1 : 0,
+                    'role' => $currentUserRoleSlug,
+                ]);
+                header('Location: index.php?' . http_build_query($redirectParams));
+                exit;
+            }
+        }
+
+        $scopeFallbackRequestedId = $requestedId;
+        Logger::warning('index.scope_requested_id_outside_filter', [
+            'requested_id' => $requestedId,
+            'status_filter' => $statusFilter,
+            'stage_filter' => $stageFilter,
+            'search_term' => $searchTerm,
+            'include_test_data' => $includeTestData ? 1 : 0,
+            'role' => $currentUserRoleSlug,
+        ]);
     }
 }
 
@@ -254,6 +311,28 @@ if (!$currentRecord) {
     );
     if ($firstId) {
         $currentRecord = $guaranteeRepo->find($firstId);
+        if ($scopeFallbackRequestedId !== null && $firstId !== $scopeFallbackRequestedId) {
+            $scopeFallbackApplied = true;
+            $scopeFallbackTargetId = (int)$firstId;
+            Logger::warning('index.scope_fallback_replaced_requested_id', [
+                'requested_id' => $scopeFallbackRequestedId,
+                'loaded_id' => $scopeFallbackTargetId,
+                'status_filter' => $statusFilter,
+                'stage_filter' => $stageFilter,
+                'search_term' => $searchTerm,
+                'include_test_data' => $includeTestData ? 1 : 0,
+                'role' => $currentUserRoleSlug,
+            ]);
+        }
+    } elseif ($scopeFallbackRequestedId !== null) {
+        Logger::warning('index.scope_fallback_no_record_in_scope', [
+            'requested_id' => $scopeFallbackRequestedId,
+            'status_filter' => $statusFilter,
+            'stage_filter' => $stageFilter,
+            'search_term' => $searchTerm,
+            'include_test_data' => $includeTestData ? 1 : 0,
+            'role' => $currentUserRoleSlug,
+        ]);
     }
 }
 
@@ -979,6 +1058,30 @@ $formattedSuppliers = array_map(function ($s) {
             color: var(--accent-danger);
         }
 
+        .status-filter-context-hint {
+            margin-top: 8px;
+            font-size: 11px;
+            line-height: 1.5;
+            color: var(--text-muted);
+        }
+
+        .status-filter-scope-warning {
+            margin-top: 8px;
+            padding: 8px 10px;
+            border: 1px solid var(--accent-warning);
+            border-radius: 6px;
+            background: var(--accent-warning-light);
+            color: var(--text-primary);
+            font-size: 11px;
+            line-height: 1.5;
+        }
+
+        .status-filter-warning-meta {
+            margin-top: 4px;
+            font-family: monospace;
+            color: var(--text-muted);
+        }
+
         .test-data-toggle-section {
             margin-top: 12px;
             padding-top: 12px;
@@ -1432,6 +1535,28 @@ $formattedSuppliers = array_map(function ($s) {
             font-size: 12px;
             color: var(--theme-danger-text-muted);
         }
+
+        .record-title-badges {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 6px;
+        }
+
+        .badge-workflow-stage {
+            background: var(--theme-overlay-soft);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-primary);
+            font-size: 11px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .badge-workflow-stage-prefix {
+            color: var(--text-muted);
+        }
     </style>
 
 </head>
@@ -1464,6 +1589,22 @@ $formattedSuppliers = array_map(function ($s) {
                         <?php
                         $statusRaw = strtolower(trim((string)($mockRecord['status'] ?? 'pending')));
                         $statusNormalizedForUi = $statusRaw === 'approved' ? 'ready' : $statusRaw;
+                        $workflowStepForUi = strtolower(trim((string)($mockRecord['workflow_step'] ?? 'draft')));
+                        if ($workflowStepForUi === '') {
+                            $workflowStepForUi = 'draft';
+                        }
+                        $workflowStepI18nMap = [
+                            'draft' => 'index.workflow.step.draft',
+                            'audited' => 'index.workflow.step.audited',
+                            'analyzed' => 'index.workflow.step.analyzed',
+                            'supervised' => 'index.workflow.step.supervised',
+                            'approved' => 'index.workflow.step.approved',
+                            'signed' => 'index.workflow.step.signed',
+                        ];
+                        $workflowStageI18nKey = $workflowStepI18nMap[$workflowStepForUi] ?? null;
+                        $workflowStageLabel = $workflowStageI18nKey
+                            ? $indexT($workflowStageI18nKey, strtoupper($workflowStepForUi))
+                            : strtoupper($workflowStepForUi);
 
                         // Display status badge based on actual status
                         if ($statusNormalizedForUi === 'released') {
@@ -1478,23 +1619,31 @@ $formattedSuppliers = array_map(function ($s) {
                         }
                         $statusText = $indexT($statusI18nKey);
                         ?>
-                        <span class="badge <?= $statusClass ?>" data-i18n="<?= htmlspecialchars($statusI18nKey) ?>"><?= $statusText ?></span>
-                        <?php if (
-                            $currentUserRoleSlug === 'data_entry'
-                            && $permissionCanReopenGuarantee
-                            && in_array($statusNormalizedForUi, ['ready', 'issued', 'released', 'signed'], true)
-                        ): ?>
-                            <button class="btn btn-ghost btn-xs record-edit-btn"
-                                title=""
-                                data-i18n-title="index.ui.txt_29a85387"
-                                data-action="reopenRecord"
-                                data-authorize-resource="guarantee"
-                                data-authorize-action="reopen"
-                                data-authorize-mode="hide"
-                                >
-                                ✏️
-                            </button>
-                        <?php endif; ?>
+                        <div class="record-title-badges">
+                            <span class="badge <?= $statusClass ?>" data-i18n="<?= htmlspecialchars($statusI18nKey) ?>"><?= $statusText ?></span>
+                            <span class="badge badge-workflow-stage">
+                                <span class="badge-workflow-stage-prefix" data-i18n="index.workflow.stage_label">المرحلة:</span>
+                                <span <?= $workflowStageI18nKey ? 'data-i18n="' . htmlspecialchars($workflowStageI18nKey, ENT_QUOTES, 'UTF-8') . '"' : '' ?>>
+                                    <?= htmlspecialchars($workflowStageLabel, ENT_QUOTES, 'UTF-8') ?>
+                                </span>
+                            </span>
+                            <?php if (
+                                $currentUserRoleSlug === 'data_entry'
+                                && $permissionCanReopenGuarantee
+                                && in_array($statusNormalizedForUi, ['ready', 'issued', 'released', 'signed'], true)
+                            ): ?>
+                                <button class="btn btn-ghost btn-xs record-edit-btn"
+                                    title=""
+                                    data-i18n-title="index.ui.txt_29a85387"
+                                    data-action="reopenRecord"
+                                    data-authorize-resource="guarantee"
+                                    data-authorize-action="reopen"
+                                    data-authorize-mode="hide"
+                                    >
+                                    ✏️
+                                </button>
+                            <?php endif; ?>
+                        </div>
                     <?php endif; ?>
                 </div>
 
@@ -1774,8 +1923,24 @@ $formattedSuppliers = array_map(function ($s) {
                             </div>
                         <?php endif; ?>
                     </div>
+                    <?php if ($showFiltersForCurrentUser): ?>
+                        <div class="status-filter-context-hint"
+                            data-i18n="index.ui.filter_scope_hint">
+                            ملاحظة: تبويب الكل يعرض السجلات التشغيلية فقط. السجلات المُفرج عنها تظهر في تبويب "مُفرج عنه". عند البحث قد تتغير النتيجة حسب النطاق الحالي والصلاحيات.
+                        </div>
+                    <?php endif; ?>
+                    <?php if ($scopeFallbackApplied && $showFiltersForCurrentUser): ?>
+                        <div class="status-filter-scope-warning" role="status">
+                            <div data-i18n="index.ui.scope_fallback_notice">
+                                السجل المطلوب خارج نطاق الفلتر الحالي؛ تم فتح أول سجل مطابق للنطاق.
+                            </div>
+                            <div class="status-filter-warning-meta">
+                                ID <?= (int)$scopeFallbackRequestedId ?> → ID <?= (int)$scopeFallbackTargetId ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
                     <!-- ✅ NEW: Test Data Filter Toggle (Phase 1) -->
-                    <?php if ($showFiltersForCurrentUser && !$settings->isProductionMode()): ?>
+                    <?php if ($showFiltersForCurrentUser && !$settings->isProductionMode() && $canAccessTestData): ?>
                         <div class="test-data-toggle-section">
                             <div class="test-data-toggle-title" data-i18n="index.ui.txt_44cda22f">بيانات الاختبار</div>
                             <a href="<?php

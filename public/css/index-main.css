@@ -949,6 +949,53 @@ body.wbgl-lock-scroll {
     background: color-mix(in srgb, var(--timeline-source-color, var(--text-muted)) 15%, transparent);
 }
 
+.timeline-lifecycle-row {
+    margin: 6px 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.timeline-lifecycle-badge {
+    border-radius: 999px;
+    border: 1px solid var(--border-primary);
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+}
+
+.timeline-lifecycle-badge--cycle {
+    border-color: color-mix(in srgb, var(--accent-primary) 35%, var(--border-primary));
+    color: var(--accent-primary-hover);
+    background: color-mix(in srgb, var(--accent-primary) 15%, var(--bg-card));
+}
+
+.timeline-lifecycle-badge--occurrence {
+    border-color: color-mix(in srgb, var(--accent-warning) 35%, var(--border-primary));
+    color: var(--theme-warning-text);
+    background: color-mix(in srgb, var(--accent-warning) 15%, var(--bg-card));
+}
+
+.timeline-lifecycle-badge--boundary {
+    border-color: color-mix(in srgb, var(--accent-success) 35%, var(--border-primary));
+    color: var(--accent-success-hover);
+    background: color-mix(in srgb, var(--accent-success) 15%, var(--bg-card));
+}
+
+.timeline-lifecycle-badge--sequence {
+    font-variant-numeric: tabular-nums;
+}
+
+.timeline-lifecycle-badge--batch {
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .timeline-change-block {
     margin: 6px 0;
     border-radius: 3px;
@@ -2304,6 +2351,18 @@ body.wbgl-lock-scroll {
     display: block;
     font-size: 12px;
     color: var(--text-muted);
+}
+
+.wbgl-helper-text--amount-preview {
+    margin-top: 6px;
+    font-weight: 700;
+    color: var(--accent-info, #2563eb);
+    direction: ltr;
+    text-align: left;
+}
+
+.wbgl-helper-text--amount-error {
+    color: var(--accent-danger);
 }
 
 .wbgl-radio-group {

@@ -8,6 +8,8 @@ use App\Repositories\GuaranteeRepository;
 use App\Repositories\LearningRepository;
 use App\Services\Learning\AuthorityFactory;
 use App\Support\BankNormalizer;
+use App\Support\ConcurrencyConflictException;
+use App\Support\GuaranteeDecisionConcurrencyGuard;
 use App\Support\Logger;
 use App\Support\TransactionBoundary;
 use PDO;
@@ -61,74 +63,100 @@ class SaveAndNextApplicationService
                 'reasons' => $policyContext['reasons'] ?? [],
             ], 'internal');
         }
+        $expectedDecisionState = is_array($eligibility['decision_snapshot'] ?? null)
+            ? $eligibility['decision_snapshot']
+            : [];
 
-        return TransactionBoundary::run($db, static function () use (
-            $db,
-            $currentGuarantee,
-            $guaranteeId,
-            $supplierId,
-            $supplierName,
-            $decidedBy,
-            $statusFilter,
-            $includeTestData,
-            $policyContext,
-            $surface
-        ): array {
-            $resolution = self::resolveDecisionInputs(
+        try {
+            return TransactionBoundary::run($db, static function () use (
                 $db,
                 $currentGuarantee,
                 $guaranteeId,
                 $supplierId,
                 $supplierName,
                 $decidedBy,
+                $statusFilter,
+                $includeTestData,
                 $policyContext,
-                $surface
-            );
-            if (!($resolution['ok'] ?? false)) {
-                return $resolution;
-            }
+                $surface,
+                $expectedDecisionState
+            ): array {
+                $lockedDecisionState = [];
+                if ($expectedDecisionState !== []) {
+                    $lockedDecisionState = GuaranteeDecisionConcurrencyGuard::lockSnapshot($db, $guaranteeId);
+                    GuaranteeDecisionConcurrencyGuard::assertExpectedSnapshot(
+                        $expectedDecisionState,
+                        $lockedDecisionState,
+                        ['status', 'workflow_step', 'active_action', 'signatures_received', 'is_locked']
+                    );
+                }
 
-            $resolvedSupplierId = (int)($resolution['supplier_id'] ?? 0);
-            $resolvedBankId = (int)($resolution['bank_id'] ?? 0);
-            $decisionSource = (string)($resolution['decision_source'] ?? 'manual');
-            $wasAiMatch = (bool)($resolution['was_ai_match'] ?? false);
-            $autoCreatedSupplierName = $resolution['auto_created_supplier_name'] ?? null;
-            $now = (string)($resolution['now'] ?? date('Y-m-d H:i:s'));
-            $changes = is_array($resolution['changes'] ?? null) ? $resolution['changes'] : [];
-            $newSupplier = (string)($resolution['new_supplier'] ?? '');
-
-            self::persistDecisionAndRecord(
-                $db,
-                $currentGuarantee,
-                $guaranteeId,
-                $resolvedSupplierId,
-                $resolvedBankId,
-                $decisionSource,
-                $decidedBy,
-                $now,
-                $changes,
-                $newSupplier,
-                $wasAiMatch
-            );
-
-            $meta = [];
-            if ($autoCreatedSupplierName) {
-                $meta['created_supplier_name'] = $autoCreatedSupplierName;
-            }
-
-            return [
-                'ok' => true,
-                'payload' => self::buildPostSaveResponse(
+                $resolution = self::resolveDecisionInputs(
                     $db,
+                    $currentGuarantee,
                     $guaranteeId,
-                    $statusFilter,
-                    $includeTestData,
+                    $supplierId,
+                    $supplierName,
+                    $decidedBy,
                     $policyContext,
-                    $surface,
-                    $meta
-                ),
-            ];
-        });
+                    $surface
+                );
+                if (!($resolution['ok'] ?? false)) {
+                    return $resolution;
+                }
+
+                $resolvedSupplierId = (int)($resolution['supplier_id'] ?? 0);
+                $resolvedBankId = (int)($resolution['bank_id'] ?? 0);
+                $decisionSource = (string)($resolution['decision_source'] ?? 'manual');
+                $wasAiMatch = (bool)($resolution['was_ai_match'] ?? false);
+                $autoCreatedSupplierName = $resolution['auto_created_supplier_name'] ?? null;
+                $now = (string)($resolution['now'] ?? date('Y-m-d H:i:s'));
+                $changes = is_array($resolution['changes'] ?? null) ? $resolution['changes'] : [];
+                $newSupplier = (string)($resolution['new_supplier'] ?? '');
+
+                self::persistDecisionAndRecord(
+                    $db,
+                    $currentGuarantee,
+                    $guaranteeId,
+                    $resolvedSupplierId,
+                    $resolvedBankId,
+                    $decisionSource,
+                    $decidedBy,
+                    $now,
+                    $changes,
+                    $newSupplier,
+                    $wasAiMatch,
+                    $lockedDecisionState
+                );
+
+                $meta = [];
+                if ($autoCreatedSupplierName) {
+                    $meta['created_supplier_name'] = $autoCreatedSupplierName;
+                }
+
+                return [
+                    'ok' => true,
+                    'payload' => self::buildPostSaveResponse(
+                        $db,
+                        $guaranteeId,
+                        $statusFilter,
+                        $includeTestData,
+                        $policyContext,
+                        $surface,
+                        $meta
+                    ),
+                ];
+            });
+        } catch (ConcurrencyConflictException $e) {
+            return self::buildFailure(409, $e->getMessage(), [
+                'message' => $e->getMessage(),
+                'reason_code' => 'STALE_RECORD_CONFLICT',
+                'conflict' => $e->context(),
+                'policy' => $policyContext,
+                'surface' => $surface,
+                'reasons' => $policyContext['reasons'] ?? [],
+            ], 'conflict');
+        }
     }
 
     public static function resolveCurrentWorkflowStep(PDO $db, int $guaranteeId): string
@@ -183,9 +211,18 @@ class SaveAndNextApplicationService
             ]);
         }
 
+        $decisionSnapshot = [];
+        try {
+            $decisionSnapshot = GuaranteeDecisionConcurrencyGuard::snapshot($db, $guaranteeId);
+        } catch (\Throwable) {
+            // Some legacy records may not have a decision row yet; insertion is handled later.
+            $decisionSnapshot = [];
+        }
+
         return [
             'ok' => true,
             'current_guarantee' => $currentGuarantee,
+            'decision_snapshot' => $decisionSnapshot,
         ];
     }
 
@@ -415,6 +452,7 @@ class SaveAndNextApplicationService
      * Persist supplier decision mutation and record timeline/learning side effects.
      *
      * @param array<int,string> $changes
+     * @param array<string,mixed> $lockedDecisionState
      */
     public static function persistDecisionAndRecord(
         PDO $db,
@@ -427,7 +465,8 @@ class SaveAndNextApplicationService
         string $now,
         array $changes,
         string $newSupplier,
-        bool $wasAiMatch
+        bool $wasAiMatch,
+        array $lockedDecisionState = []
     ): void {
         $oldSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
         $statusToSave = StatusEvaluator::evaluate($supplierId, $bankId);
@@ -482,18 +521,31 @@ class SaveAndNextApplicationService
         ]);
 
         if (!empty($changes)) {
-            $statusStmt = $db->prepare('SELECT status FROM guarantee_decisions WHERE guarantee_id = ?');
-            $statusStmt->execute([$guaranteeId]);
-            $currentStatus = $statusStmt->fetchColumn();
+            $lockedStatus = strtolower(trim((string)($lockedDecisionState['status'] ?? '')));
+            $lockedStep = strtolower(trim((string)($lockedDecisionState['workflow_step'] ?? '')));
+            $lockedAction = strtolower(trim((string)($lockedDecisionState['active_action'] ?? '')));
+            $lockedSignatures = (int)($lockedDecisionState['signatures_received'] ?? 0);
 
-            if ($currentStatus === 'ready') {
+            $shouldClearActiveAction = (
+                $statusToSave === 'ready'
+                && $lockedStatus === 'ready'
+                && $lockedStep === 'draft'
+                && $lockedAction !== ''
+                && $lockedSignatures === 0
+            );
+
+            if ($shouldClearActiveAction) {
                 $clearActiveStmt = $db->prepare(
                     'UPDATE guarantee_decisions
-                     SET active_action = NULL, active_action_set_at = NULL
-                     WHERE guarantee_id = ?'
+                     SET active_action = NULL,
+                         active_action_set_at = NULL
+                     WHERE guarantee_id = ?
+                       AND COALESCE(active_action, \'\') <> \'\''
                 );
                 $clearActiveStmt->execute([$guaranteeId]);
-                error_log("ADR-007: Cleared active_action for guarantee {$guaranteeId} due to data changes");
+                if ($clearActiveStmt->rowCount() > 0) {
+                    error_log("ADR-007: Cleared active_action for guarantee {$guaranteeId} due to material data changes");
+                }
             }
         }
 

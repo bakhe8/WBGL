@@ -16,6 +16,8 @@ require_once __DIR__ . '/_bootstrap.php';
 
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Repositories\NoteRepository;
+use App\Support\ConcurrencyConflictException;
+use App\Support\GuaranteeDecisionConcurrencyGuard;
 use App\Services\NotificationPolicyService;
 use App\Services\TimelineRecorder;
 use App\Services\WorkflowService;
@@ -81,12 +83,36 @@ try {
         ]);
     }
 
+    $expectedDecisionState = GuaranteeDecisionConcurrencyGuard::snapshot($db, $guaranteeId);
     $oldStep = (string)$decision->workflowStep;
     $oldAction = trim((string)$decision->activeAction);
-    $beforeSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
 
     $db->beginTransaction();
     try {
+        $lockedDecisionState = GuaranteeDecisionConcurrencyGuard::lockSnapshot($db, $guaranteeId);
+        GuaranteeDecisionConcurrencyGuard::assertExpectedSnapshot(
+            $expectedDecisionState,
+            $lockedDecisionState,
+            ['status', 'workflow_step', 'active_action', 'signatures_received', 'is_locked']
+        );
+
+        $lockedDecision = $decisionRepo->findByGuarantee($guaranteeId);
+        if (!$lockedDecision) {
+            throw new \RuntimeException('No decision found for this guarantee');
+        }
+
+        $rejectPolicyLocked = WorkflowService::canRejectWithReasons($lockedDecision);
+        if (!($rejectPolicyLocked['allowed'] ?? false)) {
+            throw new ConcurrencyConflictException(
+                'تم تعديل حالة السجل أثناء التنفيذ. أعد التحميل ثم حاول الرفض مرة أخرى.',
+                ['workflow_reasons' => $rejectPolicyLocked['reasons'] ?? []]
+            );
+        }
+
+        $oldStep = (string)$lockedDecision->workflowStep;
+        $oldAction = trim((string)$lockedDecision->activeAction);
+        $beforeSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
+
         // 1) Reset workflow state to data-entry handoff.
         $resetStmt = $db->prepare(
             "UPDATE guarantee_decisions
@@ -172,6 +198,11 @@ try {
         'surface' => $surface,
         'reasons' => $policy['reasons'] ?? [],
     ]);
+} catch (ConcurrencyConflictException $e) {
+    wbgl_api_compat_fail(409, $e->getMessage(), [
+        'reason_code' => 'STALE_RECORD_CONFLICT',
+        'conflict' => $e->context(),
+    ], 'conflict');
 } catch (\Throwable $e) {
     wbgl_api_compat_fail(500, $e->getMessage(), [], 'internal');
 }

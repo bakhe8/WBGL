@@ -22,6 +22,7 @@ $importedByAggregate = $driver === 'pgsql'
     : 'GROUP_CONCAT(DISTINCT g.imported_by)';
 $settings = Settings::getInstance();
 $includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
+$canAccessTestData = TestDataVisibility::canCurrentUserAccessTestData();
 $currentUser = AuthService::getCurrentUser();
 $localeInfo = LocaleResolver::resolve(
     $currentUser,
@@ -293,7 +294,7 @@ $completed = array_filter($batches, fn($b) => $b['status'] === 'completed');
         
         <div class="page-title" data-i18n="batches.ui.txt_8ea08ec4">الدفعات</div>
         <p class="page-subtitle" data-i18n="batches.ui.txt_c31dea35">إدارة مجموعات الضمانات للعمل الجماعي</p>
-        <?php if (!$settings->isProductionMode()): ?>
+        <?php if (!$settings->isProductionMode() && $canAccessTestData): ?>
             <?php
             $toggleParams = $_GET;
             if ($includeTestData) {

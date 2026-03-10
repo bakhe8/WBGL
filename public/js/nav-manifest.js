@@ -1,6 +1,10 @@
 (function () {
     'use strict';
 
+    function canAccessBatchSurfaces() {
+        return window.WBGL_BOOTSTRAP?.policy?.batch?.can_access_surfaces === true;
+    }
+
     const NAV_MANIFEST = [
         {
             id: 'home',
@@ -15,6 +19,7 @@
             href: 'views/batches.php',
             icon: '📦',
             labelKey: 'nav.batches',
+            requiresBatchAccess: true,
         },
         {
             id: 'statistics',
@@ -32,6 +37,24 @@
             capability: { resource: 'navigation', action: 'view-maintenance' },
             hideInProduction: true,
         },
+        {
+            id: 'state-inspector',
+            page: 'state-inspector',
+            href: 'views/state-inspector.php',
+            icon: '🧭',
+            labelKey: 'nav.state_inspector',
+            labelFallback: 'State Inspector',
+            capability: { resource: 'navigation', action: 'view-state-inspector' },
+        },
+        {
+            id: 'role-simulator',
+            page: 'role-simulator',
+            href: 'views/role-simulator.php',
+            icon: '🧪',
+            labelKey: 'nav.role_simulator',
+            labelFallback: 'Role Simulator',
+            capability: { resource: 'navigation', action: 'view-role-simulator' },
+        },
     ];
 
     function translate(key, fallback) {
@@ -43,6 +66,9 @@
 
     function canSeeItem(item) {
         if (!item || typeof item !== 'object') {
+            return false;
+        }
+        if (item.requiresBatchAccess && !canAccessBatchSurfaces()) {
             return false;
         }
         if (item.capability && window.WBGLPolicy && typeof window.WBGLPolicy.can === 'function') {
@@ -69,7 +95,7 @@
         const label = document.createElement('span');
         label.className = 'nav-label';
         label.setAttribute('data-i18n', item.labelKey);
-        label.textContent = translate(item.labelKey, item.id);
+        label.textContent = translate(item.labelKey, item.labelFallback || item.id);
 
         anchor.appendChild(icon);
         anchor.appendChild(label);

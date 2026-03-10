@@ -1,4 +1,8 @@
 (function () {
+    function canAccessBatchSurfaces() {
+        return window.WBGL_BOOTSTRAP?.policy?.batch?.can_access_surfaces === true;
+    }
+
     function canHandle(event) {
         if (event.ctrlKey || event.metaKey || event.altKey) return false;
         const target = event.target;
@@ -41,6 +45,10 @@
         modal.className = 'wbgl-shortcuts-overlay';
         modal.hidden = true;
 
+        const batchShortcutRow = canAccessBatchSurfaces()
+            ? `<code>B</code><span>${t('shortcuts.open_batches', 'shortcuts.open_batches')}</span>`
+            : '';
+
         modal.innerHTML = `
             <div class="wbgl-shortcuts-dialog">
                 <div class="wbgl-shortcuts-dialog__header">
@@ -49,7 +57,7 @@
                 </div>
                 <div class="wbgl-shortcuts-grid">
                     <code>G</code><span>${t('shortcuts.open_main', 'shortcuts.open_main')}</span>
-                    <code>B</code><span>${t('shortcuts.open_batches', 'shortcuts.open_batches')}</span>
+                    ${batchShortcutRow}
                     <code>S</code><span>${t('shortcuts.open_settings', 'shortcuts.open_settings')}</span>
                     <code>T</code><span>${t('shortcuts.open_stats', 'shortcuts.open_stats')}</span>
                     <code>/</code><span>${t('shortcuts.focus_search', 'shortcuts.focus_search')}</span>
@@ -98,7 +106,7 @@
                 return;
             }
             if (key === 'g') return navigate('/index.php');
-            if (key === 'b') return navigate('/views/batches.php');
+            if (key === 'b' && canAccessBatchSurfaces()) return navigate('/views/batches.php');
             if (key === 's') return navigate('/views/settings.php');
             if (key === 't') return navigate('/views/statistics.php');
         });

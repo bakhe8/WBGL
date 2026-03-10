@@ -6,6 +6,7 @@ require_once __DIR__ . '/_bootstrap.php';
 use App\Support\Database;
 use App\Services\ImportService;
 use App\Services\TimelineRecorder;
+use App\Support\TestDataVisibility;
 use App\Support\TypeNormalizer;
 
 /**
@@ -178,7 +179,7 @@ try {
     $pdo = Database::connect();
     $settings = \App\Support\Settings::getInstance();
     $isProduction = $settings->isProductionMode();
-    $autoMarkTestData = !$isProduction; // If not in production, auto-mark as test data
+    $autoMarkTestData = !$isProduction && TestDataVisibility::canCurrentUserAccessTestData();
 
     $pdo->beginTransaction();
 

@@ -308,7 +308,13 @@ window.SmartWorkstation = {
             const data = await response.json();
             if (data.success) {
                 await Swal.fire(wsT('index.workstation.success.saved', ''), data.message, 'success');
-                window.location.href = `/index.php?id=${data.redirect_id}`;
+                const targetParams = new URLSearchParams();
+                targetParams.set('id', String(data.redirect_id || ''));
+                const redirectGuaranteeNumber = String(this.state.entries?.[0]?.guarantee_number || '').trim();
+                if (redirectGuaranteeNumber !== '') {
+                    targetParams.set('search', redirectGuaranteeNumber);
+                }
+                window.location.href = `/index.php?${targetParams.toString()}`;
             } else {
                 throw new Error(data.error);
             }

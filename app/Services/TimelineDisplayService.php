@@ -74,6 +74,18 @@ class TimelineDisplayService
                     : null;
                 $tone = self::detectTone($eventType, $eventSubtype);
                 $sourceInfo = self::sourceInfo($eventType, $eventSubtype, $eventDetails);
+                $lifecycleScopeRaw = trim((string)($eventDetails['lifecycle_scope'] ?? ''));
+                if ($lifecycleScopeRaw === '') {
+                    $lifecycleScopeRaw = self::inferLifecycleScopeFromEvent($eventType, $eventSubtype);
+                }
+                $lifecycleScope = self::normalizeLifecycleScope($lifecycleScopeRaw);
+                $cycleSequenceRaw = $eventDetails['cycle_sequence'] ?? null;
+                $cycleSequence = is_numeric($cycleSequenceRaw) ? max(1, (int)$cycleSequenceRaw) : null;
+                $lifecycleBoundary = trim((string)($eventDetails['lifecycle_boundary'] ?? ''));
+                $lifecycleBatchIdentifier = trim((string)($eventDetails['lifecycle_batch_identifier'] ?? ''));
+                if ($lifecycleBatchIdentifier === '') {
+                    $lifecycleBatchIdentifier = trim((string)($eventDetails['batch_identifier'] ?? ''));
+                }
 
                 $timeline[] = [
                     'id' => $eventId,
@@ -105,6 +117,10 @@ class TimelineDisplayService
                     'tone' => $tone,
                     'source_info' => $sourceInfo,
                     'source_badge' => $actor['kind'] === 'system' ? '🤖' : '👤',
+                    'lifecycle_scope' => $lifecycleScope,
+                    'cycle_sequence' => $cycleSequence,
+                    'lifecycle_boundary' => $lifecycleBoundary !== '' ? $lifecycleBoundary : null,
+                    'lifecycle_batch_identifier' => $lifecycleBatchIdentifier !== '' ? $lifecycleBatchIdentifier : null,
                 ];
             }
         } catch (\Exception $e) {
@@ -249,5 +265,33 @@ class TimelineDisplayService
 
         $source = $eventSubtype !== '' ? $eventSubtype : (string)($eventDetails['source'] ?? 'excel');
         return $sourceMap[$source] ?? ['label_key' => 'timeline.source.file_import', 'tone' => 'muted'];
+    }
+
+    private static function normalizeLifecycleScope(string $scope): string
+    {
+        $scope = strtolower(trim($scope));
+        if ($scope === 'occurrence') {
+            return 'occurrence';
+        }
+
+        return 'cycle';
+    }
+
+    private static function inferLifecycleScopeFromEvent(string $eventType, string $eventSubtype): string
+    {
+        $type = strtolower(trim($eventType));
+        $subtype = strtolower(trim($eventSubtype));
+
+        if (in_array($type, ['import', 'reimport'], true)) {
+            return 'occurrence';
+        }
+        if (str_starts_with($subtype, 'duplicate_')) {
+            return 'occurrence';
+        }
+        if (in_array($subtype, ['excel', 'manual', 'smart_paste', 'smart_paste_multi', 'email', 'workstation_cloned'], true)) {
+            return 'occurrence';
+        }
+
+        return 'cycle';
     }
 }

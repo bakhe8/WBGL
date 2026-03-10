@@ -8,6 +8,7 @@
 require_once __DIR__ . '/../_bootstrap.php';
 
 use App\Support\PermissionCapabilityCatalog;
+use App\Services\RoleGovernanceService;
 use App\Support\Database;
 
 wbgl_api_require_permission('manage_users');
@@ -70,9 +71,13 @@ try {
     $roles = array_map(static function (array $role) use ($rolePermissions): array {
         $roleId = (int)($role['id'] ?? 0);
         $permissionIds = $rolePermissions[$roleId] ?? [];
+        $roleSlug = strtolower(trim((string)($role['slug'] ?? '')));
+        $deleteBlockedReason = RoleGovernanceService::deleteBlockedReason($roleSlug);
         $role['users_count'] = (int)($role['users_count'] ?? 0);
         $role['permission_ids'] = $permissionIds;
         $role['permissions_count'] = count($permissionIds);
+        $role['can_delete'] = $deleteBlockedReason === null;
+        $role['delete_block_reason'] = $deleteBlockedReason;
         return $role;
     }, $roles);
 

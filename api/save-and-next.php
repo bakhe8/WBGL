@@ -11,6 +11,7 @@ use App\Support\Database;
 use App\Services\SaveAndNextApplicationService;
 use App\Support\Input;
 use App\Support\Settings;
+use App\Support\TestDataVisibility;
 
 header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_login();
@@ -45,7 +46,7 @@ try {
     $statusFilter = Input::string($input, 'status_filter', 'all');
     $includeTestDataRaw = strtolower(trim(Input::string($input, 'include_test_data', '')));
     $includeTestData = in_array($includeTestDataRaw, ['1', 'true', 'yes', 'on'], true);
-    if (Settings::getInstance()->isProductionMode()) {
+    if (Settings::getInstance()->isProductionMode() || !TestDataVisibility::canCurrentUserAccessTestData()) {
         $includeTestData = false;
     }
 

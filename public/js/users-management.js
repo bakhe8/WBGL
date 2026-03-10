@@ -427,6 +427,12 @@
             }).filter(Boolean);
             const preview = permissionSlugs.slice(0, 4).join(', ');
             const suffix = permissionSlugs.length > 4 ? ` +${permissionSlugs.length - 4}` : '';
+            const canDeleteRole = role.can_delete !== false;
+            const deleteBlockedReason = String(role.delete_block_reason || '').trim();
+            const deleteTitle = canDeleteRole
+                ? t('users.ui.txt_649cb366')
+                : (deleteBlockedReason || t('users.roles.delete_blocked', 'لا يمكن حذف هذا الدور لأنه دور نظام أساسي'));
+            const deleteAction = canDeleteRole ? `deleteRole(${role.id})` : 'return false';
 
             return `
                 <tr data-role-id="${role.id}">
@@ -450,8 +456,10 @@
                                 data-authorize-resource="roles"
                                 data-authorize-action="manage"
                                 data-authorize-mode="disable"
-                                title="${escapeHtml(t('users.ui.txt_649cb366'))}"
-                                onclick="deleteRole(${role.id})">🗑️</button>
+                                data-role-delete-allowed="${canDeleteRole ? '1' : '0'}"
+                                title="${escapeHtml(deleteTitle)}"
+                                ${canDeleteRole ? '' : 'disabled aria-disabled="true"'}
+                                onclick="${deleteAction}">🗑️</button>
                         </div>
                     </td>
                 </tr>
@@ -461,6 +469,10 @@
         if (window.WBGLPolicy && typeof window.WBGLPolicy.applyDomGuards === 'function') {
             window.WBGLPolicy.applyDomGuards(tbody);
         }
+        tbody.querySelectorAll('button[data-role-delete-allowed="0"]').forEach((btn) => {
+            btn.disabled = true;
+            btn.setAttribute('aria-disabled', 'true');
+        });
     }
 
     function renderPermissionsList() {
@@ -848,6 +860,13 @@
     async function deleteRole(roleId) {
         const role = rolesData.find((item) => Number(item.id) === Number(roleId));
         const roleName = role ? role.name : `#${roleId}`;
+        if (role && role.can_delete === false) {
+            notify(
+                String(role.delete_block_reason || t('users.roles.delete_blocked', 'لا يمكن حذف هذا الدور لأنه دور نظام أساسي')),
+                'error'
+            );
+            return;
+        }
         const confirmed = await dialogConfirm(t('users.roles.confirm_delete', 'هل أنت متأكد من حذف الدور "{{role}}"؟', {
             role: roleName
         }), {

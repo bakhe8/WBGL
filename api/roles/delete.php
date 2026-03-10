@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../_bootstrap.php';
 
 use App\Repositories\RoleRepository;
+use App\Services\RoleGovernanceService;
 use App\Services\AuditTrailService;
 use App\Support\AuthService;
 use App\Support\Database;
@@ -27,6 +28,11 @@ try {
     $role = $repo->find($roleId);
     if (!$role) {
         wbgl_api_compat_fail(404, 'الدور غير موجود');
+    }
+
+    $deleteBlockedReason = RoleGovernanceService::deleteBlockedReason((string)$role->slug);
+    if ($deleteBlockedReason !== null) {
+        wbgl_api_compat_fail(409, $deleteBlockedReason);
     }
 
     $assignedUsers = $repo->countUsersByRole($roleId);

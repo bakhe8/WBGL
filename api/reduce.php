@@ -8,9 +8,11 @@ require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Repositories\GuaranteeRepository;
+use App\Support\ConcurrencyConflictException;
 use App\Services\GuaranteeMutationPolicyService;
 use App\Support\Database;
 use App\Support\Guard;
+use App\Support\GuaranteeDecisionConcurrencyGuard;
 use App\Support\Input;
 
 wbgl_api_require_login();
@@ -127,8 +129,21 @@ try {
         throw new \RuntimeException('لا يمكن تخفيض ضمان غير مكتمل. يجب اختيار المورد والبنك أولاً.');
     }
     // ================================================================
+    $expectedDecisionState = GuaranteeDecisionConcurrencyGuard::snapshot($db, (int)$guaranteeId);
     
-    $mutation = \App\Support\TransactionBoundary::run($db, function () use ($db, $guaranteeRepo, $guaranteeId, $newAmount, $decidedBy): array {
+    $mutation = \App\Support\TransactionBoundary::run($db, function () use ($db, $guaranteeRepo, $guaranteeId, $newAmount, $decidedBy, $expectedDecisionState): array {
+        $lockedDecisionState = GuaranteeDecisionConcurrencyGuard::lockSnapshot($db, (int)$guaranteeId);
+        GuaranteeDecisionConcurrencyGuard::assertExpectedSnapshot(
+            $expectedDecisionState,
+            $lockedDecisionState,
+            ['status', 'workflow_step', 'active_action', 'signatures_received', 'is_locked', 'supplier_id', 'bank_id']
+        );
+        $lockGuaranteeStmt = $db->prepare('SELECT id FROM guarantees WHERE id = ? FOR UPDATE');
+        $lockGuaranteeStmt->execute([(int)$guaranteeId]);
+        if (!$lockGuaranteeStmt->fetchColumn()) {
+            throw new \RuntimeException('Record not found');
+        }
+
         // --------------------------------------------------------------------
         // STRICT TIMELINE DISCIPLINE: Snapshot -> Update -> Record
         // --------------------------------------------------------------------
@@ -218,6 +233,14 @@ try {
         'reasons' => $policyContext['reasons'] ?? [],
     ]);
     
+} catch (ConcurrencyConflictException $e) {
+    wbgl_api_compat_fail(409, $e->getMessage(), [
+        'reason_code' => 'STALE_RECORD_CONFLICT',
+        'conflict' => $e->context(),
+        'policy' => $policyContext,
+        'surface' => $surface,
+        'reasons' => is_array($policyContext) ? ($policyContext['reasons'] ?? []) : [],
+    ], 'conflict');
 } catch (\Throwable $e) {
     wbgl_api_compat_fail(400, $e->getMessage(), [
         'reason_code' => 'REDUCE_OPERATION_FAILED',

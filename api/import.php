@@ -11,6 +11,7 @@ require_once __DIR__ . '/_bootstrap.php';
 use App\Services\ImportService;
 use App\Services\NotificationPolicyService;
 use App\Support\Settings;
+use App\Support\TestDataVisibility;
 
 header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_permission('import_excel');
@@ -62,7 +63,11 @@ try {
 
     // Production Mode: Block test data creation
     $settings = Settings::getInstance();
-    if (!empty($_POST['is_test_data']) && $settings->isProductionMode()) {
+    $isTestDataRequested = !empty($_POST['is_test_data']);
+    if ($isTestDataRequested && !TestDataVisibility::canCurrentUserAccessTestData()) {
+        wbgl_api_compat_fail(403, 'إنشاء بيانات الاختبار متاح للمطور فقط', [], 'permission');
+    }
+    if ($isTestDataRequested && $settings->isProductionMode()) {
         wbgl_api_compat_fail(403, 'لا يمكن إنشاء بيانات اختبار في وضع الإنتاج', [], 'permission');
     }
 
@@ -89,14 +94,14 @@ try {
     try {
         // Import using service
         $service = new ImportService();
-        $isTestData = !empty($_POST['is_test_data']);
+        $isTestData = $isTestDataRequested && TestDataVisibility::canCurrentUserAccessTestData();
         $actor = wbgl_api_current_user_display();
         $result = $service->importFromExcel($tempPath, $_POST['imported_by'] ?? $actor, $filename, $isTestData);
         $importedRecords = is_array($result['imported_records'] ?? null) ? $result['imported_records'] : [];
         $importedCount = count($importedRecords);
 
         // ✅ NEW: Mark as test data if requested (Phase 1)
-        if (!empty($_POST['is_test_data']) && !empty($importedRecords)) {
+        if ($isTestData && !empty($importedRecords)) {
             $testBatchId = $_POST['test_batch_id'] ?? null;
             $testNote = $_POST['test_note'] ?? null;
             

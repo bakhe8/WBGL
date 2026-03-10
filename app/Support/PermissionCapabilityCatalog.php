@@ -179,6 +179,12 @@ class PermissionCapabilityCatalog
                 'surface' => 'لوحة Timeline + APIs التاريخ',
                 'behavior' => 'عرض أحداث السجل واللقطات التاريخية',
             ],
+            'timeline_advanced_view' => [
+                'domain' => 'العرض والتتبع',
+                'control_scope' => 'رؤية متقدمة',
+                'surface' => 'شارات دورة الحياة داخل Timeline',
+                'behavior' => 'عرض تفاصيل lifecycle (النطاق/رقم الدورة/حد الدورة/معرف الدفعة)',
+            ],
             'notes_view' => [
                 'domain' => 'العرض والتتبع',
                 'control_scope' => 'رؤية',

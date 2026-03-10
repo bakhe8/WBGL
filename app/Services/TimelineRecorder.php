@@ -183,8 +183,16 @@ class TimelineRecorder
      * @param string $newExpiry
      * @param int|null $actionId
      * @param array|null $letterSnapshot Optional letter snapshot (generated if not provided)
+     * @param array<string,mixed> $extraDetails
      */
-    public static function recordExtensionEvent($guaranteeId, $oldSnapshot, $newExpiry, $actionId = null, $letterSnapshot = null)
+    public static function recordExtensionEvent(
+        $guaranteeId,
+        $oldSnapshot,
+        $newExpiry,
+        $actionId = null,
+        $letterSnapshot = null,
+        array $extraDetails = []
+    )
     {
         // Validate change
         $oldExpiry = $oldSnapshot['expiry_date'] ?? null;
@@ -211,7 +219,17 @@ class TimelineRecorder
         $creatorName = self::getCurrentUser();
 
         $afterSnapshot = self::createSnapshot($guaranteeId);
-        return self::recordEvent($guaranteeId, 'modified', $oldSnapshot, $changes, $creatorName, [], 'extension', $letterSnapshot, $afterSnapshot);
+        return self::recordEvent(
+            $guaranteeId,
+            'modified',
+            $oldSnapshot,
+            $changes,
+            $creatorName,
+            $extraDetails,
+            'extension',
+            $letterSnapshot,
+            $afterSnapshot
+        );
     }
 
     /**
@@ -223,8 +241,16 @@ class TimelineRecorder
      * @param float $newAmount
      * @param float|null $previousAmount
      * @param array|null $letterSnapshot Optional letter snapshot
+     * @param array<string,mixed> $extraDetails
      */
-    public static function recordReductionEvent($guaranteeId, $oldSnapshot, $newAmount, $previousAmount = null, $letterSnapshot = null)
+    public static function recordReductionEvent(
+        $guaranteeId,
+        $oldSnapshot,
+        $newAmount,
+        $previousAmount = null,
+        $letterSnapshot = null,
+        array $extraDetails = []
+    )
     {
         // Use previousAmount if explicitly passed (for restore hacks), otherwise from snapshot
         $oldAmount = $previousAmount ?? ($oldSnapshot['amount'] ?? 0);
@@ -248,7 +274,17 @@ class TimelineRecorder
         $creatorName = self::getCurrentUser();
 
         $afterSnapshot = self::createSnapshot($guaranteeId);
-        return self::recordEvent($guaranteeId, 'modified', $oldSnapshot, $changes, $creatorName, [], 'reduction', $letterSnapshot, $afterSnapshot);
+        return self::recordEvent(
+            $guaranteeId,
+            'modified',
+            $oldSnapshot,
+            $changes,
+            $creatorName,
+            $extraDetails,
+            'reduction',
+            $letterSnapshot,
+            $afterSnapshot
+        );
     }
 
     /**
@@ -477,6 +513,15 @@ class TimelineRecorder
         if (array_key_exists('event_time', $details)) {
             unset($details['event_time']);
         }
+
+        $details = self::enrichLifecycleMetadata(
+            $db,
+            $guaranteeId,
+            (string)$type,
+            $subtype !== null ? (string)$subtype : '',
+            is_array($changes) ? $changes : [],
+            $details
+        );
 
         $eventDetails = array_merge([
             'changes' => $changes
@@ -927,5 +972,131 @@ class TimelineRecorder
         }
 
         return date('Y-m-d H:i:s');
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $changes
+     * @param array<string,mixed> $details
+     * @return array<string,mixed>
+     */
+    private static function enrichLifecycleMetadata(
+        PDO $db,
+        int $guaranteeId,
+        string $eventType,
+        string $eventSubtype,
+        array $changes,
+        array $details
+    ): array {
+        $scope = self::resolveLifecycleScope($eventType, $eventSubtype);
+        $existingResets = self::countCycleResetEvents($db, $guaranteeId);
+        $cycleSequence = self::resolveCycleSequence($scope, $eventSubtype, $existingResets);
+        $batchIdentifier = self::resolveLifecycleBatchIdentifier($db, $guaranteeId, $details);
+
+        if (!isset($details['lifecycle_scope']) || trim((string)$details['lifecycle_scope']) === '') {
+            $details['lifecycle_scope'] = $scope;
+        }
+
+        if (!isset($details['cycle_sequence']) || !is_numeric($details['cycle_sequence'])) {
+            $details['cycle_sequence'] = $cycleSequence;
+        }
+
+        if ($batchIdentifier !== null && $batchIdentifier !== '') {
+            if (!isset($details['lifecycle_batch_identifier']) || trim((string)$details['lifecycle_batch_identifier']) === '') {
+                $details['lifecycle_batch_identifier'] = $batchIdentifier;
+            }
+        }
+
+        $normalizedSubtype = strtolower(trim($eventSubtype));
+        $normalizedType = strtolower(trim($eventType));
+        if ($normalizedSubtype === 'duplicate_cycle_reset') {
+            $details['lifecycle_boundary'] = 'cycle_restart';
+        } elseif (
+            $scope === 'occurrence'
+            && $normalizedType === 'import'
+            && !str_starts_with($normalizedSubtype, 'duplicate_')
+            && !isset($details['lifecycle_boundary'])
+        ) {
+            $details['lifecycle_boundary'] = 'cycle_start_initial';
+        }
+
+        return $details;
+    }
+
+    private static function resolveLifecycleScope(string $eventType, string $eventSubtype): string
+    {
+        $normalizedType = strtolower(trim($eventType));
+        $normalizedSubtype = strtolower(trim($eventSubtype));
+
+        if ($normalizedSubtype === 'duplicate_cycle_reset') {
+            return 'cycle';
+        }
+
+        if (in_array($normalizedType, ['import', 'reimport'], true)) {
+            return 'occurrence';
+        }
+
+        if (str_starts_with($normalizedSubtype, 'duplicate_')) {
+            return 'occurrence';
+        }
+
+        if (in_array($normalizedSubtype, ['excel', 'manual', 'smart_paste', 'smart_paste_multi', 'email', 'workstation_cloned'], true)) {
+            return 'occurrence';
+        }
+
+        return 'cycle';
+    }
+
+    private static function resolveCycleSequence(string $scope, string $eventSubtype, int $existingResets): int
+    {
+        $baseSequence = max(1, $existingResets + 1);
+        if ($scope === 'cycle' && strtolower(trim($eventSubtype)) === 'duplicate_cycle_reset') {
+            return $baseSequence + 1;
+        }
+
+        return $baseSequence;
+    }
+
+    /**
+     * @param array<string,mixed> $details
+     */
+    private static function resolveLifecycleBatchIdentifier(PDO $db, int $guaranteeId, array $details): ?string
+    {
+        $explicitLifecycleBatch = trim((string)($details['lifecycle_batch_identifier'] ?? ''));
+        if ($explicitLifecycleBatch !== '') {
+            return $explicitLifecycleBatch;
+        }
+
+        $explicitBatch = trim((string)($details['batch_identifier'] ?? ''));
+        if ($explicitBatch !== '') {
+            return $explicitBatch;
+        }
+
+        if (!SchemaInspector::tableExists($db, 'guarantee_occurrences')) {
+            return null;
+        }
+
+        $stmt = $db->prepare(
+            'SELECT batch_identifier
+             FROM guarantee_occurrences
+             WHERE guarantee_id = ?
+             ORDER BY occurred_at DESC, id DESC
+             LIMIT 1'
+        );
+        $stmt->execute([$guaranteeId]);
+        $batchIdentifier = trim((string)$stmt->fetchColumn());
+
+        return $batchIdentifier !== '' ? $batchIdentifier : null;
+    }
+
+    private static function countCycleResetEvents(PDO $db, int $guaranteeId): int
+    {
+        $stmt = $db->prepare(
+            "SELECT COUNT(*)
+             FROM guarantee_history
+             WHERE guarantee_id = ?
+               AND event_subtype = 'duplicate_cycle_reset'"
+        );
+        $stmt->execute([$guaranteeId]);
+        return (int)$stmt->fetchColumn();
     }
 }

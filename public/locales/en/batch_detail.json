@@ -9,6 +9,13 @@
     "batch_detail.table.headers.guarantee_number": "Guarantee number",
     "batch_detail.table.headers.status": "Status",
     "batch_detail.table.headers.supplier": "Supplier",
+    "batch_detail.table.headers.workflow_stage": "Workflow stage",
+    "batch_detail.workflow.step.analyzed": "Analyzed",
+    "batch_detail.workflow.step.approved": "Approved",
+    "batch_detail.workflow.step.audited": "Audited",
+    "batch_detail.workflow.step.draft": "Awaiting Audit",
+    "batch_detail.workflow.step.signed": "Signed",
+    "batch_detail.workflow.step.supervised": "Supervised",
     "batch_detail.timeline.txt_9c870230": "Needs a decision",
     "batch_detail.ui.all_0_3s_ease": "all 0.3s ease",
     "batch_detail.ui.create_supplier_error": "Create supplier error:",
@@ -100,5 +107,8 @@
     "batch_detail.ui.txt_f32d7ab6": "Do you want to release this guarantee?",
     "batch_detail.ui.txt_f3c9b30a": "The operation was performed successfully",
     "batch_detail.ui.txt_f70076e3": "There is no data to display",
-    "batch_detail.ui.txt_fb13a024": "batch"
+    "batch_detail.ui.txt_fb13a024": "batch",
+    "batch_detail.bulk.extend_success": "Extended {{count}} guarantees",
+    "batch_detail.bulk.release_success": "Release selected for {{count}} guarantees",
+    "batch_detail.bulk.cross_batch_warning": "Warning: {{count}} selected guarantees also exist in other batches; the action impact will appear there too."
 }

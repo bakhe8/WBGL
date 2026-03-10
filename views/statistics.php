@@ -10,6 +10,7 @@ use App\Support\Database;
 use App\Support\DirectionResolver;
 use App\Support\LocaleResolver;
 use App\Support\Settings;
+use App\Support\TestDataVisibility;
 use App\Support\ViewPolicy;
 use App\Services\StatisticsDashboardService;
 
@@ -129,11 +130,13 @@ $costSaved = 0;
 
 // Production Mode: Test Data Filtering Setup
 $isProd = $settings->isProductionMode();
+$includeTestData = TestDataVisibility::includeTestData($settings, $_GET);
+$hideTestData = !$includeTestData;
 // G = with alias 'g', D = direct no alias
-$whereG = $isProd ? " WHERE g.is_test_data = 0 " : " WHERE 1=1 ";
-$andG   = $isProd ? " AND g.is_test_data = 0 " : "";
-$whereD = $isProd ? " WHERE is_test_data = 0 " : " WHERE 1=1 ";
-$andD   = $isProd ? " AND is_test_data = 0 " : "";
+$whereG = $hideTestData ? " WHERE g.is_test_data = 0 " : " WHERE 1=1 ";
+$andG   = $hideTestData ? " AND g.is_test_data = 0 " : "";
+$whereD = $hideTestData ? " WHERE is_test_data = 0 " : " WHERE 1=1 ";
+$andD   = $hideTestData ? " AND is_test_data = 0 " : "";
 
 try {
     // ============================================
@@ -698,7 +701,7 @@ try {
                                 <?php else: ?>
                                     <?php foreach ($urgentList as $u): ?>
                                     <?php $urgentSupplier = ($u['supplier'] ?? '') === $statsUnknownMarker ? $statsT('statistics.ui.unknown') : (string)($u['supplier'] ?? ''); ?>
-                                    <tr onclick="window.location='../index.php?id=<?= $u['id'] ?>'" class="hover-bg-light stats-row-clickable">
+                                    <tr onclick="window.location='../index.php?id=<?= (int)$u['id'] ?>&search=<?= rawurlencode((string)($u['guarantee_number'] ?? '')) ?>'" class="hover-bg-light stats-row-clickable">
                                         <td class="font-bold text-primary"><?= $u['guarantee_number'] ?></td>
                                         <td><?= htmlspecialchars($urgentSupplier) ?></td>
                                         <td class="text-danger font-bold text-left"><?= number_format($u['amount']) ?> <span data-i18n="statistics.modal.txt_0272fe37">ر.س</span></td>

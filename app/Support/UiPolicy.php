@@ -13,6 +13,8 @@ class UiPolicy
     private const CAPABILITY_MAP = [
         'navigation:view-settings' => 'manage_users',
         'navigation:view-maintenance' => 'manage_users',
+        'navigation:view-state-inspector' => 'manage_users',
+        'navigation:view-role-simulator' => 'manage_users',
         'navigation:view-users' => 'manage_users',
         'users:manage' => 'manage_users',
         'roles:manage' => 'manage_roles',

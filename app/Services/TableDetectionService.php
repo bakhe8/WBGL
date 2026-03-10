@@ -27,52 +27,230 @@ class TableDetectionService
      */
     public static function detectTable(string $text): ?array
     {
+        $tabRows = self::detectTabSeparatedRows($text);
+        if ($tabRows !== null) {
+            return $tabRows;
+        }
+
+        return self::detectColumnarRows($text);
+    }
+
+    /**
+     * Detect classic tab-separated rows.
+     */
+    private static function detectTabSeparatedRows(string $text): ?array
+    {
         $lines = explode("\n", $text);
         $allRows = [];
-        
+
         foreach ($lines as $lineNum => $line) {
-            // Level 1: Tab count check (4+ tabs = potential table row)
             $tabCount = substr_count($line, "\t");
             if ($tabCount < 4) {
-                continue; // Not enough columns
+                continue;
             }
-            
-            $columns = explode("\t", $line);
-            $columns = array_map('trim', $columns);
-            
-            // Level 2: Parse row (order-independent detection)
+
+            $columns = array_map('trim', explode("\t", $line));
             $rowData = self::parseRow($columns);
-            
-            // Level 3: Calculate confidence score
             $confidence = self::calculateConfidence($rowData);
-            
-            // Level 4: Validate minimum requirements
-            $isValid = self::validateRow($rowData, $confidence);
-            
-            if ($isValid) {
+
+            if (self::validateRow($rowData, $confidence)) {
                 error_log(sprintf(
-                    "✅ [TABLE] Valid row #%d: G#=%s, Confidence=%.0f%%",
+                    "✅ [TABLE/TAB] Valid row #%d: G#=%s, Confidence=%.0f%%",
                     $lineNum + 1,
                     $rowData['guarantee_number'] ?? 'N/A',
                     $confidence * 100
                 ));
-                
                 $allRows[] = array_merge($rowData, ['_confidence' => $confidence]);
             } else {
                 error_log(sprintf(
-                    "❌ [TABLE] Invalid row #%d: Confidence=%.0f%% (threshold: 70%%)",
+                    "❌ [TABLE/TAB] Invalid row #%d: Confidence=%.0f%% (threshold: 70%%)",
                     $lineNum + 1,
                     $confidence * 100
                 ));
             }
         }
-        
+
         if (count($allRows) > 0) {
-            error_log("🎯 [TABLE] Total valid rows detected: " . count($allRows));
+            error_log("🎯 [TABLE/TAB] Total valid rows detected: " . count($allRows));
             return $allRows;
         }
-        
+
         return null;
+    }
+
+    /**
+     * Detect OCR-like column dumps where each column is pasted vertically.
+     * Example shape:
+     *   [PO lines]
+     *   [contract lines]
+     *   [bank lines]
+     *   ...
+     */
+    private static function detectColumnarRows(string $text): ?array
+    {
+        if (strpos($text, "\t") !== false) {
+            return null;
+        }
+
+        $blocks = self::splitLineBlocks($text);
+        if (count($blocks) < 5) {
+            return null;
+        }
+
+        $dominantRowCount = self::dominantBlockLength($blocks);
+        if ($dominantRowCount === null || $dominantRowCount < 2) {
+            return null;
+        }
+
+        $candidateBlocks = array_values(array_filter(
+            $blocks,
+            static fn(array $block): bool => count($block) === $dominantRowCount
+        ));
+        if (count($candidateBlocks) < 5) {
+            return null;
+        }
+
+        $candidateBlocks = self::collapseDuplicatedHeadBlocks($candidateBlocks);
+        $rowsAsColumns = array_fill(0, $dominantRowCount, []);
+        foreach ($candidateBlocks as $block) {
+            for ($i = 0; $i < $dominantRowCount; $i++) {
+                $value = trim((string)($block[$i] ?? ''));
+                if ($value !== '') {
+                    $rowsAsColumns[$i][] = $value;
+                }
+            }
+        }
+
+        $allRows = [];
+        foreach ($rowsAsColumns as $rowIndex => $columns) {
+            if (count($columns) < 4) {
+                continue;
+            }
+
+            $rowData = self::parseRow($columns);
+            $confidence = self::calculateConfidence($rowData);
+
+            if (self::validateRow($rowData, $confidence)) {
+                error_log(sprintf(
+                    "✅ [TABLE/COLUMNAR] Valid row #%d: G#=%s, Confidence=%.0f%%",
+                    $rowIndex + 1,
+                    $rowData['guarantee_number'] ?? 'N/A',
+                    $confidence * 100
+                ));
+                $allRows[] = array_merge($rowData, ['_confidence' => $confidence]);
+            } else {
+                error_log(sprintf(
+                    "❌ [TABLE/COLUMNAR] Invalid row #%d: Confidence=%.0f%% (threshold: 70%%)",
+                    $rowIndex + 1,
+                    $confidence * 100
+                ));
+            }
+        }
+
+        if (count($allRows) > 0) {
+            error_log(sprintf(
+                "🎯 [TABLE/COLUMNAR] Total valid rows detected: %d (row_count=%d, blocks=%d)",
+                count($allRows),
+                $dominantRowCount,
+                count($candidateBlocks)
+            ));
+            return $allRows;
+        }
+
+        return null;
+    }
+
+    /**
+     * Split text into non-empty blocks separated by blank lines.
+     *
+     * @return array<int, array<int, string>>
+     */
+    private static function splitLineBlocks(string $text): array
+    {
+        $lines = preg_split('/\R/u', $text) ?: [];
+        $blocks = [];
+        $current = [];
+
+        foreach ($lines as $line) {
+            $trimmed = trim((string)$line);
+            if ($trimmed === '') {
+                if ($current !== []) {
+                    $blocks[] = $current;
+                    $current = [];
+                }
+                continue;
+            }
+
+            $current[] = $trimmed;
+        }
+
+        if ($current !== []) {
+            $blocks[] = $current;
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * Find the most frequent block length (used as inferred row count).
+     */
+    private static function dominantBlockLength(array $blocks): ?int
+    {
+        $freq = [];
+        foreach ($blocks as $block) {
+            $len = count($block);
+            if ($len < 2 || $len > 100) {
+                continue;
+            }
+            $freq[$len] = ($freq[$len] ?? 0) + 1;
+        }
+
+        if ($freq === []) {
+            return null;
+        }
+
+        arsort($freq);
+        $topLength = (int)array_key_first($freq);
+        $topCount = (int)$freq[$topLength];
+
+        // Guard against weak signals in free text.
+        if ($topCount < 4) {
+            return null;
+        }
+
+        return $topLength;
+    }
+
+    /**
+     * Collapse duplicated leading column groups that sometimes appear in OCR exports.
+     *
+     * Example:
+     *   [A,B,C,D,E,F,G, A,B,C,D,E,F,G, H]
+     * becomes:
+     *   [A,B,C,D,E,F,G, H]
+     */
+    private static function collapseDuplicatedHeadBlocks(array $blocks): array
+    {
+        $count = count($blocks);
+        if ($count < 6) {
+            return $blocks;
+        }
+
+        $maxPrefix = intdiv($count, 2);
+        for ($prefix = $maxPrefix; $prefix >= 3; $prefix--) {
+            $left = array_slice($blocks, 0, $prefix);
+            $right = array_slice($blocks, $prefix, $prefix);
+            if ($left !== [] && $left === $right) {
+                error_log(sprintf(
+                    "ℹ️ [TABLE/COLUMNAR] Collapsed duplicated head blocks (prefix=%d, total=%d)",
+                    $prefix,
+                    $count
+                ));
+                return array_merge($left, array_slice($blocks, $prefix * 2));
+            }
+        }
+
+        return $blocks;
     }
     
     /**
@@ -145,7 +323,6 @@ class TableDetectionService
                 $rowData['supplier'] = $col;
                 error_log("  🏢 Supplier: {$col}");
                 continue;
-                $rowData['amount'] = $col;
             }
         }
         
@@ -171,7 +348,6 @@ class TableDetectionService
     private static function calculateConfidence(array $rowData): float
     {
         $score = 0;
-        $totalChecks = 6;
         
         // Critical fields (higher weight)
         if ($rowData['guarantee_number']) $score += 2;  // Most critical

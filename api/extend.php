@@ -9,14 +9,101 @@ require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Repositories\GuaranteeRepository;
+use App\Support\ConcurrencyConflictException;
 use App\Services\GuaranteeMutationPolicyService;
+use App\Services\TimelineRecorder;
 use App\Support\Database;
 use App\Support\Guard;
+use App\Support\GuaranteeDecisionConcurrencyGuard;
 use App\Support\Input;
 
 wbgl_api_require_login();
 $policyContext = null;
 $surface = null;
+
+/**
+ * Parse reject event_details and detect whether rejected active_action was extension.
+ */
+function wbgl_extend_reject_was_extension(?string $eventDetailsRaw): bool
+{
+    if (!is_string($eventDetailsRaw) || trim($eventDetailsRaw) === '') {
+        return false;
+    }
+
+    $details = json_decode($eventDetailsRaw, true);
+    if (!is_array($details)) {
+        return false;
+    }
+
+    $changes = $details['changes'] ?? null;
+    if (!is_array($changes)) {
+        return false;
+    }
+
+    foreach ($changes as $change) {
+        if (!is_array($change)) {
+            continue;
+        }
+
+        $field = strtolower(trim((string)($change['field'] ?? '')));
+        if ($field !== 'active_action') {
+            continue;
+        }
+
+        $oldValue = strtolower(trim((string)($change['old_value'] ?? '')));
+        $newValue = strtolower(trim((string)($change['new_value'] ?? '')));
+        if ($oldValue === 'extension' && ($newValue === '' || $newValue === 'null')) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Re-pressing "extend" after a workflow reject should resume the same action cycle
+ * without adding another +1 year.
+ */
+function wbgl_is_extension_retry_after_reject(PDO $db, int $guaranteeId): bool
+{
+    $rejectStmt = $db->prepare(
+        "SELECT id, created_at, event_details
+         FROM guarantee_history
+         WHERE guarantee_id = ?
+           AND event_subtype = 'workflow_reject'
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1"
+    );
+    $rejectStmt->execute([$guaranteeId]);
+    $reject = $rejectStmt->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($reject)) {
+        return false;
+    }
+
+    $rejectId = (int)($reject['id'] ?? 0);
+    $rejectAt = (string)($reject['created_at'] ?? '');
+    $rejectDetails = (string)($reject['event_details'] ?? '');
+    if ($rejectId <= 0 || $rejectAt === '') {
+        return false;
+    }
+    if (!wbgl_extend_reject_was_extension($rejectDetails)) {
+        return false;
+    }
+
+    // Guard: if an extension event already exists after this reject, this is no longer
+    // a first correction retry (likely intentional new extension).
+    $afterStmt = $db->prepare(
+        "SELECT 1
+         FROM guarantee_history
+         WHERE guarantee_id = ?
+           AND event_subtype = 'extension'
+           AND (created_at > ? OR (created_at = ? AND id > ?))
+         LIMIT 1"
+    );
+    $afterStmt->execute([$guaranteeId, $rejectAt, $rejectAt, $rejectId]);
+
+    return !$afterStmt->fetchColumn();
+}
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -78,7 +165,7 @@ try {
     
     // ===== LIFECYCLE GATE: Prevent extension on pending guarantees =====
     $statusCheck = $db->prepare("
-        SELECT status, is_locked, locked_reason
+        SELECT status, is_locked, locked_reason, workflow_step, active_action
         FROM guarantee_decisions 
         WHERE guarantee_id = ?
     ");
@@ -102,12 +189,32 @@ try {
         throw new \RuntimeException('لا يمكن تمديد ضمان غير مكتمل. يجب اختيار المورد والبنك أولاً.');
     }
     // ================================================================
+
+    $workflowStep = strtolower(trim((string)($decision['workflow_step'] ?? '')));
+    $activeAction = strtolower(trim((string)($decision['active_action'] ?? '')));
+    $isDraftWithoutAction = ($workflowStep === 'draft' && $activeAction === '');
+    $isExtensionCorrectionRetry = !$isBreakGlass
+        && $isDraftWithoutAction
+        && wbgl_is_extension_retry_after_reject($db, (int)$guaranteeId);
+    $expectedDecisionState = GuaranteeDecisionConcurrencyGuard::snapshot($db, (int)$guaranteeId);
     
-    $mutation = \App\Support\TransactionBoundary::run($db, function () use ($db, $guaranteeRepo, $guaranteeId, $decidedBy): array {
+    $mutation = \App\Support\TransactionBoundary::run($db, function () use ($db, $guaranteeRepo, $guaranteeId, $decidedBy, $isExtensionCorrectionRetry, $expectedDecisionState): array {
+        $lockedDecisionState = GuaranteeDecisionConcurrencyGuard::lockSnapshot($db, (int)$guaranteeId);
+        GuaranteeDecisionConcurrencyGuard::assertExpectedSnapshot(
+            $expectedDecisionState,
+            $lockedDecisionState,
+            ['status', 'workflow_step', 'active_action', 'signatures_received', 'is_locked', 'supplier_id', 'bank_id']
+        );
+        $lockGuaranteeStmt = $db->prepare('SELECT id FROM guarantees WHERE id = ? FOR UPDATE');
+        $lockGuaranteeStmt->execute([(int)$guaranteeId]);
+        if (!$lockGuaranteeStmt->fetchColumn()) {
+            throw new \RuntimeException('Record not found');
+        }
+
         // --------------------------------------------------------------------
         // STRICT TIMELINE DISCIPLINE: Snapshot -> Update -> Record
         // --------------------------------------------------------------------
-        $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($guaranteeId);
+        $oldSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
 
         $guarantee = $guaranteeRepo->find($guaranteeId);
         if (!$guarantee) {
@@ -115,11 +222,19 @@ try {
         }
 
         $raw = $guarantee->rawData;
-        $oldExpiry = $raw['expiry_date'] ?? '';
-        $newExpiry = date('Y-m-d', strtotime($oldExpiry . ' +1 year'));
-        $raw['expiry_date'] = $newExpiry;
+        $oldExpiry = (string)($raw['expiry_date'] ?? '');
+        if ($oldExpiry === '') {
+            throw new \RuntimeException('لا يمكن تنفيذ التمديد بدون تاريخ انتهاء صالح.');
+        }
 
-        $guaranteeRepo->updateRawData($guaranteeId, json_encode($raw));
+        $newExpiry = $isExtensionCorrectionRetry
+            ? $oldExpiry
+            : date('Y-m-d', strtotime($oldExpiry . ' +1 year'));
+
+        if (!$isExtensionCorrectionRetry) {
+            $raw['expiry_date'] = $newExpiry;
+            $guaranteeRepo->updateRawData($guaranteeId, json_encode($raw));
+        }
 
         $actionStmt = $db->prepare("
             UPDATE guarantee_decisions
@@ -141,16 +256,41 @@ try {
         ");
         $decisionUpdate->execute([$decidedBy, $decidedBy, $guaranteeId]);
 
-        \App\Services\TimelineRecorder::recordExtensionEvent(
-            $guaranteeId,
-            $oldSnapshot,
-            $newExpiry
-        );
+        if ($isExtensionCorrectionRetry) {
+            $afterSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
+            TimelineRecorder::recordStructuredEvent(
+                $guaranteeId,
+                'modified',
+                'extension',
+                is_array($oldSnapshot) ? $oldSnapshot : [],
+                [[
+                    'field' => 'active_action',
+                    'old_value' => null,
+                    'new_value' => 'extension',
+                    'trigger' => 'extension_retry_after_reject',
+                ]],
+                $decidedBy,
+                [
+                    'action' => 'extension_retry_after_reject',
+                    'date_extended' => false,
+                    'reason' => 'workflow_reject_correction_cycle',
+                ],
+                null,
+                is_array($afterSnapshot) ? $afterSnapshot : []
+            );
+        } else {
+            TimelineRecorder::recordExtensionEvent(
+                $guaranteeId,
+                $oldSnapshot,
+                $newExpiry
+            );
+        }
 
         return [
             'guarantee' => $guarantee,
             'raw' => $raw,
             'new_expiry' => $newExpiry,
+            'is_correction_retry' => $isExtensionCorrectionRetry,
         ];
     });
 
@@ -158,6 +298,7 @@ try {
     $guarantee = $mutation['guarantee'];
     $raw = is_array($mutation['raw'] ?? null) ? $mutation['raw'] : [];
     $newExpiry = (string)($mutation['new_expiry'] ?? '');
+    $isCorrectionRetry = !empty($mutation['is_correction_retry']);
     
     // Prepare record data
     $record = [
@@ -191,12 +332,21 @@ try {
         'status' => 'extended',
         'active_action' => 'extension',
         'expiry_date' => $newExpiry,
+        'correction_retry' => $isCorrectionRetry,
         'policy' => $policyContext,
         'surface' => $surface,
         'reasons' => $policyContext['reasons'] ?? [],
     ]);
     
     
+} catch (ConcurrencyConflictException $e) {
+    wbgl_api_compat_fail(409, $e->getMessage(), [
+        'reason_code' => 'STALE_RECORD_CONFLICT',
+        'conflict' => $e->context(),
+        'policy' => $policyContext,
+        'surface' => $surface,
+        'reasons' => is_array($policyContext) ? ($policyContext['reasons'] ?? []) : [],
+    ], 'conflict');
 } catch (\Throwable $e) {
     wbgl_api_compat_fail(400, $e->getMessage(), [
         'reason_code' => 'EXTEND_OPERATION_FAILED',

@@ -179,6 +179,10 @@ function wbglNavigateTo(path) {
     window.location.href = path;
 }
 
+function wbglCanAccessBatchSurfaces() {
+    return window.WBGL_BOOTSTRAP?.policy?.batch?.can_access_surfaces === true;
+}
+
 function wbglEnsureShortcutModal() {
     let modal = document.getElementById('wbgl-shortcuts-modal');
     if (modal) {
@@ -192,6 +196,10 @@ function wbglEnsureShortcutModal() {
     modal.className = 'wbgl-shortcuts-overlay';
     modal.hidden = true;
 
+    const batchShortcutRow = wbglCanAccessBatchSurfaces()
+        ? `<code>B</code><span>${wbglT('shortcuts.open_batches', '')}</span>`
+        : '';
+
     modal.innerHTML = `
         <div class="wbgl-shortcuts-dialog">
             <div class="wbgl-shortcuts-dialog__header">
@@ -200,7 +208,7 @@ function wbglEnsureShortcutModal() {
             </div>
             <div class="wbgl-shortcuts-grid">
                 <code>G</code><span>${wbglT('shortcuts.open_main', '')}</span>
-                <code>B</code><span>${wbglT('shortcuts.open_batches', '')}</span>
+                ${batchShortcutRow}
                 <code>S</code><span>${wbglT('shortcuts.open_settings', '')}</span>
                 <code>T</code><span>${wbglT('shortcuts.open_stats', '')}</span>
                 <code>/</code><span>${wbglT('shortcuts.focus_search', '')}</span>
@@ -261,7 +269,9 @@ function wbglBindGlobalShortcuts() {
             return;
         }
         if (key === 'b') {
-            wbglNavigateTo('/views/batches.php');
+            if (wbglCanAccessBatchSurfaces()) {
+                wbglNavigateTo('/views/batches.php');
+            }
             return;
         }
         if (key === 's') {

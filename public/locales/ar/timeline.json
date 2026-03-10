@@ -5,6 +5,12 @@
     "timeline.empty.no_events": "لا توجد أحداث في السجل الزمني",
     "timeline.hints.current_state": "👁️ انقر لعرض الحالة الحالية",
     "timeline.hints.before_event": "🕐 انقر لعرض الحالة قبل هذا الحدث",
+    "timeline.lifecycle.scope.cycle": "داخل الدورة",
+    "timeline.lifecycle.scope.occurrence": "خارج الدورة (سياق الدفعة)",
+    "timeline.lifecycle.cycle_label": "الدورة",
+    "timeline.lifecycle.batch_label": "الدفعة",
+    "timeline.lifecycle.boundary.cycle_restart": "بدء دورة جديدة",
+    "timeline.lifecycle.boundary.cycle_start_initial": "بداية الدورة الأولى",
 
     "timeline.actor.system": "النظام",
     "timeline.actor.user": "المستخدم",

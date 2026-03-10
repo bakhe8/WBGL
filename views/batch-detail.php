@@ -171,14 +171,15 @@ foreach ($guarantees as &$g) {
 
     // Human-readable workflow stage for table display.
     $stageMap = [
-        'draft' => ['label' => 'مسودة', 'class' => 'badge-neutral'],
-        'audited' => ['label' => 'تم التدقيق', 'class' => 'badge-info'],
-        'analyzed' => ['label' => 'تم التحليل', 'class' => 'badge-info'],
-        'supervised' => ['label' => 'تم الإشراف', 'class' => 'badge-info'],
-        'approved' => ['label' => 'تم الاعتماد', 'class' => 'badge-warning'],
-        'signed' => ['label' => 'تم التوقيع', 'class' => 'badge-success'],
+        'draft' => ['key' => 'batch_detail.workflow.step.draft', 'label' => $batchDetailT('batch_detail.workflow.step.draft', 'بانتظار التدقيق'), 'class' => 'badge-neutral'],
+        'audited' => ['key' => 'batch_detail.workflow.step.audited', 'label' => $batchDetailT('batch_detail.workflow.step.audited', 'تم التدقيق'), 'class' => 'badge-info'],
+        'analyzed' => ['key' => 'batch_detail.workflow.step.analyzed', 'label' => $batchDetailT('batch_detail.workflow.step.analyzed', 'تم التحليل'), 'class' => 'badge-info'],
+        'supervised' => ['key' => 'batch_detail.workflow.step.supervised', 'label' => $batchDetailT('batch_detail.workflow.step.supervised', 'تم الإشراف'), 'class' => 'badge-info'],
+        'approved' => ['key' => 'batch_detail.workflow.step.approved', 'label' => $batchDetailT('batch_detail.workflow.step.approved', 'تم الاعتماد'), 'class' => 'badge-warning'],
+        'signed' => ['key' => 'batch_detail.workflow.step.signed', 'label' => $batchDetailT('batch_detail.workflow.step.signed', 'تم التوقيع'), 'class' => 'badge-success'],
     ];
-    $stageUi = $stageMap[$workflowStep] ?? ['label' => strtoupper($workflowStep ?: '-'), 'class' => 'badge-neutral'];
+    $stageUi = $stageMap[$workflowStep] ?? ['key' => '', 'label' => strtoupper($workflowStep ?: '-'), 'class' => 'badge-neutral'];
+    $g['workflow_stage_i18n_key'] = $stageUi['key'];
     $g['workflow_stage_label'] = $stageUi['label'];
     $g['workflow_stage_class'] = $stageUi['class'];
 }
@@ -362,7 +363,7 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
                             <th data-i18n="batch_detail.table.headers.supplier">المورد</th>
                             <th data-i18n="batch_detail.table.headers.bank">البنك</th>
                             <th class="text-center" data-i18n="batch_detail.ui.txt_3b0975be">الإجراء</th>
-                            <th class="text-center">مرحلة السير</th>
+                            <th class="text-center" data-i18n="batch_detail.table.headers.workflow_stage">مرحلة السير</th>
                             <th class="text-left" data-i18n="batch_detail.ui.txt_1a39dcff">القيمة</th>
                             <th class="text-center" data-i18n="batch_detail.table.headers.status">الحالة</th>
                             <th class="text-center" data-i18n="batch_detail.ui.txt_171a27a1">تفاصيل</th>
@@ -392,7 +393,8 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center">
-                                    <span class="badge <?= htmlspecialchars((string)$g['workflow_stage_class']) ?>">
+                                    <?php $workflowStageI18nKey = trim((string)($g['workflow_stage_i18n_key'] ?? '')); ?>
+                                    <span class="badge <?= htmlspecialchars((string)$g['workflow_stage_class']) ?>" <?= $workflowStageI18nKey !== '' ? 'data-i18n="' . htmlspecialchars($workflowStageI18nKey, ENT_QUOTES, 'UTF-8') . '"' : '' ?>>
                                         <?= htmlspecialchars((string)$g['workflow_stage_label']) ?>
                                     </span>
                                 </td>
@@ -417,7 +419,17 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center">
-                                    <a href="/index.php?id=<?= $g['id'] ?>" class="btn-icon" aria-label="عرض تفاصيل الضمان <?= htmlspecialchars($g['guarantee_number']) ?>" data-i18n-aria-label="batch_detail.table.actions.view_guarantee_details">
+                                    <?php
+                                    $guaranteeIdForLink = (int)($g['id'] ?? 0);
+                                    $guaranteeNumberForLink = trim((string)($g['guarantee_number'] ?? ''));
+                                    $detailQuery = ['id' => $guaranteeIdForLink];
+                                    if ($guaranteeNumberForLink !== '') {
+                                        // Keep target guarantee inside scoped navigation on index page.
+                                        $detailQuery['search'] = $guaranteeNumberForLink;
+                                    }
+                                    $detailHref = '/index.php?' . http_build_query($detailQuery);
+                                    ?>
+                                    <a href="<?= htmlspecialchars($detailHref, ENT_QUOTES, 'UTF-8') ?>" class="btn-icon" aria-label="عرض تفاصيل الضمان <?= htmlspecialchars($g['guarantee_number']) ?>" data-i18n-aria-label="batch_detail.table.actions.view_guarantee_details">
                                         <i data-lucide="arrow-left" class="icon-18"></i>
                                     </a>
                                 </td>
@@ -796,11 +808,21 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
                 }
 
                 const res = await API.post(type, data);
-                
-                Toast.show(
-                    type === 'extend' ? `تم تمديد ${res.extended_count} ضمان` : `تم إفراج ${res.released_count} ضمان`, 
-                    'success'
-                );
+
+                const successMessage = type === 'extend'
+                    ? t('batch_detail.bulk.extend_success', `تم تمديد ${res.extended_count} ضمان`, { count: res.extended_count || 0 })
+                    : t('batch_detail.bulk.release_success', `تم اختيار الإفراج لـ ${res.released_count} ضمان`, { count: res.released_count || 0 });
+                Toast.show(successMessage, 'success');
+
+                const crossBatchImpacted = Number(res.cross_batch_impacted_count || 0);
+                if (crossBatchImpacted > 0) {
+                    const warningMessage = t(
+                        'batch_detail.bulk.cross_batch_warning',
+                        `تنبيه: ${crossBatchImpacted} ضمان/ضمانات من المحدد موجودة في دفعات أخرى، وسيظهر أثر الإجراء هناك أيضًا.`,
+                        { count: crossBatchImpacted }
+                    );
+                    Toast.show(warningMessage, 'warning', 5200);
+                }
                 setTimeout(() => location.reload(), 1000);
 
             } catch (e) {

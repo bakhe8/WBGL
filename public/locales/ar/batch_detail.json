@@ -9,6 +9,13 @@
     "batch_detail.table.headers.guarantee_number": "رقم الضمان",
     "batch_detail.table.headers.status": "الحالة",
     "batch_detail.table.headers.supplier": "المورد",
+    "batch_detail.table.headers.workflow_stage": "مرحلة السير",
+    "batch_detail.workflow.step.analyzed": "تم التحليل",
+    "batch_detail.workflow.step.approved": "تم الاعتماد",
+    "batch_detail.workflow.step.audited": "تم التدقيق",
+    "batch_detail.workflow.step.draft": "بانتظار التدقيق",
+    "batch_detail.workflow.step.signed": "تم التوقيع",
+    "batch_detail.workflow.step.supervised": "تم الإشراف",
     "batch_detail.timeline.txt_9c870230": "يحتاج قرار",
     "batch_detail.ui.all_0_3s_ease": "كل سهولة 0.3 ثانية",
     "batch_detail.ui.create_supplier_error": "إنشاء خطأ المورد:",
@@ -100,5 +107,8 @@
     "batch_detail.ui.txt_f32d7ab6": "هل تريد الإفراج عن هذا الضمان؟",
     "batch_detail.ui.txt_f3c9b30a": "تم تنفيذ العملية بنجاح",
     "batch_detail.ui.txt_f70076e3": "لا توجد بيانات للعرض",
-    "batch_detail.ui.txt_fb13a024": "دفعة"
+    "batch_detail.ui.txt_fb13a024": "دفعة",
+    "batch_detail.bulk.extend_success": "تم تمديد {{count}} ضمان",
+    "batch_detail.bulk.release_success": "تم اختيار الإفراج لـ {{count}} ضمان",
+    "batch_detail.bulk.cross_batch_warning": "تنبيه: {{count}} ضمان من المحدد موجود في دفعات أخرى، وسيظهر أثر الإجراء هناك أيضًا."
 }

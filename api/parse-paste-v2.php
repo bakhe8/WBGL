@@ -16,6 +16,7 @@ use App\Support\AuthService;
 use App\Support\Database;
 use App\Support\Input;
 use App\Support\Settings;
+use App\Support\TestDataVisibility;
 use App\Services\ParseCoordinatorService;
 use App\Services\SmartPaste\ParseResponseConfidenceGuard;
 
@@ -121,11 +122,23 @@ try {
         $input = [];
     }
     $text = Input::string($input, 'text', '');
-    $isTestData = !empty($input['is_test_data']);
+    $isTestDataRequested = !empty($input['is_test_data']);
+    $isTestData = $isTestDataRequested && TestDataVisibility::canCurrentUserAccessTestData();
 
     // Production Mode: Block test data creation
     $settings = Settings::getInstance();
-    if ($isTestData && $settings->isProductionMode()) {
+    if ($isTestDataRequested && !TestDataVisibility::canCurrentUserAccessTestData()) {
+        wbgl_parse_paste_record_usage(
+            $requestedEndpointVersion,
+            $effectiveEndpointVersion,
+            $clientHint,
+            false,
+            403,
+            ['error' => 'test_data_creation_developer_only']
+        );
+        wbgl_api_compat_fail(403, 'إنشاء بيانات الاختبار متاح للمطور فقط', [], 'permission');
+    }
+    if ($isTestDataRequested && $settings->isProductionMode()) {
         wbgl_parse_paste_record_usage(
             $requestedEndpointVersion,
             $effectiveEndpointVersion,

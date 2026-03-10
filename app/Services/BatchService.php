@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Support\Database;
+use App\Support\ConcurrencyConflictException;
+use App\Support\GuaranteeDecisionConcurrencyGuard;
 use App\Support\Logger;
 use PDO;
 
@@ -119,6 +121,7 @@ class BatchService
 
         $foundIds = array_map('intval', array_column($guarantees, 'id'));
         $invalidIds = $hasSelection ? array_values(array_diff($ids, $foundIds)) : [];
+        $crossBatchImpactedIds = $this->findCrossBatchImpactedGuaranteeIds($foundIds);
 
         if ($newExpiryDate !== null && $newExpiryDate !== '' && !$this->isValidDate($newExpiryDate)) {
             return [
@@ -196,8 +199,21 @@ class BatchService
                     continue;
                 }
 
+                $expectedDecisionState = $this->decisionSnapshotFromBatchRow($g);
                 $this->db->beginTransaction();
                 try {
+                    $lockedDecisionState = GuaranteeDecisionConcurrencyGuard::lockSnapshot($this->db, (int)$g['id']);
+                    GuaranteeDecisionConcurrencyGuard::assertExpectedSnapshot(
+                        $expectedDecisionState,
+                        $lockedDecisionState,
+                        ['status', 'workflow_step', 'active_action', 'signatures_received', 'is_locked', 'supplier_id', 'bank_id']
+                    );
+                    $lockGuaranteeStmt = $this->db->prepare('SELECT id FROM guarantees WHERE id = ? FOR UPDATE');
+                    $lockGuaranteeStmt->execute([(int)$g['id']]);
+                    if (!$lockGuaranteeStmt->fetchColumn()) {
+                        throw new \RuntimeException('الضمان غير موجود');
+                    }
+
                     // 1. Snapshot
                     $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($g['id']);
                     if (!$oldSnapshot) {
@@ -234,7 +250,13 @@ class BatchService
                     $eventId = \App\Services\TimelineRecorder::recordExtensionEvent(
                         $g['id'],
                         $oldSnapshot,
-                        $newExpiry
+                        $newExpiry,
+                        null,
+                        null,
+                        [
+                            'batch_identifier' => $importSource,
+                            'action_origin' => 'batch_bulk_extend',
+                        ]
                     );
                     if (!$eventId) {
                         throw new \RuntimeException('لم يتم تسجيل حدث التمديد');
@@ -248,6 +270,12 @@ class BatchService
                     }
                     throw $e;
                 }
+            } catch (ConcurrencyConflictException $e) {
+                $blocked[] = [
+                    'guarantee_id' => $g['id'],
+                    'guarantee_number' => $g['guarantee_number'],
+                    'reason' => 'تعارض تحديث متزامن: ' . $e->getMessage()
+                ];
             } catch (\Exception $e) {
                 $errors[] = [
                     'guarantee_id' => $g['id'],
@@ -264,6 +292,7 @@ class BatchService
             'selected_ids' => $hasSelection ? $ids : null,
             'processed_ids' => $extended,
             'invalid_ids' => $invalidIds,
+            'cross_batch_impacted_ids' => $crossBatchImpactedIds,
             'blocked' => $blocked,
             'errors' => $errors,
             'success' => $success
@@ -277,6 +306,8 @@ class BatchService
             'blocked' => $blocked,
             'invalid_count' => count($invalidIds),
             'invalid_ids' => $invalidIds,
+            'cross_batch_impacted_count' => count($crossBatchImpactedIds),
+            'cross_batch_impacted_ids' => $crossBatchImpactedIds,
             'errors' => $errors
         ];
     }
@@ -317,6 +348,7 @@ class BatchService
 
         $foundIds = array_map('intval', array_column($guarantees, 'id'));
         $invalidIds = $hasSelection ? array_values(array_diff($ids, $foundIds)) : [];
+        $crossBatchImpactedIds = $this->findCrossBatchImpactedGuaranteeIds($foundIds);
         
         // Start release action workflow (same semantics as individual release API).
         $started = [];
@@ -369,8 +401,16 @@ class BatchService
                     continue;
                 }
 
+                $expectedDecisionState = $this->decisionSnapshotFromBatchRow($g);
                 $this->db->beginTransaction();
                 try {
+                    $lockedDecisionState = GuaranteeDecisionConcurrencyGuard::lockSnapshot($this->db, (int)$g['id']);
+                    GuaranteeDecisionConcurrencyGuard::assertExpectedSnapshot(
+                        $expectedDecisionState,
+                        $lockedDecisionState,
+                        ['status', 'workflow_step', 'active_action', 'signatures_received', 'is_locked', 'supplier_id', 'bank_id']
+                    );
+
                     // 1. Snapshot
                     $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($g['id']);
                     if (!$oldSnapshot) {
@@ -418,6 +458,8 @@ class BatchService
                         ];
                     }
                     $details = $reason !== null && trim($reason) !== '' ? ['reason_text' => $reason] : [];
+                    $details['batch_identifier'] = $importSource;
+                    $details['action_origin'] = 'batch_bulk_release_select';
                     $afterSnapshot = \App\Services\TimelineRecorder::createSnapshot($g['id']);
                     $eventId = \App\Services\TimelineRecorder::recordStructuredEvent(
                         (int)$g['id'],
@@ -442,6 +484,12 @@ class BatchService
                     }
                     throw $e;
                 }
+            } catch (ConcurrencyConflictException $e) {
+                $blocked[] = [
+                    'guarantee_id' => $g['id'],
+                    'guarantee_number' => $g['guarantee_number'],
+                    'reason' => 'تعارض تحديث متزامن: ' . $e->getMessage()
+                ];
             } catch (\Exception $e) {
                 $errors[] = [
                     'guarantee_id' => $g['id'],
@@ -458,6 +506,7 @@ class BatchService
             'selected_ids' => $hasSelection ? $ids : null,
             'processed_ids' => $started,
             'invalid_ids' => $invalidIds,
+            'cross_batch_impacted_ids' => $crossBatchImpactedIds,
             'blocked' => $blocked,
             'errors' => $errors,
             'success' => $success
@@ -474,6 +523,8 @@ class BatchService
             'blocked' => $blocked,
             'invalid_count' => count($invalidIds),
             'invalid_ids' => $invalidIds,
+            'cross_batch_impacted_count' => count($crossBatchImpactedIds),
+            'cross_batch_impacted_ids' => $crossBatchImpactedIds,
             'errors' => $errors
         ];
     }
@@ -523,6 +574,7 @@ class BatchService
 
         $foundIds = array_map('intval', array_column($guarantees, 'id'));
         $invalidIds = $hasSelection ? array_values(array_diff($ids, $foundIds)) : [];
+        $crossBatchImpactedIds = $this->findCrossBatchImpactedGuaranteeIds($foundIds);
 
         $reduced = [];
         $errors = [];
@@ -591,8 +643,21 @@ class BatchService
                     continue;
                 }
 
+                $expectedDecisionState = $this->decisionSnapshotFromBatchRow($g);
                 $this->db->beginTransaction();
                 try {
+                    $lockedDecisionState = GuaranteeDecisionConcurrencyGuard::lockSnapshot($this->db, (int)$g['id']);
+                    GuaranteeDecisionConcurrencyGuard::assertExpectedSnapshot(
+                        $expectedDecisionState,
+                        $lockedDecisionState,
+                        ['status', 'workflow_step', 'active_action', 'signatures_received', 'is_locked', 'supplier_id', 'bank_id']
+                    );
+                    $lockGuaranteeStmt = $this->db->prepare('SELECT id FROM guarantees WHERE id = ? FOR UPDATE');
+                    $lockGuaranteeStmt->execute([(int)$g['id']]);
+                    if (!$lockGuaranteeStmt->fetchColumn()) {
+                        throw new \RuntimeException('الضمان غير موجود');
+                    }
+
                     $oldSnapshot = \App\Services\TimelineRecorder::createSnapshot($g['id']);
                     if (!$oldSnapshot) {
                         throw new \RuntimeException('تعذر إنشاء Snapshot');
@@ -625,7 +690,12 @@ class BatchService
                         $g['id'],
                         $oldSnapshot,
                         (float)$targetAmount,
-                        $previousAmount
+                        $previousAmount,
+                        null,
+                        [
+                            'batch_identifier' => $importSource,
+                            'action_origin' => 'batch_bulk_reduce',
+                        ]
                     );
                     if (!$eventId) {
                         throw new \RuntimeException('لم يتم تسجيل حدث التخفيض');
@@ -639,6 +709,12 @@ class BatchService
                     }
                     throw $e;
                 }
+            } catch (ConcurrencyConflictException $e) {
+                $blocked[] = [
+                    'guarantee_id' => $g['id'],
+                    'guarantee_number' => $g['guarantee_number'],
+                    'reason' => 'تعارض تحديث متزامن: ' . $e->getMessage()
+                ];
             } catch (\Exception $e) {
                 $errors[] = [
                     'guarantee_id' => $g['id'],
@@ -655,6 +731,7 @@ class BatchService
             'selected_ids' => $hasSelection ? $ids : null,
             'processed_ids' => $reduced,
             'invalid_ids' => $invalidIds,
+            'cross_batch_impacted_ids' => $crossBatchImpactedIds,
             'blocked' => $blocked,
             'errors' => $errors,
             'success' => $success
@@ -668,7 +745,26 @@ class BatchService
             'blocked' => $blocked,
             'invalid_count' => count($invalidIds),
             'invalid_ids' => $invalidIds,
+            'cross_batch_impacted_count' => count($crossBatchImpactedIds),
+            'cross_batch_impacted_ids' => $crossBatchImpactedIds,
             'errors' => $errors
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    private function decisionSnapshotFromBatchRow(array $row): array
+    {
+        return [
+            'status' => $row['status'] ?? null,
+            'workflow_step' => $row['workflow_step'] ?? null,
+            'active_action' => $row['active_action'] ?? null,
+            'signatures_received' => $row['signatures_received'] ?? 0,
+            'is_locked' => !empty($row['is_locked']),
+            'supplier_id' => $row['supplier_id'] ?? 0,
+            'bank_id' => $row['bank_id'] ?? 0,
         ];
     }
 
@@ -710,6 +806,30 @@ class BatchService
         }
 
         return $normalized;
+    }
+
+    /**
+     * @param array<int,int> $guaranteeIds
+     * @return array<int,int>
+     */
+    private function findCrossBatchImpactedGuaranteeIds(array $guaranteeIds): array
+    {
+        $guaranteeIds = array_values(array_unique(array_filter($guaranteeIds, static fn($id): bool => is_int($id) && $id > 0)));
+        if ($guaranteeIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($guaranteeIds), '?'));
+        $stmt = $this->db->prepare(
+            "SELECT o.guarantee_id
+             FROM guarantee_occurrences o
+             WHERE o.guarantee_id IN ($placeholders)
+             GROUP BY o.guarantee_id
+             HAVING COUNT(DISTINCT o.batch_identifier) > 1"
+        );
+        $stmt->execute($guaranteeIds);
+
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
     }
 
     private function isValidDate(?string $date): bool

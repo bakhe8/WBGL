@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Repositories\RoleRepository;
+
 /**
  * Centralized visibility rules for test data.
  *
  * Behavior:
  * - In production mode: test data is always hidden.
- * - Outside production: test data is shown by default.
+ * - Outside production: test data is visible only to developer role.
  * - include_test_data can explicitly force show/hide:
  *   - truthy: 1,true,yes,on
  *   - falsy: 0,false,no,off
@@ -24,6 +26,10 @@ final class TestDataVisibility
     public static function includeTestData(Settings $settings, ?array $source = null): bool
     {
         if ($settings->isProductionMode()) {
+            return false;
+        }
+
+        if (!self::canCurrentUserAccessTestData()) {
             return false;
         }
 
@@ -55,6 +61,35 @@ final class TestDataVisibility
     }
 
     /**
+     * Test data access is restricted to developer role only.
+     */
+    public static function canCurrentUserAccessTestData(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $user = AuthService::getCurrentUser();
+        if ($user === null || $user->roleId === null) {
+            $cached = false;
+            return $cached;
+        }
+
+        try {
+            $db = Database::connect();
+            $roleRepo = new RoleRepository($db);
+            $role = $roleRepo->find((int)$user->roleId);
+            $roleSlug = strtolower(trim((string)($role->slug ?? '')));
+            $cached = ($roleSlug === 'developer');
+            return $cached;
+        } catch (\Throwable) {
+            $cached = false;
+            return $cached;
+        }
+    }
+
+    /**
      * Ensure links preserve include_test_data flag when active.
      *
      * @param array<string,mixed> $params
@@ -62,7 +97,7 @@ final class TestDataVisibility
      */
     public static function withQueryFlag(array $params, bool $includeTestData): array
     {
-        $params['include_test_data'] = $includeTestData ? '1' : '0';
+        $params['include_test_data'] = (self::canCurrentUserAccessTestData() && $includeTestData) ? '1' : '0';
 
         return $params;
     }

@@ -176,6 +176,8 @@
     "nav.home": "Home",
     "nav.language": "Language",
     "nav.maintenance": "Maintenance",
+    "nav.state_inspector": "State Inspector",
+    "nav.role_simulator": "Role Simulator",
     "nav.settings": "Settings",
     "nav.statistics": "Statistics",
     "nav.theme": "Theme",

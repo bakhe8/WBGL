@@ -12,10 +12,12 @@ require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../app/Services/TimelineRecorder.php';
 
 use App\Repositories\GuaranteeDecisionRepository;
+use App\Support\ConcurrencyConflictException;
 use App\Services\GuaranteeMutationPolicyService;
 use App\Support\Database;
 use App\Support\Guard;
 use App\Support\Input;
+use App\Support\GuaranteeDecisionConcurrencyGuard;
 use App\Services\TimelineRecorder;
 
 wbgl_api_require_login();
@@ -115,14 +117,23 @@ try {
         throw new \RuntimeException('الإجراء محدد مسبقًا لهذا الضمان. لا يمكن استبداله في هذه المرحلة.');
     }
     
+    $expectedDecisionState = GuaranteeDecisionConcurrencyGuard::snapshot($db, (int)$guaranteeId);
+
     $mutation = \App\Support\TransactionBoundary::run($db, function () use (
         $db,
         $decisionRepo,
         $guaranteeId,
         $decidedBy,
         $reason,
-        $decisionRow
+        $expectedDecisionState
     ): array {
+        $lockedDecisionState = GuaranteeDecisionConcurrencyGuard::lockSnapshot($db, (int)$guaranteeId);
+        GuaranteeDecisionConcurrencyGuard::assertExpectedSnapshot(
+            $expectedDecisionState,
+            $lockedDecisionState,
+            ['status', 'workflow_step', 'active_action', 'signatures_received', 'is_locked', 'supplier_id', 'bank_id']
+        );
+
         // --------------------------------------------------------------------
         // STRICT TIMELINE DISCIPLINE: Snapshot -> Update -> Record
         // --------------------------------------------------------------------
@@ -148,9 +159,9 @@ try {
         $actionStmt->execute([$decidedBy, $decidedBy, $guaranteeId]);
 
         $changes = [];
-        $previousAction = trim((string)($decisionRow['active_action'] ?? ''));
-        $previousStep = trim((string)($decisionRow['workflow_step'] ?? 'draft'));
-        $previousSignatures = (int)($decisionRow['signatures_received'] ?? 0);
+        $previousAction = trim((string)($lockedDecisionState['active_action'] ?? ''));
+        $previousStep = trim((string)($lockedDecisionState['workflow_step'] ?? 'draft'));
+        $previousSignatures = (int)($lockedDecisionState['signatures_received'] ?? 0);
 
         $changes[] = [
             'field' => 'active_action',
@@ -211,6 +222,14 @@ try {
         'reasons' => $policyContext['reasons'] ?? [],
     ]);
     
+} catch (ConcurrencyConflictException $e) {
+    wbgl_api_compat_fail(409, $e->getMessage(), [
+        'reason_code' => 'STALE_RECORD_CONFLICT',
+        'conflict' => $e->context(),
+        'policy' => $policyContext,
+        'surface' => $surface,
+        'reasons' => is_array($policyContext) ? ($policyContext['reasons'] ?? []) : [],
+    ], 'conflict');
 } catch (\Throwable $e) {
     wbgl_api_compat_fail(400, $e->getMessage(), [
         'reason_code' => 'RELEASE_OPERATION_FAILED',

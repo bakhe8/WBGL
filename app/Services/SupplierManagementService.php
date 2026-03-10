@@ -6,6 +6,7 @@ namespace App\Services;
 use PDO;
 use Exception;
 use App\Support\Normalizer;
+use App\Support\TransactionBoundary;
 
 /**
  * SupplierManagementService
@@ -37,45 +38,56 @@ class SupplierManagementService
         // Optional fields
         $englishName = trim($data['english_name'] ?? '');
         $isConfirmed = isset($data['is_confirmed']) ? (int)$data['is_confirmed'] : 0;
-        
-        // Check for duplicates
-        $stmt = $db->prepare('SELECT id FROM suppliers WHERE official_name = ?');
-        $stmt->execute([$officialName]);
-        
-        if ($stmt->fetchColumn()) {
-            throw new Exception('المورد موجود بالفعل');
-        }
-        
-        // Normalize name using Normalizer class
-        $normalizer = new Normalizer();
-        $normalizedName = $normalizer->normalizeSupplierName($officialName);
-        
-        // Insert supplier with all fields
-        $stmt = $db->prepare("
-            INSERT INTO suppliers (
-                official_name, 
-                english_name, 
-                normalized_name, 
-                is_confirmed, 
-                created_at
-            ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ");
-        
-        $stmt->execute([
-            $officialName,
-            $englishName ?: null,
-            $normalizedName,
-            $isConfirmed
-        ]);
-        
-        $supplierId = (int)$db->lastInsertId();
-        
-        return [
-            'supplier_id' => $supplierId,
-            'official_name' => $officialName,
-            'english_name' => $englishName,
-            'normalized_name' => $normalizedName,
-            'is_confirmed' => $isConfirmed
-        ];
+
+        return TransactionBoundary::run($db, static function () use ($db, $officialName, $englishName, $isConfirmed): array {
+            $normalizer = new Normalizer();
+            $normalizedName = $normalizer->normalizeSupplierName($officialName);
+            if ($normalizedName === '') {
+                $normalizedName = mb_strtolower($officialName);
+            }
+
+            // Serialize concurrent creates for the same normalized supplier name.
+            $lockStmt = $db->prepare('SELECT pg_advisory_xact_lock(hashtext(?))');
+            $lockStmt->execute(['supplier:create:' . $normalizedName]);
+
+            $dupStmt = $db->prepare('
+                SELECT id
+                FROM suppliers
+                WHERE official_name = ?
+                   OR normalized_name = ?
+                LIMIT 1
+            ');
+            $dupStmt->execute([$officialName, $normalizedName]);
+            if ($dupStmt->fetchColumn()) {
+                throw new Exception('المورد موجود بالفعل');
+            }
+
+            $stmt = $db->prepare("
+                INSERT INTO suppliers (
+                    official_name,
+                    english_name,
+                    normalized_name,
+                    is_confirmed,
+                    created_at
+                ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ");
+
+            $stmt->execute([
+                $officialName,
+                $englishName ?: null,
+                $normalizedName,
+                $isConfirmed
+            ]);
+
+            $supplierId = (int)$db->lastInsertId();
+
+            return [
+                'supplier_id' => $supplierId,
+                'official_name' => $officialName,
+                'english_name' => $englishName,
+                'normalized_name' => $normalizedName,
+                'is_confirmed' => $isConfirmed
+            ];
+        });
     }
 }

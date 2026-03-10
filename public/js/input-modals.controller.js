@@ -39,10 +39,154 @@ function t(key, params) {
     return output;
 }
 
+function wbglNormalizeLocaleDigits(input) {
+    const value = String(input || '');
+    const arabicIndic = '٠١٢٣٤٥٦٧٨٩';
+    const easternArabicIndic = '۰۱۲۳۴۵۶۷۸۹';
+
+    let normalized = value;
+    for (let i = 0; i < 10; i += 1) {
+        normalized = normalized.replace(new RegExp(arabicIndic[i], 'g'), String(i));
+        normalized = normalized.replace(new RegExp(easternArabicIndic[i], 'g'), String(i));
+    }
+
+    return normalized
+        .replace(/\u066B/g, '.') // Arabic decimal separator
+        .replace(/\u066C/g, ',') // Arabic thousands separator
+        .replace(/\s+/g, '');
+}
+
+function wbglParseManualAmount(rawInput) {
+    const normalized = wbglNormalizeLocaleDigits(rawInput).replace(/[^\d.,]/g, '');
+    if (normalized === '') {
+        return {
+            rawInput: String(rawInput || ''),
+            cleanedInput: '',
+            typingDisplay: '',
+            fixedDisplay: '',
+            numericValue: null,
+            valid: false
+        };
+    }
+
+    const lastDot = normalized.lastIndexOf('.');
+    const lastComma = normalized.lastIndexOf(',');
+    let decimalIndex = -1;
+    let treatAsDecimal = false;
+
+    if (lastDot !== -1 && lastComma !== -1) {
+        decimalIndex = Math.max(lastDot, lastComma);
+        treatAsDecimal = true;
+    } else if (lastDot !== -1) {
+        decimalIndex = lastDot;
+        treatAsDecimal = true;
+    } else if (lastComma !== -1) {
+        const commaCount = (normalized.match(/,/g) || []).length;
+        const rightDigits = normalized.length - lastComma - 1;
+        if (commaCount === 1 && rightDigits > 0 && rightDigits <= 2) {
+            decimalIndex = lastComma;
+            treatAsDecimal = true;
+        }
+    }
+
+    let integerPart = '';
+    let fractionPart = '';
+    let hasTrailingDecimal = false;
+
+    if (treatAsDecimal && decimalIndex >= 0) {
+        integerPart = normalized.slice(0, decimalIndex).replace(/[.,]/g, '');
+        const rightRaw = normalized.slice(decimalIndex + 1);
+        hasTrailingDecimal = rightRaw.length === 0;
+        fractionPart = rightRaw.replace(/[.,]/g, '').slice(0, 2);
+    } else {
+        integerPart = normalized.replace(/[.,]/g, '');
+    }
+
+    integerPart = integerPart.replace(/^0+(?=\d)/, '');
+    if (integerPart === '') {
+        integerPart = '0';
+    }
+
+    const groupedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    const typingDisplay = treatAsDecimal
+        ? `${groupedInteger}.${hasTrailingDecimal ? '' : fractionPart}`
+        : groupedInteger;
+
+    const numericString = `${integerPart}${fractionPart !== '' ? `.${fractionPart}` : ''}`;
+    const numericValue = Number(numericString);
+    const valid = Number.isFinite(numericValue) && numericValue > 0;
+    const fixedDisplay = Number.isFinite(numericValue)
+        ? numericValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : '';
+
+    return {
+        rawInput: String(rawInput || ''),
+        cleanedInput: normalized,
+        typingDisplay,
+        fixedDisplay,
+        numericValue,
+        valid
+    };
+}
+
+function wbglRenderManualAmountPreview(parsedAmount) {
+    const previewEl = document.getElementById('manualAmountPreview');
+    if (!previewEl) {
+        return;
+    }
+
+    const parsed = parsedAmount || wbglParseManualAmount('');
+    if (!parsed.cleanedInput) {
+        previewEl.textContent = '';
+        previewEl.classList.remove('wbgl-helper-text--amount-error');
+        return;
+    }
+
+    if (!parsed.valid) {
+        previewEl.textContent = t('modals.manual_entry.helper.amount_invalid');
+        previewEl.classList.add('wbgl-helper-text--amount-error');
+        return;
+    }
+
+    previewEl.textContent = t('modals.manual_entry.helper.amount_normalized', {
+        value: parsed.fixedDisplay,
+        currency: t('modals.currency.sar')
+    });
+    previewEl.classList.remove('wbgl-helper-text--amount-error');
+}
+
+function initializeManualAmountFormatter() {
+    const amountInput = document.getElementById('manualAmount');
+    if (!amountInput || amountInput.dataset.wbglAmountInit === '1') {
+        return;
+    }
+
+    amountInput.dataset.wbglAmountInit = '1';
+    amountInput.dir = 'ltr';
+    amountInput.inputMode = 'decimal';
+
+    amountInput.addEventListener('input', () => {
+        const parsed = wbglParseManualAmount(amountInput.value);
+        amountInput.value = parsed.typingDisplay;
+        wbglRenderManualAmountPreview(parsed);
+    });
+
+    amountInput.addEventListener('blur', () => {
+        const parsed = wbglParseManualAmount(amountInput.value);
+        if (!parsed.cleanedInput) {
+            amountInput.value = '';
+        } else if (parsed.valid) {
+            amountInput.value = parsed.fixedDisplay;
+        }
+        wbglRenderManualAmountPreview(parsed);
+    });
+}
+
 // دالة لفتح modal الإدخال اليدوي
 function showManualInput() {
     const modal = document.getElementById('manualEntryModal');
     if (modal) {
+        initializeManualAmountFormatter();
         setModalOpen(modal, true);
         document.getElementById('manualSupplier')?.focus();
     }
@@ -90,8 +234,14 @@ async function submitManualEntry() {
     const bank = document.getElementById('manualBank')?.value;
     const guarantee = document.getElementById('manualGuarantee')?.value;
     const contract = document.getElementById('manualContract')?.value;
-    const originalAmount = document.getElementById('manualAmount')?.value || '';
-    const cleanAmount = originalAmount.replace(/,/g, '');
+    const amountInput = document.getElementById('manualAmount');
+    const parsedAmount = wbglParseManualAmount(amountInput?.value || '');
+
+    if (!parsedAmount.valid) {
+        showToast(t('modals.manual_entry.helper.amount_invalid'), 'error');
+        amountInput?.focus();
+        return;
+    }
 
     const relatedTo = Array.from(document.getElementsByName('relatedTo')).find((radio) => radio.checked)?.value || 'contract';
     const payload = {
@@ -99,7 +249,7 @@ async function submitManualEntry() {
         bank,
         guarantee_number: guarantee,
         contract_number: contract,
-        amount: parseFloat(cleanAmount),
+        amount: parsedAmount.numericValue.toFixed(2),
         expiry_date: document.getElementById('manualExpiry')?.value,
         type: document.getElementById('manualType')?.value,
         issue_date: document.getElementById('manualIssue')?.value,
@@ -457,6 +607,8 @@ async function uploadExcelFile() {
 
 // إعداد الـ event listeners عند تحميل الصفحة
 document.addEventListener('DOMContentLoaded', function () {
+    initializeManualAmountFormatter();
+
     // Manual Entry Modal handlers
     const btnCloseManual = document.getElementById('btnCloseManualEntry');
     const btnCancelManual = document.getElementById('btnCancelManualEntry');

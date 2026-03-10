@@ -23,7 +23,7 @@
 
             <?php
             $settings = \App\Support\Settings::getInstance();
-            if (!$settings->isProductionMode()):
+            if (!$settings->isProductionMode() && \App\Support\TestDataVisibility::canCurrentUserAccessTestData()):
             ?>
             <div class="wbgl-modal-note wbgl-modal-note--warning">
                 <label class="wbgl-radio-option wbgl-fw-600">
