@@ -127,6 +127,7 @@ function wbglBuildImportSummary(payload, fallbackMessage = '') {
     const expectedBatchCount = Number(data.expected_batch_count || 0);
     const actualBatchCount = Number(data.actual_batch_count || 0);
     const integrityWarning = Boolean(data.integrity_warning);
+    const reusedExistingBatch = Boolean(data.reused_existing_batch);
     const batchIdentifier = String(data.batch_identifier || '').trim();
     const skippedDetails = Array.isArray(data.skipped_details) ? data.skipped_details.slice(0, 5) : [];
     const errorDetails = Array.isArray(data.error_details) ? data.error_details.slice(0, 5) : [];
@@ -139,6 +140,9 @@ function wbglBuildImportSummary(payload, fallbackMessage = '') {
     lines.push(`مكرر: ${duplicates}`);
     lines.push(`متخطي: ${skipped}`);
     lines.push(`أخطاء: ${errors}`);
+    if (reusedExistingBatch) {
+        lines.push('تنبيه: الملف كان مستوردًا قبل قليل، وتم فتح الدفعة الموجودة بدل إنشاء دفعة جديدة.');
+    }
 
     if (batchIdentifier !== '') {
         lines.push(`معرف الدفعة: ${batchIdentifier}`);
@@ -166,6 +170,7 @@ function wbglBuildImportSummary(payload, fallbackMessage = '') {
 async function wbglShowImportSummary(payload, fallbackMessage = '') {
     const data = payload && typeof payload === 'object' ? payload : {};
     const hasWarning = Boolean(data.integrity_warning)
+        || Boolean(data.reused_existing_batch)
         || Number(data.duplicates || 0) > 0
         || Number(data.skipped || 0) > 0
         || Number(data.errors || 0) > 0;
@@ -371,6 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 const payload = json.data || {};
                                 await wbglShowImportSummary(payload, json.message || wbglT('common.ui.import_successful', ''));
                                 const hasWarning = Boolean(payload.integrity_warning)
+                                    || Boolean(payload.reused_existing_batch)
                                     || Number(payload.duplicates || 0) > 0
                                     || Number(payload.skipped || 0) > 0
                                     || Number(payload.errors || 0) > 0;

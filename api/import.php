@@ -11,6 +11,7 @@ require_once __DIR__ . '/_bootstrap.php';
 use App\Services\ImportService;
 use App\Services\BatchAuditService;
 use App\Services\NotificationPolicyService;
+use App\Support\Database;
 use App\Support\Settings;
 use App\Support\TestDataVisibility;
 
@@ -44,6 +45,78 @@ function wbgl_import_fetch_batch_counts(PDO $db, string $batchIdentifier): array
         'real_guarantees' => (int)($row['real_guarantees'] ?? 0),
         'test_guarantees' => (int)($row['test_guarantees'] ?? 0),
     ];
+}
+
+function wbgl_import_file_hash(string $filePath): string
+{
+    $hash = @hash_file('sha256', $filePath);
+    return is_string($hash) ? strtolower(trim($hash)) : '';
+}
+
+/**
+ * @return array{batch_identifier:string,initiated_by:string,created_at:string}|null
+ */
+function wbgl_import_find_recent_batch_by_hash(PDO $db, string $fileHash, bool $isTestData, int $windowSeconds = 1800): ?array
+{
+    $normalizedHash = strtolower(trim($fileHash));
+    if ($normalizedHash === '') {
+        return null;
+    }
+
+    $threshold = date('Y-m-d H:i:s', time() - max(60, $windowSeconds));
+    $stmt = $db->prepare(
+        "SELECT import_source, initiated_by, created_at
+         FROM batch_audit_events
+         WHERE event_type IN ('excel_import_completed', 'excel_import_completed_with_warning')
+           AND payload_json IS NOT NULL
+           AND COALESCE(payload_json::jsonb ->> 'file_sha256', '') = ?
+           AND COALESCE(payload_json::jsonb ->> 'is_test_data', 'false') = ?
+           AND created_at >= ?
+         ORDER BY id DESC
+         LIMIT 1"
+    );
+    $stmt->execute([
+        $normalizedHash,
+        $isTestData ? 'true' : 'false',
+        $threshold,
+    ]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($row)) {
+        return null;
+    }
+
+    return [
+        'batch_identifier' => trim((string)($row['import_source'] ?? '')),
+        'initiated_by' => trim((string)($row['initiated_by'] ?? '')),
+        'created_at' => trim((string)($row['created_at'] ?? '')),
+    ];
+}
+
+function wbgl_import_try_acquire_file_lock(PDO $db, string $fileHash): bool
+{
+    $normalizedHash = strtolower(trim($fileHash));
+    if ($normalizedHash === '') {
+        return true;
+    }
+
+    $stmt = $db->prepare('SELECT pg_try_advisory_lock(hashtext(?))');
+    $stmt->execute(['excel_import:' . $normalizedHash]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function wbgl_import_release_file_lock(PDO $db, string $fileHash): void
+{
+    $normalizedHash = strtolower(trim($fileHash));
+    if ($normalizedHash === '') {
+        return;
+    }
+
+    try {
+        $stmt = $db->prepare('SELECT pg_advisory_unlock(hashtext(?))');
+        $stmt->execute(['excel_import:' . $normalizedHash]);
+    } catch (\Throwable) {
+        // Connection teardown also releases session advisory locks.
+    }
 }
 
 // Fatal Error Handler
@@ -118,11 +191,116 @@ try {
         wbgl_api_compat_fail(500, 'فشل نقل الملف المرفوع', [], 'internal');
     }
 
+    $db = Database::connect();
+    $fileHash = wbgl_import_file_hash($tempPath);
+    $lockAcquired = wbgl_import_try_acquire_file_lock($db, $fileHash);
+    if (!$lockAcquired) {
+        $recentBatch = wbgl_import_find_recent_batch_by_hash(
+            $db,
+            $fileHash,
+            $isTestDataRequested && TestDataVisibility::canCurrentUserAccessTestData()
+        );
+        if ($recentBatch !== null && $recentBatch['batch_identifier'] !== '') {
+            $recentBatchCounts = wbgl_import_fetch_batch_counts($db, $recentBatch['batch_identifier']);
+            $recentVisibleCount = ($isTestDataRequested && TestDataVisibility::canCurrentUserAccessTestData())
+                ? $recentBatchCounts['test_guarantees']
+                : $recentBatchCounts['real_guarantees'];
+            try {
+                BatchAuditService::record(
+                    $recentBatch['batch_identifier'],
+                    'excel_import_duplicate_request_reused',
+                    wbgl_api_current_user_display(),
+                    'DUPLICATE_FILE_IN_FLIGHT',
+                    [
+                        'file_name' => $filename,
+                        'file_sha256' => $fileHash,
+                        'reused_batch_identifier' => $recentBatch['batch_identifier'],
+                        'reused_batch_created_at' => $recentBatch['created_at'],
+                    ]
+                );
+            } catch (\Throwable) {
+                // Non-blocking.
+            }
+
+            @unlink($tempPath);
+            wbgl_api_compat_success([
+                'data' => [
+                    'batch_identifier' => $recentBatch['batch_identifier'],
+                    'imported' => 0,
+                    'duplicates' => 0,
+                    'imported_records' => [],
+                    'auto_matched' => 0,
+                    'total_rows' => 0,
+                    'skipped' => 0,
+                    'errors' => 0,
+                    'skipped_details' => [],
+                    'error_details' => [],
+                    'expected_batch_count' => $recentVisibleCount,
+                    'actual_batch_count' => $recentVisibleCount,
+                    'batch_counts' => $recentBatchCounts,
+                    'integrity_warning' => false,
+                    'reused_existing_batch' => true,
+                ],
+                'message' => 'هذا الملف قيد المعالجة أو تم استيراده قبل لحظات. تم فتح الدفعة الموجودة بدل إنشاء نسخة جديدة.',
+            ]);
+        }
+
+        @unlink($tempPath);
+        wbgl_api_compat_fail(409, 'هذا الملف قيد الاستيراد بالفعل. انتظر قليلاً ثم افتح صفحة الدفعة الحالية.', [], 'conflict');
+    }
+
     try {
         // Import using service
         $service = new ImportService();
         $isTestData = $isTestDataRequested && TestDataVisibility::canCurrentUserAccessTestData();
         $actor = wbgl_api_current_user_display();
+        $recentBatch = wbgl_import_find_recent_batch_by_hash($db, $fileHash, $isTestData);
+        if ($recentBatch !== null && $recentBatch['batch_identifier'] !== '') {
+            $recentBatchCounts = wbgl_import_fetch_batch_counts($db, $recentBatch['batch_identifier']);
+            $recentVisibleCount = $isTestData
+                ? $recentBatchCounts['test_guarantees']
+                : $recentBatchCounts['real_guarantees'];
+            try {
+                BatchAuditService::record(
+                    $recentBatch['batch_identifier'],
+                    'excel_import_duplicate_request_reused',
+                    $actor,
+                    'DUPLICATE_FILE_RECENT',
+                    [
+                        'file_name' => $filename,
+                        'file_sha256' => $fileHash,
+                        'reused_batch_identifier' => $recentBatch['batch_identifier'],
+                        'reused_batch_created_at' => $recentBatch['created_at'],
+                    ]
+                );
+            } catch (\Throwable) {
+                // Non-blocking.
+            }
+
+            @unlink($tempPath);
+            wbgl_import_release_file_lock($db, $fileHash);
+            wbgl_api_compat_success([
+                'data' => [
+                    'batch_identifier' => $recentBatch['batch_identifier'],
+                    'imported' => 0,
+                    'duplicates' => 0,
+                    'imported_records' => [],
+                    'auto_matched' => 0,
+                    'total_rows' => 0,
+                    'skipped' => 0,
+                    'errors' => 0,
+                    'skipped_details' => [],
+                    'error_details' => [],
+                    'expected_batch_count' => $recentVisibleCount,
+                    'actual_batch_count' => $recentVisibleCount,
+                    'batch_counts' => $recentBatchCounts,
+                    'integrity_warning' => false,
+                    'reused_existing_batch' => true,
+                ],
+                'message' => 'هذا الملف تم استيراده قبل قليل بالفعل. تم فتح الدفعة الموجودة بدل إنشاء دفعة مكررة.',
+            ]);
+        }
+
         $result = $service->importFromExcel($tempPath, $_POST['imported_by'] ?? $actor, $filename, $isTestData);
         $importedRecords = is_array($result['imported_records'] ?? null) ? $result['imported_records'] : [];
         $importedCount = count($importedRecords);
@@ -136,7 +314,6 @@ try {
             $testBatchId = $_POST['test_batch_id'] ?? null;
             $testNote = $_POST['test_note'] ?? null;
             
-            $db = \App\Support\Database::connect();
             $repo = new \App\Repositories\GuaranteeRepository($db);
             
             foreach ($importedRecords as $record) {
@@ -166,7 +343,7 @@ try {
         $actualBatchCount = 0;
         $integrityWarning = false;
         if ($batchIdentifier !== '') {
-            $batchCounts = wbgl_import_fetch_batch_counts($pdo, $batchIdentifier);
+            $batchCounts = wbgl_import_fetch_batch_counts($db, $batchIdentifier);
             $actualBatchCount = $isTestData ? $batchCounts['test_guarantees'] : $batchCounts['real_guarantees'];
             $integrityWarning = $actualBatchCount !== $expectedBatchCount;
 
@@ -178,6 +355,8 @@ try {
                     $integrityWarning ? 'IMPORT_COUNT_MISMATCH' : 'IMPORT_COMPLETED',
                     [
                         'file_name' => $filename,
+                        'file_sha256' => $fileHash,
+                        'file_size_bytes' => (int)($file['size'] ?? 0),
                         'is_test_data' => $isTestData,
                         'imported' => $importedCount,
                         'duplicates' => $duplicateCount,
@@ -231,6 +410,9 @@ try {
         // Cleanup: Delete temporary file
         if (file_exists($tempPath)) {
             @unlink($tempPath);
+        }
+        if (isset($db) && $db instanceof PDO) {
+            wbgl_import_release_file_lock($db, $fileHash ?? '');
         }
     }
 

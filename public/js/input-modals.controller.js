@@ -57,6 +57,7 @@ async function wbglHandleImportSuccess(responsePayload, fallbackMessage) {
     await showSummary(payload, fallbackMessage || '');
 
     const hasWarning = Boolean(payload.integrity_warning)
+        || Boolean(payload.reused_existing_batch)
         || Number(payload.duplicates || 0) > 0
         || Number(payload.skipped || 0) > 0
         || Number(payload.errors || 0) > 0;
@@ -68,6 +69,8 @@ async function wbglHandleImportSuccess(responsePayload, fallbackMessage) {
 
     setTimeout(() => window.location.reload(), 300);
 }
+
+let wbglExcelImportInFlight = false;
 
 function wbglNormalizeLocaleDigits(input) {
     const value = String(input || '');
@@ -570,7 +573,13 @@ function showImportModal() {
 
 // Placeholder for uploadExcelFile function (to be defined elsewhere or added)
 async function uploadExcelFile() {
+    if (wbglExcelImportInFlight) {
+        showToast('استيراد الملف جارٍ بالفعل. انتظر حتى تكتمل العملية الحالية.', 'warning', 5000);
+        return;
+    }
+
     const fileInput = document.getElementById('excelFileInput');
+    const uploadButton = document.getElementById('btnUploadExcel');
     const file = fileInput.files[0];
 
     if (!file) {
@@ -579,6 +588,14 @@ async function uploadExcelFile() {
     }
 
     // Show loading indicator
+    wbglExcelImportInFlight = true;
+    if (uploadButton) {
+        uploadButton.disabled = true;
+    }
+    if (fileInput) {
+        fileInput.disabled = true;
+    }
+
     const loadingMsg = document.createElement('div');
     loadingMsg.id = 'uploadProgress';
     loadingMsg.className = 'wbgl-upload-progress';
@@ -626,6 +643,14 @@ async function uploadExcelFile() {
         loadingMsg.remove();
         console.error('Error:', error);
         showToast(t('modals.modal.txt_355ec77a'), 'error');
+    } finally {
+        wbglExcelImportInFlight = false;
+        if (uploadButton) {
+            uploadButton.disabled = !fileInput.files[0];
+        }
+        if (fileInput) {
+            fileInput.disabled = false;
+        }
     }
 
 
