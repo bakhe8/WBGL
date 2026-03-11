@@ -172,7 +172,8 @@ try {
     }
 
     // Validate extension
-    $filename = $file['name'];
+    $rawFilename = (string)($file['name'] ?? '');
+    $filename = ImportService::normalizeUploadedFilename($rawFilename);
     $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
 
     if (!in_array($ext, ['xlsx', 'xls'])) {
@@ -213,6 +214,7 @@ try {
                     'DUPLICATE_FILE_IN_FLIGHT',
                     [
                         'file_name' => $filename,
+                        'raw_file_name' => $rawFilename,
                         'file_sha256' => $fileHash,
                         'reused_batch_identifier' => $recentBatch['batch_identifier'],
                         'reused_batch_created_at' => $recentBatch['created_at'],
@@ -268,6 +270,7 @@ try {
                     'DUPLICATE_FILE_RECENT',
                     [
                         'file_name' => $filename,
+                        'raw_file_name' => $rawFilename,
                         'file_sha256' => $fileHash,
                         'reused_batch_identifier' => $recentBatch['batch_identifier'],
                         'reused_batch_created_at' => $recentBatch['created_at'],
@@ -355,6 +358,7 @@ try {
                     $integrityWarning ? 'IMPORT_COUNT_MISMATCH' : 'IMPORT_COMPLETED',
                     [
                         'file_name' => $filename,
+                        'raw_file_name' => $rawFilename,
                         'file_sha256' => $fileHash,
                         'file_size_bytes' => (int)($file['size'] ?? 0),
                         'is_test_data' => $isTestData,
@@ -431,6 +435,7 @@ try {
     try {
         $actor = wbgl_api_current_user_display();
         $fileName = isset($_FILES['file']['name']) ? (string)$_FILES['file']['name'] : '';
+        $normalizedFileName = ImportService::normalizeUploadedFilename($fileName);
         NotificationPolicyService::emit(
             'import_failure',
             'فشل عملية الاستيراد',
@@ -438,7 +443,8 @@ try {
             [
                 'severity' => 'error',
                 'actor' => $actor,
-                'file_name' => $fileName,
+                'file_name' => $normalizedFileName,
+                'raw_file_name' => $fileName,
                 'error_message' => $e->getMessage(),
                 'error_file' => basename($e->getFile()),
                 'error_line' => $e->getLine(),

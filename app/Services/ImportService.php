@@ -30,6 +30,31 @@ class ImportService
         $this->guaranteeRepo = $guaranteeRepo ?? new GuaranteeRepository($db);
     }
 
+    public static function normalizeUploadedFilename(string $filename): string
+    {
+        $candidate = trim(str_replace("\0", '', $filename));
+        if ($candidate === '') {
+            return 'excel-import.xlsx';
+        }
+
+        $basename = basename(str_replace('\\', '/', $candidate));
+        $basename = self::cleanupFilenameCandidate($basename);
+
+        if ($basename !== '' && !self::looksUnreadableFilename($basename)) {
+            return $basename;
+        }
+
+        foreach (['Windows-1256', 'ISO-8859-6', 'Windows-1252', 'ISO-8859-1'] as $encoding) {
+            $decoded = self::decodeFilenameCandidate($basename, $encoding);
+            if ($decoded !== '' && !self::looksUnreadableFilename($decoded)) {
+                return $decoded;
+            }
+        }
+
+        $extension = strtolower((string)pathinfo($basename, PATHINFO_EXTENSION));
+        return 'excel-import' . ($extension !== '' ? '.' . $extension : '.xlsx');
+    }
+
     /**
      * Sanitize filename for import_source
      * Decision #1: Add filename to prevent collision
@@ -44,6 +69,77 @@ class ImportService
         
         // Truncate to 30 chars
         return substr($clean, 0, 30);
+    }
+
+    private static function cleanupFilenameCandidate(string $filename): string
+    {
+        $cleaned = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $filename);
+        if (!is_string($cleaned)) {
+            $cleaned = $filename;
+        }
+
+        $collapsed = preg_replace('/\s+/u', ' ', trim($cleaned));
+        if (!is_string($collapsed)) {
+            return trim($cleaned);
+        }
+
+        return trim($collapsed);
+    }
+
+    private static function decodeFilenameCandidate(string $filename, string $sourceEncoding): string
+    {
+        if ($filename === '') {
+            return '';
+        }
+
+        $converted = null;
+        if (function_exists('mb_convert_encoding')) {
+            try {
+                $converted = @mb_convert_encoding($filename, 'UTF-8', $sourceEncoding);
+            } catch (\Throwable) {
+                $converted = null;
+            }
+        }
+
+        if (!is_string($converted) || trim($converted) === '') {
+            if (function_exists('iconv')) {
+                $iconv = @iconv($sourceEncoding, 'UTF-8//IGNORE', $filename);
+                if (is_string($iconv) && trim($iconv) !== '') {
+                    $converted = $iconv;
+                }
+            }
+        }
+
+        if (!is_string($converted) || trim($converted) === '') {
+            return '';
+        }
+
+        return self::cleanupFilenameCandidate($converted);
+    }
+
+    private static function looksUnreadableFilename(string $filename): bool
+    {
+        $stem = trim((string)pathinfo($filename, PATHINFO_FILENAME));
+        if ($stem === '') {
+            return true;
+        }
+
+        $questionCount = substr_count($stem, '?');
+        if ($questionCount === 0) {
+            return false;
+        }
+
+        $hasArabic = preg_match('/\p{Arabic}/u', $stem) === 1;
+        $hasLatin = preg_match('/[A-Za-z]/', $stem) === 1;
+        $hasDigits = preg_match('/\d/', $stem) === 1;
+        $length = function_exists('mb_strlen') ? (int)mb_strlen($stem, 'UTF-8') : strlen($stem);
+        $length = max(1, $length);
+
+        if (!$hasArabic && !$hasLatin && !$hasDigits) {
+            return true;
+        }
+
+        return $questionCount >= 3 && $questionCount >= (int)floor($length / 3);
     }
 
     /**
