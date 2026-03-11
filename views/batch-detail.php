@@ -585,7 +585,16 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
                     }
 
                     const res = await fetch('/api/batches.php', options);
-                    const json = await res.json();
+                    const rawResponse = await res.text();
+                    let json = null;
+                    try {
+                        json = rawResponse ? JSON.parse(rawResponse) : {};
+                    } catch (parseError) {
+                        const fallbackMessage = res.ok
+                            ? t('batch_detail.api.invalid_json', 'استجاب الخادم برد غير صالح. أعد تحميل الصفحة ثم حاول مرة أخرى.')
+                            : t('batch_detail.api.invalid_json_status', `تعذر قراءة استجابة الخادم (HTTP ${res.status}). تم تنفيذ العملية أو جزء منها، لذا يُنصح بتحديث الصفحة للتحقق من النتيجة.`);
+                        throw new Error(fallbackMessage);
+                    }
                      
                     if (!json.success) {
                         const requestId = (json && typeof json.request_id === 'string') ? json.request_id.trim() : '';

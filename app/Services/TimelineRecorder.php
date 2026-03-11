@@ -98,7 +98,10 @@ class TimelineRecorder
     {
         $db = \App\Support\Database::connection();
 
-        error_log("🔍 generateLetterSnapshot (LetterBuilder): GID=$guaranteeId Type=$actionType");
+        \App\Support\Logger::debug('timeline.generate_letter_snapshot.start', [
+            'guarantee_id' => (int)$guaranteeId,
+            'action_type' => (string)$actionType,
+        ]);
 
         // Fetch current guarantee state
         $stmt = $db->prepare("
@@ -119,7 +122,10 @@ class TimelineRecorder
         $data = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$data) {
-            error_log("❌ generateLetterSnapshot: Guarantee not found! GID=$guaranteeId");
+            \App\Support\Logger::warning('timeline.generate_letter_snapshot.guarantee_missing', [
+                'guarantee_id' => (int)$guaranteeId,
+                'action_type' => (string)$actionType,
+            ]);
             return null;
         }
 
@@ -162,10 +168,18 @@ class TimelineRecorder
             $letterData = \App\Services\LetterBuilder::prepare($guaranteeData, $actionType);
             $letterHtml = \App\Services\LetterBuilder::render($letterData);
 
-            error_log("✅ generateLetterSnapshot: HTML generated via LetterBuilder (" . strlen($letterHtml) . " bytes)");
+            \App\Support\Logger::debug('timeline.generate_letter_snapshot.rendered', [
+                'guarantee_id' => (int)$guaranteeId,
+                'action_type' => (string)$actionType,
+                'html_bytes' => strlen($letterHtml),
+            ]);
             return $letterHtml;
         } catch (\Exception $e) {
-            error_log("❌ generateLetterSnapshot: LetterBuilder error - " . $e->getMessage());
+            \App\Support\Logger::error('timeline.generate_letter_snapshot.render_failed', [
+                'guarantee_id' => (int)$guaranteeId,
+                'action_type' => (string)$actionType,
+                'error' => $e->getMessage(),
+            ]);
             return null;
         }
     }
@@ -530,7 +544,11 @@ class TimelineRecorder
         $creatorText = self::normalizeCreator((string)$creator);
         $actorStorage = TimelinePresentationNormalizer::actorStorageFromCreator($creatorText);
 
-        error_log("🔍 recording event: Type=$type Subtype=$subtype GID=$guaranteeId");
+        \App\Support\Logger::debug('timeline.record_event.start', [
+            'guarantee_id' => (int)$guaranteeId,
+            'event_type' => (string)$type,
+            'event_subtype' => $subtype !== null ? (string)$subtype : '',
+        ]);
 
         $snapshotJson = is_array($snapshot) && !empty($snapshot)
             ? json_encode($snapshot, JSON_UNESCAPED_UNICODE)
@@ -629,10 +647,20 @@ class TimelineRecorder
         try {
             $stmt->execute($values);
             $id = $db->lastInsertId();
-            error_log("✅ Event recorded successfully. ID=$id");
+            \App\Support\Logger::debug('timeline.record_event.saved', [
+                'guarantee_id' => (int)$guaranteeId,
+                'event_type' => (string)$type,
+                'event_subtype' => $subtype !== null ? (string)$subtype : '',
+                'event_id' => $id,
+            ]);
             return $id;
         } catch (\PDOException $e) {
-            error_log("❌ DB Error recording event: " . $e->getMessage());
+            \App\Support\Logger::error('timeline.record_event.db_error', [
+                'guarantee_id' => (int)$guaranteeId,
+                'event_type' => (string)$type,
+                'event_subtype' => $subtype !== null ? (string)$subtype : '',
+                'error' => $e->getMessage(),
+            ]);
             throw $e;
         }
     }
@@ -699,7 +727,9 @@ class TimelineRecorder
 
             if (!$rawDataJson) {
                 // Keep error log for fallback cases
-                error_log("❌ TimelineRecorder: No raw_data found for guarantee ID $guaranteeId during import event creation.");
+                \App\Support\Logger::warning('timeline.import_event.raw_data_missing', [
+                    'guarantee_id' => (int)$guaranteeId,
+                ]);
                 $snapshot = [];
             } else {
                 $rawData = json_decode($rawDataJson, true) ?? [];
