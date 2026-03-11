@@ -111,5 +111,15 @@
     "batch_detail.ui.txt_fb13a024": "دفعة",
     "batch_detail.bulk.extend_success": "تم تمديد {{count}} ضمان",
     "batch_detail.bulk.release_success": "تم اختيار الإفراج لـ {{count}} ضمان",
-    "batch_detail.bulk.cross_batch_warning": "تنبيه: {{count}} ضمان من المحدد موجود في دفعات أخرى، وسيظهر أثر الإجراء هناك أيضًا."
+    "batch_detail.bulk.cross_batch_warning": "تنبيه: {{count}} ضمان من المحدد موجود في دفعات أخرى، وسيظهر أثر الإجراء هناك أيضًا.",
+    "batch_detail.bulk.workflow.default": "تنفيذ المرحلة التالية للمحدد",
+    "batch_detail.bulk.workflow.mixed_selection": "المحدد من مراحل مختلفة",
+    "batch_detail.bulk.workflow.none_eligible": "لا توجد ضمانات مؤهلة لتنفيذ المرحلة التالية ضمن المحدد.",
+    "batch_detail.bulk.workflow.mixed_stage_warning": "اختر ضمانات من نفس المرحلة لتنفيذ اعتماد جماعي واضح.",
+    "batch_detail.bulk.workflow.success": "تم تنفيذ المرحلة التالية لـ {{count}} ضمان",
+    "batch_detail.bulk.workflow.stage.draft": "تدقيق المحدد",
+    "batch_detail.bulk.workflow.stage.audited": "تحليل المحدد",
+    "batch_detail.bulk.workflow.stage.analyzed": "إشراف المحدد",
+    "batch_detail.bulk.workflow.stage.supervised": "اعتماد المحدد",
+    "batch_detail.bulk.workflow.stage.approved": "توقيع المحدد"
 }

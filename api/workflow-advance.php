@@ -8,13 +8,11 @@
 require_once __DIR__ . '/_bootstrap.php';
 
 use App\Support\Database;
-use App\Support\TransactionBoundary;
 use App\Support\ConcurrencyConflictException;
 use App\Support\GuaranteeDecisionConcurrencyGuard;
 use App\Repositories\GuaranteeDecisionRepository;
 use App\Services\WorkflowService;
-use App\Services\TimelineRecorder;
-use App\Services\WorkflowAdvanceTransitionService;
+use App\Services\WorkflowAdvanceExecutionService;
 
 header('Content-Type: application/json; charset=utf-8');
 wbgl_api_require_login();
@@ -95,128 +93,8 @@ try {
     $expectedDecisionState = GuaranteeDecisionConcurrencyGuard::snapshot($db, (int)$guaranteeId);
 
     // 6. Execute transition/signature atomically under row lock.
-    $transitionResult = TransactionBoundary::run($db, function () use (
-        $db,
-        $decisionRepo,
-        $guaranteeId,
-        $nextStep,
-        $userName,
-        $expectedDecisionState
-    ): array {
-        $lockedDecisionState = GuaranteeDecisionConcurrencyGuard::lockSnapshot($db, (int)$guaranteeId);
-        GuaranteeDecisionConcurrencyGuard::assertExpectedSnapshot(
-            $expectedDecisionState,
-            $lockedDecisionState,
-            ['status', 'workflow_step', 'active_action', 'signatures_received', 'is_locked']
-        );
-
-        $decision = $decisionRepo->findByGuarantee((int)$guaranteeId);
-        if (!$decision) {
-            throw new \RuntimeException('No decision found for this guarantee');
-        }
-
-        $advancePolicy = WorkflowService::canAdvanceWithReasons($decision);
-        if (!($advancePolicy['allowed'] ?? false)) {
-            throw new ConcurrencyConflictException(
-                'تم تعديل حالة السجل أثناء التنفيذ. أعد التحميل ثم أعد المحاولة.',
-                ['workflow_reasons' => $advancePolicy['reasons'] ?? []]
-            );
-        }
-
-        $resolvedNextStep = WorkflowService::getNextStage($decision->workflowStep);
-        if (!$resolvedNextStep) {
-            throw new ConcurrencyConflictException('لا توجد مرحلة تالية بعد الآن لهذا السجل.');
-        }
-        if ($resolvedNextStep !== $nextStep) {
-            throw new ConcurrencyConflictException(
-                'تم انتقال السجل إلى مرحلة مختلفة أثناء التنفيذ. أعد التحميل ثم أعد المحاولة.',
-                [
-                    'expected_next_step' => $nextStep,
-                    'actual_next_step' => $resolvedNextStep,
-                ]
-            );
-        }
-
-        $oldStep = $decision->workflowStep;
-        $oldSnapshot = TimelineRecorder::createSnapshot($guaranteeId);
-        $requiredSignatures = max(1, WorkflowService::signaturesRequired());
-
-        if ($resolvedNextStep === WorkflowService::STAGE_SIGNED) {
-            $decision->signaturesReceived++;
-            if ($decision->signaturesReceived < $requiredSignatures) {
-                $decisionRepo->createOrUpdate($decision);
-                TimelineRecorder::recordWorkflowEvent(
-                    $guaranteeId,
-                    $oldStep,
-                    'signature_received_' . $decision->signaturesReceived,
-                    $userName,
-                    $oldSnapshot
-                );
-
-                return [
-                    'partial_signature' => true,
-                    'workflow_step' => $decision->workflowStep,
-                    'status' => $decision->status,
-                    'is_locked' => (bool)$decision->isLocked,
-                    'release_finalized' => false,
-                    'next_step' => $resolvedNextStep,
-                ];
-            }
-        }
-
-        $transitionOutcome = WorkflowAdvanceTransitionService::apply($decision, $resolvedNextStep);
-        $isReleaseFinalization = (bool)$transitionOutcome['release_finalized'];
-
-        if ($isReleaseFinalization) {
-            $finalizeStmt = $db->prepare("
-                UPDATE guarantee_decisions
-                SET workflow_step = ?,
-                    status = ?,
-                    signatures_received = ?,
-                    is_locked = TRUE,
-                    locked_reason = 'released_after_signed_workflow',
-                    last_modified_by = ?,
-                    last_modified_at = CURRENT_TIMESTAMP
-                WHERE guarantee_id = ?
-            ");
-            $finalizeStmt->execute([
-                $decision->workflowStep,
-                $decision->status,
-                max($requiredSignatures, (int)$decision->signaturesReceived),
-                $userName,
-                (int)$guaranteeId,
-            ]);
-            $decision->isLocked = true;
-            $decision->lockedReason = 'released_after_signed_workflow';
-        } else {
-            $decisionRepo->createOrUpdate($decision);
-        }
-
-        TimelineRecorder::recordWorkflowEvent(
-            $guaranteeId,
-            $oldStep,
-            $resolvedNextStep,
-            $userName,
-            $oldSnapshot
-        );
-
-        if ($isReleaseFinalization) {
-            TimelineRecorder::recordReleaseEvent(
-                $guaranteeId,
-                is_array($oldSnapshot) ? $oldSnapshot : [],
-                'release_completed_after_sign'
-            );
-        }
-
-        return [
-            'partial_signature' => false,
-            'workflow_step' => (string)$transitionOutcome['workflow_step'],
-            'status' => (string)$transitionOutcome['status'],
-            'is_locked' => $isReleaseFinalization ? true : (bool)$decision->isLocked,
-            'release_finalized' => $isReleaseFinalization,
-            'next_step' => $resolvedNextStep,
-        ];
-    });
+    $executor = new WorkflowAdvanceExecutionService($db);
+    $transitionResult = $executor->advance((int)$guaranteeId, $userName, $expectedDecisionState);
 
     if (($transitionResult['partial_signature'] ?? false) === true) {
         wbgl_api_compat_success([

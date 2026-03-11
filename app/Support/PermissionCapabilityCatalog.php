@@ -107,6 +107,12 @@ class PermissionCapabilityCatalog
                 'surface' => 'زر التقدم من مرحلة approved',
                 'behavior' => 'توقيع الخطابات والإنهاء',
             ],
+            'workflow_bulk_advance' => [
+                'domain' => 'سير الاعتماد',
+                'control_scope' => 'تنفيذ جماعي',
+                'surface' => 'زر التقدم الجماعي داخل صفحة الدفعة + API batches workflow_advance',
+                'behavior' => 'تنفيذ المرحلة التالية جماعيًا على السجلات المحددة داخل الدفعات',
+            ],
             'letters_print' => [
                 'domain' => 'سير الاعتماد',
                 'control_scope' => 'تنفيذ',

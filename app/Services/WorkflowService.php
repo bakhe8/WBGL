@@ -49,6 +49,20 @@ class WorkflowService
     ];
 
     /**
+     * @return string[]
+     */
+    public static function advanceableStages(): array
+    {
+        return [
+            self::STAGE_DRAFT,
+            self::STAGE_AUDITED,
+            self::STAGE_ANALYZED,
+            self::STAGE_SUPERVISED,
+            self::STAGE_APPROVED,
+        ];
+    }
+
+    /**
      * Get the next stage for a decision
      */
     public static function getNextStage(string $currentStage): ?string
@@ -192,5 +206,43 @@ class WorkflowService
     public static function signaturesRequired(): int
     {
         return 1; // Default requirement
+    }
+
+    /**
+     * @param array<int,string> $reasons
+     */
+    public static function describeAdvanceDenialReasons(array $reasons): string
+    {
+        $normalized = array_values(array_unique(array_filter(array_map(
+            static fn($reason): string => strtoupper(trim((string)$reason)),
+            $reasons
+        ), static fn(string $reason): bool => $reason !== '')));
+
+        if ($normalized === []) {
+            return 'غير مؤهل لتنفيذ المرحلة التالية';
+        }
+
+        $messages = [];
+        foreach ($normalized as $reason) {
+            if (str_starts_with($reason, 'MISSING_PERMISSION_')) {
+                $messages[] = 'لا تملك صلاحية تنفيذ المرحلة التالية';
+                continue;
+            }
+
+            $messages[] = match ($reason) {
+                'LOCKED_RECORD' => 'السجل مقفل',
+                'STATUS_NOT_READY' => 'السجل ليس في حالة جاهزة',
+                'ACTIVE_ACTION_NOT_SET' => 'لم يتم اختيار إجراء لهذا الضمان',
+                'WORKFLOW_STEP_EMPTY' => 'مرحلة السير غير محددة',
+                'NO_NEXT_STAGE' => 'لا توجد مرحلة تالية لهذا السجل',
+                'NEXT_STAGE_PERMISSION_NOT_MAPPED',
+                'STAGE_PERMISSION_NOT_MAPPED' => 'صلاحية المرحلة غير مضبوطة في النظام',
+                'STAGE_NOT_REJECTABLE' => 'المرحلة الحالية لا تقبل هذا الإجراء',
+                'STAGE_NOT_ALLOWED' => 'المرحلة الحالية ليست ضمن نطاق صلاحياتك',
+                default => 'غير مؤهل لتنفيذ المرحلة التالية',
+            };
+        }
+
+        return implode('، ', array_values(array_unique($messages)));
     }
 }

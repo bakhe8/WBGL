@@ -6,7 +6,9 @@
  */
 
 require_once __DIR__ . '/../app/Support/autoload.php';
+use App\Services\ActionabilityPolicyService;
 use App\Services\WorkflowStageDisplayService;
+use App\Services\WorkflowService;
 use App\Support\Database;
 use App\Support\Settings;
 use App\Support\TestDataVisibility;
@@ -100,6 +102,7 @@ $stmt = $db->prepare("
            d.signatures_received,
            d.supplier_id,
            d.bank_id,
+           d.is_locked,
            o_latest.occurred_at as occurrence_date
     FROM (
         SELECT
@@ -149,6 +152,18 @@ $batchName = $metadata['batch_name'] ?? ($batchDetailT('batch_detail.ui.txt_fb13
 $status = $metadata['status'] ?? 'active';
 $isClosed = ($status === 'completed');
 $batchNotes = $metadata['batch_notes'] ?? '';
+$canBulkWorkflowAdvance = Guard::has('workflow_bulk_advance');
+$bulkWorkflowAllowedStages = array_values(array_intersect(
+    WorkflowService::advanceableStages(),
+    ActionabilityPolicyService::allowedStages()
+));
+$workflowBulkButtonLabels = [
+    'draft' => $batchDetailT('batch_detail.bulk.workflow.stage.draft', 'تدقيق المحدد'),
+    'audited' => $batchDetailT('batch_detail.bulk.workflow.stage.audited', 'تحليل المحدد'),
+    'analyzed' => $batchDetailT('batch_detail.bulk.workflow.stage.analyzed', 'إشراف المحدد'),
+    'supervised' => $batchDetailT('batch_detail.bulk.workflow.stage.supervised', 'اعتماد المحدد'),
+    'approved' => $batchDetailT('batch_detail.bulk.workflow.stage.approved', 'توقيع المحدد'),
+];
 
 // Helper to parse JSON safely
 foreach ($guarantees as &$g) {
@@ -159,6 +174,7 @@ foreach ($guarantees as &$g) {
     $workflowStep = strtolower(trim((string)($g['workflow_step'] ?? 'draft')));
     $activeAction = strtolower(trim((string)($g['active_action'] ?? '')));
     $signaturesReceived = (int)($g['signatures_received'] ?? 0);
+    $isLocked = !empty($g['is_locked']);
     $hasBasicData = !empty($g['supplier_id']) && !empty($g['bank_id']);
 
     $g['is_actionable'] = $statusValue === 'ready'
@@ -169,6 +185,11 @@ foreach ($guarantees as &$g) {
         && $activeAction !== ''
         && ($workflowStep === 'signed' || $statusValue === 'released')
         && ($statusValue === 'released' || $signaturesReceived > 0);
+    $g['is_workflow_bulk_eligible'] = $canBulkWorkflowAdvance
+        && !$isLocked
+        && $statusValue === 'ready'
+        && $activeAction !== ''
+        && in_array($workflowStep, $bulkWorkflowAllowedStages, true);
 
     $stageUi = WorkflowStageDisplayService::describe(
         $workflowStep,
@@ -192,6 +213,15 @@ $printBypassCount = count(array_filter(
     static fn(array $g): bool => !empty($g['supplier_id']) && !empty($g['bank_id']) && !empty(trim((string)($g['active_action'] ?? '')))
 ));
 $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $printReadyCount;
+$workflowBulkEligibleCount = count(array_filter($guarantees, static fn(array $g): bool => !empty($g['is_workflow_bulk_eligible'])));
+$workflowEligibleStepsInBatch = array_values(array_unique(array_map(
+    static fn(array $g): string => strtolower(trim((string)($g['workflow_step'] ?? ''))),
+    array_filter($guarantees, static fn(array $g): bool => !empty($g['is_workflow_bulk_eligible']))
+)));
+$defaultWorkflowBulkLabel = count($workflowEligibleStepsInBatch) === 1
+    ? ($workflowBulkButtonLabels[$workflowEligibleStepsInBatch[0]] ?? $batchDetailT('batch_detail.bulk.workflow.default', 'تنفيذ المرحلة التالية للمحدد'))
+    : $batchDetailT('batch_detail.bulk.workflow.default', 'تنفيذ المرحلة التالية للمحدد');
+$showBatchActionsToolbar = !$isClosed && ($actionableCount > 0 || $workflowBulkEligibleCount > 0);
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -319,17 +349,25 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
             </div>
         </div>
 
-        <!-- Actions Toolbar (Visible when there are actionable records with no action yet) -->
-        <?php if (!$isClosed && $actionableCount > 0): ?>
+        <!-- Actions Toolbar -->
+        <?php if ($showBatchActionsToolbar): ?>
         <div class="card mb-4" id="actions-toolbar">
             <div class="card-body p-3 flex-between align-center">
                 <div class="flex-align-center gap-2">
+                    <?php if ($actionableCount > 0): ?>
                     <button id="btn-extend" type="button" class="btn btn-primary btn-sm">
                         <i data-lucide="calendar-plus" class="icon-16"></i> تمديد المحدد
                     </button>
                     <button id="btn-release" type="button" class="btn btn-success btn-sm">
                         <i data-lucide="check-circle-2" class="icon-16"></i> إفراج المحدد
                     </button>
+                    <?php endif; ?>
+                    <?php if ($workflowBulkEligibleCount > 0): ?>
+                    <button id="btn-workflow-advance" type="button" class="btn btn-warning btn-sm" disabled>
+                        <i data-lucide="workflow" class="icon-16"></i>
+                        <span id="workflow-bulk-label"><?= htmlspecialchars($defaultWorkflowBulkLabel, ENT_QUOTES, 'UTF-8') ?></span>
+                    </button>
+                    <?php endif; ?>
                 </div>
                 
                 <div class="text-sm">
@@ -458,6 +496,15 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
             return fallback || key;
         };
 
+        const guaranteesData = <?= json_encode($guarantees, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+        const workflowBulkAdvanceConfig = {
+            enabled: <?= json_encode($workflowBulkEligibleCount > 0) ?>,
+            defaultLabel: <?= json_encode($defaultWorkflowBulkLabel, JSON_UNESCAPED_UNICODE) ?>,
+            mixedLabel: <?= json_encode($batchDetailT('batch_detail.bulk.workflow.mixed_selection', 'المحدد من مراحل مختلفة'), JSON_UNESCAPED_UNICODE) ?>,
+            stageLabels: <?= json_encode($workflowBulkButtonLabels, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+            allowedStages: <?= json_encode(array_values($bulkWorkflowAllowedStages), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+        };
+
         const safeCreateIcons = () => {
             if (window.lucide && typeof window.lucide.createIcons === 'function') {
                 window.lucide.createIcons();
@@ -571,7 +618,7 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
                         })
                     };
 
-                    if (action !== 'extend' && action !== 'release') {
+                    if (action !== 'extend' && action !== 'release' && action !== 'workflow_advance') {
                          const formData = new FormData();
                          formData.append('action', action);
                          formData.append('import_source', <?= json_encode($importSource) ?>);
@@ -612,12 +659,79 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
         const TableManager = {
             toggleSelectAll(checked) {
                 document.querySelectorAll('.guarantee-checkbox').forEach(cb => cb.checked = checked);
+                refreshWorkflowBulkButton();
             },
             
             getSelected() {
                 return Array.from(document.querySelectorAll('.guarantee-checkbox:checked')).map(cb => cb.value);
             }
         };
+
+        function getGuaranteeById(id) {
+            const normalizedId = Number(id);
+            return guaranteesData.find((row) => Number(row.id) === normalizedId) || null;
+        }
+
+        function normalizeWorkflowStep(value) {
+            return String(value || '').trim().toLowerCase();
+        }
+
+        function canWorkflowBulkAdvanceRow(row) {
+            if (!row || !workflowBulkAdvanceConfig.enabled) {
+                return false;
+            }
+
+            const status = String(row.decision_status || '').trim().toLowerCase();
+            const action = String(row.active_action || '').trim().toLowerCase();
+            const step = normalizeWorkflowStep(row.workflow_step || 'draft');
+            const locked = Boolean(Number(row.is_locked || 0));
+
+            return !locked
+                && status === 'ready'
+                && action !== ''
+                && workflowBulkAdvanceConfig.allowedStages.includes(step);
+        }
+
+        function getWorkflowAdvanceSelectionState() {
+            const ids = TableManager.getSelected();
+            const selectedRows = ids.map(getGuaranteeById).filter(Boolean);
+            const eligibleRows = selectedRows.filter(canWorkflowBulkAdvanceRow);
+            const eligibleStages = Array.from(new Set(eligibleRows.map((row) => normalizeWorkflowStep(row.workflow_step))));
+
+            return {
+                ids,
+                selectedRows,
+                eligibleRows,
+                eligibleStages,
+                hasMixedStages: eligibleStages.length > 1,
+                stage: eligibleStages.length === 1 ? eligibleStages[0] : '',
+            };
+        }
+
+        function refreshWorkflowBulkButton() {
+            const button = document.getElementById('btn-workflow-advance');
+            const labelEl = document.getElementById('workflow-bulk-label');
+            if (!button || !labelEl) {
+                return;
+            }
+
+            const state = getWorkflowAdvanceSelectionState();
+            if (state.eligibleRows.length === 0) {
+                button.disabled = true;
+                labelEl.textContent = workflowBulkAdvanceConfig.defaultLabel;
+                return;
+            }
+
+            if (state.hasMixedStages) {
+                button.disabled = true;
+                labelEl.textContent = workflowBulkAdvanceConfig.mixedLabel;
+                return;
+            }
+
+            button.disabled = false;
+            labelEl.textContent = workflowBulkAdvanceConfig.stageLabels[state.stage]
+                || workflowBulkAdvanceConfig.defaultLabel;
+        }
 
         function closeModal() {
             Modal.close();
@@ -686,6 +800,11 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
                 releaseBtn.addEventListener('click', () => executeBulkAction('release'));
             }
 
+            const workflowAdvanceBtn = document.getElementById('btn-workflow-advance');
+            if (workflowAdvanceBtn) {
+                workflowAdvanceBtn.addEventListener('click', executeBulkWorkflowAdvance);
+            }
+
             const selectAllBtn = document.getElementById('btn-select-all');
             if (selectAllBtn) {
                 selectAllBtn.addEventListener('click', () => {
@@ -714,6 +833,10 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
                     TableManager.toggleSelectAll(Boolean(selectAllCheckbox.checked));
                 });
             }
+
+            document.querySelectorAll('.guarantee-checkbox').forEach((checkbox) => {
+                checkbox.addEventListener('change', refreshWorkflowBulkButton);
+            });
         }
 
         function handleBatchAction(action) {
@@ -840,6 +963,60 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
             }
         }
 
+        async function executeBulkWorkflowAdvance() {
+            const state = getWorkflowAdvanceSelectionState();
+            if (state.ids.length === 0) {
+                Toast.show(t('batch_detail.ui.txt_68f85d11'), 'warning');
+                return;
+            }
+
+            if (state.eligibleRows.length === 0) {
+                Toast.show(
+                    t('batch_detail.bulk.workflow.none_eligible', 'لا توجد ضمانات مؤهلة لتنفيذ المرحلة التالية ضمن المحدد.'),
+                    'warning'
+                );
+                return;
+            }
+
+            if (state.hasMixedStages) {
+                Toast.show(
+                    t('batch_detail.bulk.workflow.mixed_stage_warning', 'اختر ضمانات من نفس المرحلة لتنفيذ اعتماد جماعي واضح.'),
+                    'warning',
+                    5000
+                );
+                return;
+            }
+
+            try {
+                document.getElementById('table-loading').style.display = 'flex';
+                const res = await API.post('workflow_advance', { guarantee_ids: state.ids });
+
+                const successMessage = t(
+                    'batch_detail.bulk.workflow.success',
+                    `تم تنفيذ المرحلة التالية لـ ${res.advanced_count || 0} ضمان`,
+                    { count: Number(res.advanced_count || 0) }
+                );
+                Toast.show(successMessage, 'success');
+
+                let reloadDelay = 1000;
+                const crossBatchImpacted = Number(res.cross_batch_impacted_count || 0);
+                if (crossBatchImpacted > 0) {
+                    const warningToastDuration = 9000;
+                    const warningMessage = t(
+                        'batch_detail.bulk.cross_batch_warning',
+                        `تنبيه: ${crossBatchImpacted} ضمان/ضمانات من المحدد موجودة في دفعات أخرى، وسيظهر أثر الإجراء هناك أيضًا.`,
+                        { count: crossBatchImpacted }
+                    );
+                    Toast.show(warningMessage, 'warning', warningToastDuration);
+                    reloadDelay = warningToastDuration + 300;
+                }
+                setTimeout(() => location.reload(), reloadDelay);
+            } catch (e) {
+                document.getElementById('table-loading').style.display = 'none';
+                Toast.show(e.message, 'error');
+            }
+        }
+
         function openMetadataModal() {
             Modal.open(`
                 <div class="p-4">
@@ -882,8 +1059,7 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
                 return;
             }
 
-            const guarantees = <?= json_encode($guarantees) ?>;
-            const ready = guarantees.filter((g) => {
+            const ready = guaranteesData.filter((g) => {
                 if (printBypassForSystemManager) {
                     const hasBasicData = Boolean(g.supplier_id) && Boolean(g.bank_id);
                     const hasAction = String(g.active_action || '').trim() !== '';
@@ -912,6 +1088,7 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
 
         bindModalActions();
         bindPageActions();
+        refreshWorkflowBulkButton();
         // Initialize Icons
         safeCreateIcons();
 

@@ -146,6 +146,15 @@ try {
                     !empty($reductions) ? $reductions : null
                 );
                 break;
+
+            case 'workflow_advance':
+                wbgl_api_require_permission('workflow_bulk_advance');
+                $result = $service->advanceWorkflowBatch(
+                    $importSource,
+                    Input::string($input, 'user_id', $actor),
+                    Input::array($input, 'guarantee_ids', null)
+                );
+                break;
                 
             case 'close':
                 $result = $service->closeBatch($importSource, wbgl_api_current_user_display());

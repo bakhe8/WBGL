@@ -752,6 +752,185 @@ class BatchService
     }
 
     /**
+     * Advance selected guarantees to the next workflow stage.
+     *
+     * Each guarantee is evaluated independently. Records with different current
+     * stages can coexist in the selection, but the UI is expected to group them
+     * by stage for clarity.
+     */
+    public function advanceWorkflowBatch(string $importSource, string $userId = 'system', ?array $guaranteeIds = null): array
+    {
+        if ($this->isBatchClosed($importSource)) {
+            return [
+                'success' => false,
+                'error' => 'الدفعة مغلقة - لا يمكن تنفيذ اعتماد جماعي للمراحل'
+            ];
+        }
+
+        $ids = $this->normalizeIds($guaranteeIds);
+        $hasSelection = $guaranteeIds !== null;
+        if ($hasSelection && empty($ids)) {
+            return [
+                'success' => false,
+                'error' => 'لا توجد ضمانات محددة'
+            ];
+        }
+
+        $guarantees = $this->getBatchGuarantees($importSource, $hasSelection ? $ids : null);
+        if (empty($guarantees)) {
+            return [
+                'success' => false,
+                'error' => 'الدفعة فارغة'
+            ];
+        }
+
+        $foundIds = array_map('intval', array_column($guarantees, 'id'));
+        $invalidIds = $hasSelection ? array_values(array_diff($ids, $foundIds)) : [];
+        $crossBatchImpactedIds = $this->findCrossBatchImpactedGuaranteeIds($foundIds);
+
+        $decisionRepo = new \App\Repositories\GuaranteeDecisionRepository($this->db);
+        $executor = new WorkflowAdvanceExecutionService($this->db);
+
+        $advanced = [];
+        $advancedDetails = [];
+        $blocked = [];
+        $errors = [];
+
+        foreach ($guarantees as $g) {
+            $guaranteeId = (int)($g['id'] ?? 0);
+            $guaranteeNumber = (string)($g['guarantee_number'] ?? '');
+
+            try {
+                if ($guaranteeId <= 0 || empty($g['decision_id'])) {
+                    $blocked[] = [
+                        'guarantee_id' => $guaranteeId,
+                        'guarantee_number' => $guaranteeNumber,
+                        'reason' => 'لا يوجد قرار لهذا الضمان'
+                    ];
+                    continue;
+                }
+
+                if (!empty($g['is_locked'])) {
+                    $blocked[] = [
+                        'guarantee_id' => $guaranteeId,
+                        'guarantee_number' => $guaranteeNumber,
+                        'reason' => 'السجل مقفل'
+                    ];
+                    continue;
+                }
+
+                $decision = $decisionRepo->findByGuarantee($guaranteeId);
+                if ($decision === null) {
+                    $blocked[] = [
+                        'guarantee_id' => $guaranteeId,
+                        'guarantee_number' => $guaranteeNumber,
+                        'reason' => 'لا يوجد قرار لهذا الضمان'
+                    ];
+                    continue;
+                }
+
+                $advancePolicy = WorkflowService::canAdvanceWithReasons($decision);
+                if (!($advancePolicy['allowed'] ?? false)) {
+                    $blocked[] = [
+                        'guarantee_id' => $guaranteeId,
+                        'guarantee_number' => $guaranteeNumber,
+                        'reason' => WorkflowService::describeAdvanceDenialReasons($advancePolicy['reasons'] ?? []),
+                        'workflow_reasons' => $advancePolicy['reasons'] ?? [],
+                    ];
+                    continue;
+                }
+
+                $currentStep = (string)$decision->workflowStep;
+                $transitionResult = $executor->advance(
+                    $guaranteeId,
+                    $userId,
+                    $this->decisionSnapshotFromBatchRow($g)
+                );
+
+                $advanced[] = $guaranteeId;
+                $advancedDetails[] = [
+                    'guarantee_id' => $guaranteeId,
+                    'guarantee_number' => $guaranteeNumber,
+                    'from_step' => $currentStep,
+                    'to_step' => (string)($transitionResult['workflow_step'] ?? $currentStep),
+                    'next_step' => (string)($transitionResult['next_step'] ?? ''),
+                    'partial_signature' => (bool)($transitionResult['partial_signature'] ?? false),
+                    'release_finalized' => (bool)($transitionResult['release_finalized'] ?? false),
+                ];
+            } catch (ConcurrencyConflictException $e) {
+                $blocked[] = [
+                    'guarantee_id' => $guaranteeId,
+                    'guarantee_number' => $guaranteeNumber,
+                    'reason' => 'تعارض تحديث متزامن: ' . $e->getMessage(),
+                    'workflow_reasons' => $e->context()['workflow_reasons'] ?? [],
+                ];
+            } catch (\Throwable $e) {
+                $errors[] = [
+                    'guarantee_id' => $guaranteeId,
+                    'guarantee_number' => $guaranteeNumber,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        $success = count($advanced) > 0;
+        $fromSteps = array_values(array_unique(array_filter(array_map(
+            static fn(array $item): string => trim((string)($item['from_step'] ?? '')),
+            $advancedDetails
+        ), static fn(string $step): bool => $step !== '')));
+        $nextSteps = array_values(array_unique(array_filter(array_map(
+            static fn(array $item): string => trim((string)($item['next_step'] ?? '')),
+            $advancedDetails
+        ), static fn(string $step): bool => $step !== '')));
+
+        Logger::info('batch_workflow_advance', [
+            'import_source' => $importSource,
+            'user_id' => $userId,
+            'selected_ids' => $hasSelection ? $ids : null,
+            'processed_ids' => $advanced,
+            'processed' => $advancedDetails,
+            'invalid_ids' => $invalidIds,
+            'cross_batch_impacted_ids' => $crossBatchImpactedIds,
+            'blocked' => $blocked,
+            'errors' => $errors,
+            'success' => $success,
+        ]);
+
+        BatchAuditService::record(
+            $importSource,
+            'batch_workflow_advance',
+            $userId,
+            null,
+            [
+                'selected_ids' => $hasSelection ? $ids : null,
+                'advanced_ids' => $advanced,
+                'advanced_count' => count($advanced),
+                'blocked_count' => count($blocked),
+                'error_count' => count($errors),
+                'from_steps' => $fromSteps,
+                'next_steps' => $nextSteps,
+            ]
+        );
+
+        return [
+            'success' => $success,
+            'error' => $success ? null : 'لا توجد ضمانات مؤهلة لتنفيذ المرحلة التالية',
+            'advanced_count' => count($advanced),
+            'advanced_ids' => $advanced,
+            'advanced' => $advancedDetails,
+            'from_steps' => $fromSteps,
+            'next_steps' => $nextSteps,
+            'blocked_count' => count($blocked),
+            'blocked' => $blocked,
+            'invalid_count' => count($invalidIds),
+            'invalid_ids' => $invalidIds,
+            'cross_batch_impacted_count' => count($crossBatchImpactedIds),
+            'cross_batch_impacted_ids' => $crossBatchImpactedIds,
+            'errors' => $errors,
+        ];
+    }
+
+    /**
      * @param array<string,mixed> $row
      * @return array<string,mixed>
      */

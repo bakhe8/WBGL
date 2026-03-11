@@ -111,5 +111,15 @@
     "batch_detail.ui.txt_fb13a024": "batch",
     "batch_detail.bulk.extend_success": "Extended {{count}} guarantees",
     "batch_detail.bulk.release_success": "Release selected for {{count}} guarantees",
-    "batch_detail.bulk.cross_batch_warning": "Warning: {{count}} selected guarantees also exist in other batches; the action impact will appear there too."
+    "batch_detail.bulk.cross_batch_warning": "Warning: {{count}} selected guarantees also exist in other batches; the action impact will appear there too.",
+    "batch_detail.bulk.workflow.default": "Advance selected to next stage",
+    "batch_detail.bulk.workflow.mixed_selection": "Mixed selected stages",
+    "batch_detail.bulk.workflow.none_eligible": "No selected guarantees are eligible for the next workflow stage.",
+    "batch_detail.bulk.workflow.mixed_stage_warning": "Select guarantees from the same stage for a clear bulk workflow advance.",
+    "batch_detail.bulk.workflow.success": "Advanced {{count}} guarantees to the next stage",
+    "batch_detail.bulk.workflow.stage.draft": "Audit selected",
+    "batch_detail.bulk.workflow.stage.audited": "Analyze selected",
+    "batch_detail.bulk.workflow.stage.analyzed": "Supervise selected",
+    "batch_detail.bulk.workflow.stage.supervised": "Approve selected",
+    "batch_detail.bulk.workflow.stage.approved": "Sign selected"
 }
