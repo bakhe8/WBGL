@@ -129,6 +129,7 @@ function wbglBuildImportSummary(payload, fallbackMessage = '') {
     const integrityWarning = Boolean(data.integrity_warning);
     const reusedExistingBatch = Boolean(data.reused_existing_batch);
     const batchIdentifier = String(data.batch_identifier || '').trim();
+    const duplicateDetails = Array.isArray(data.duplicate_details) ? data.duplicate_details.slice(0, 5) : [];
     const skippedDetails = Array.isArray(data.skipped_details) ? data.skipped_details.slice(0, 5) : [];
     const errorDetails = Array.isArray(data.error_details) ? data.error_details.slice(0, 5) : [];
 
@@ -152,6 +153,11 @@ function wbglBuildImportSummary(payload, fallbackMessage = '') {
     }
     if (integrityWarning) {
         lines.push('تحذير: يوجد فرق عددي يحتاج مراجعة فورية.');
+    }
+    if (duplicateDetails.length > 0) {
+        lines.push('');
+        lines.push('أبرز المكرر:');
+        duplicateDetails.forEach((item) => lines.push(`- ${item}`));
     }
     if (skippedDetails.length > 0) {
         lines.push('');

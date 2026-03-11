@@ -192,6 +192,7 @@ class ImportService
         
         $imported = 0;
         $duplicates = 0;  // Decision #6: Track duplicate imports
+        $duplicateDetails = [];
         $skipped = [];
         $errors = [];
         $importedIdsWithData = []; // Track full records for timeline events
@@ -354,7 +355,7 @@ class ImportService
 
                 if (($rowResult['kind'] ?? '') === 'duplicate') {
                     $duplicates++;
-                    $skipped[] = "الصف #{$rowNumber}: ضمان مكرر (تم تسجيل ظهور جديد في الدفعة الحالية)";
+                    $duplicateDetails[] = "الصف #{$rowNumber}: ضمان مكرر (تم تسجيل ظهور جديد في الدفعة الحالية)";
                     continue;
                 }
 
@@ -369,6 +370,7 @@ class ImportService
             'batch_identifier' => $batchIdentifier,
             'imported' => $imported,
             'duplicates' => $duplicates,  // Decision #6: Report duplicate count
+            'duplicate_details' => $duplicateDetails,
             'imported_records' => $importedIdsWithData, // Canonical full tracking contract
 
             'total_rows' => count($dataRows),

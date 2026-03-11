@@ -234,6 +234,7 @@ try {
                     'auto_matched' => 0,
                     'total_rows' => 0,
                     'skipped' => 0,
+                    'duplicate_details' => [],
                     'errors' => 0,
                     'skipped_details' => [],
                     'error_details' => [],
@@ -291,6 +292,7 @@ try {
                     'auto_matched' => 0,
                     'total_rows' => 0,
                     'skipped' => 0,
+                    'duplicate_details' => [],
                     'errors' => 0,
                     'skipped_details' => [],
                     'error_details' => [],
@@ -309,6 +311,7 @@ try {
         $importedCount = count($importedRecords);
         $duplicateCount = (int)($result['duplicates'] ?? 0);
         $batchIdentifier = trim((string)($result['batch_identifier'] ?? ''));
+        $duplicateDetails = is_array($result['duplicate_details'] ?? null) ? array_values($result['duplicate_details']) : [];
         $skippedDetails = is_array($result['skipped'] ?? null) ? array_values($result['skipped']) : [];
         $errorDetails = is_array($result['errors'] ?? null) ? array_values($result['errors']) : [];
 
@@ -364,6 +367,7 @@ try {
                         'is_test_data' => $isTestData,
                         'imported' => $importedCount,
                         'duplicates' => $duplicateCount,
+                        'duplicate_details' => array_slice($duplicateDetails, 0, 50),
                         'skipped_count' => count($skippedDetails),
                         'errors_count' => count($errorDetails),
                         'expected_batch_count' => $expectedBatchCount,
@@ -399,6 +403,7 @@ try {
                 'auto_matched' => $autoMatchStats['auto_matched'],
                 'total_rows' => $result['total_rows'],
                 'skipped' => count($skippedDetails),
+                'duplicate_details' => $duplicateDetails,
                 'errors' => count($errorDetails),
                 'skipped_details' => $skippedDetails,
                 'error_details' => $errorDetails,
