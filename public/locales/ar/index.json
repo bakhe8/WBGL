@@ -169,6 +169,7 @@
     "index.workflow.reject.in_progress": "جاري الرفض...",
     "index.workflow.stage_label": "المرحلة:",
     "index.workflow.step.draft": "بانتظار التدقيق",
+    "index.workflow.step.draft_without_action": "بانتظار اختيار الإجراء",
     "index.workflow.step.audited": "تم التدقيق",
     "index.workflow.step.analyzed": "تم التحليل",
     "index.workflow.step.supervised": "تم الإشراف",

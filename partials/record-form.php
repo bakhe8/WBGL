@@ -194,14 +194,6 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
             if ($workflowStep === '') {
                 $workflowStep = 'draft';
             }
-            $workflowStepI18nMap = [
-                'draft' => 'index.workflow.step.draft',
-                'audited' => 'index.workflow.step.audited',
-                'analyzed' => 'index.workflow.step.analyzed',
-                'supervised' => 'index.workflow.step.supervised',
-                'approved' => 'index.workflow.step.approved',
-                'signed' => 'index.workflow.step.signed',
-            ];
             $workflowActionI18nMap = [
                 'draft' => 'index.workflow.action.audit',
                 'audited' => 'index.workflow.action.analyze',
@@ -210,17 +202,14 @@ $disabledTitle = !$canMutateRecord ? 'data-i18n-title="index.actions.unavailable
                 'approved' => 'index.workflow.action.sign',
                 'signed' => 'index.workflow.action.completed',
             ];
-            $workflowStepLabelMap = [
-                'draft' => 'بانتظار التدقيق',
-                'audited' => 'تم التدقيق',
-                'analyzed' => 'تم التحليل',
-                'supervised' => 'تم الإشراف',
-                'approved' => 'تم الاعتماد',
-                'signed' => 'تم التوقيع',
-            ];
-            $workflowStepI18nKey = $workflowStepI18nMap[$workflowStep] ?? null;
+            $workflowStageUi = \App\Services\WorkflowStageDisplayService::describe(
+                $workflowStep,
+                trim((string)($record['active_action'] ?? '')),
+                'index.workflow.step'
+            );
+            $workflowStepI18nKey = $workflowStageUi['key'] !== '' ? $workflowStageUi['key'] : null;
             $workflowActionI18nKey = $workflowActionI18nMap[$workflowStep] ?? null;
-            $workflowStepLabel = $workflowStepLabelMap[$workflowStep] ?? $workflowStep;
+            $workflowStepLabel = $workflowStageUi['fallback_label'];
             // Operational UI default: hide raw workflow-step badge to reduce noise.
             // Can be enabled explicitly by setting $showWorkflowStagePill = true before including this partial.
             $showWorkflowStagePill = isset($showWorkflowStagePill) ? (bool)$showWorkflowStagePill : false;

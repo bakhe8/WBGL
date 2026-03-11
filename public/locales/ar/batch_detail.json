@@ -14,6 +14,7 @@
     "batch_detail.workflow.step.approved": "تم الاعتماد",
     "batch_detail.workflow.step.audited": "تم التدقيق",
     "batch_detail.workflow.step.draft": "بانتظار التدقيق",
+    "batch_detail.workflow.step.draft_without_action": "بانتظار اختيار الإجراء",
     "batch_detail.workflow.step.signed": "تم التوقيع",
     "batch_detail.workflow.step.supervised": "تم الإشراف",
     "batch_detail.timeline.txt_9c870230": "يحتاج قرار",

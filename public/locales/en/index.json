@@ -169,6 +169,7 @@
     "index.workflow.reject.in_progress": "Rejecting...",
     "index.workflow.stage_label": "Stage:",
     "index.workflow.step.draft": "Awaiting Audit",
+    "index.workflow.step.draft_without_action": "Awaiting Action Selection",
     "index.workflow.step.audited": "Audited",
     "index.workflow.step.analyzed": "Analyzed",
     "index.workflow.step.supervised": "Supervised",

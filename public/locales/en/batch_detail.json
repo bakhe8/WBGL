@@ -14,6 +14,7 @@
     "batch_detail.workflow.step.approved": "Approved",
     "batch_detail.workflow.step.audited": "Audited",
     "batch_detail.workflow.step.draft": "Awaiting Audit",
+    "batch_detail.workflow.step.draft_without_action": "Awaiting Action Selection",
     "batch_detail.workflow.step.signed": "Signed",
     "batch_detail.workflow.step.supervised": "Supervised",
     "batch_detail.timeline.txt_9c870230": "Needs a decision",

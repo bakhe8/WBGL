@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/../app/Support/autoload.php';
+use App\Services\WorkflowStageDisplayService;
 use App\Support\Database;
 use App\Support\Settings;
 use App\Support\TestDataVisibility;
@@ -169,16 +170,12 @@ foreach ($guarantees as &$g) {
         && ($workflowStep === 'signed' || $statusValue === 'released')
         && ($statusValue === 'released' || $signaturesReceived > 0);
 
-    // Human-readable workflow stage for table display.
-    $stageMap = [
-        'draft' => ['key' => 'batch_detail.workflow.step.draft', 'label' => $batchDetailT('batch_detail.workflow.step.draft', 'بانتظار التدقيق'), 'class' => 'badge-neutral'],
-        'audited' => ['key' => 'batch_detail.workflow.step.audited', 'label' => $batchDetailT('batch_detail.workflow.step.audited', 'تم التدقيق'), 'class' => 'badge-info'],
-        'analyzed' => ['key' => 'batch_detail.workflow.step.analyzed', 'label' => $batchDetailT('batch_detail.workflow.step.analyzed', 'تم التحليل'), 'class' => 'badge-info'],
-        'supervised' => ['key' => 'batch_detail.workflow.step.supervised', 'label' => $batchDetailT('batch_detail.workflow.step.supervised', 'تم الإشراف'), 'class' => 'badge-info'],
-        'approved' => ['key' => 'batch_detail.workflow.step.approved', 'label' => $batchDetailT('batch_detail.workflow.step.approved', 'تم الاعتماد'), 'class' => 'badge-warning'],
-        'signed' => ['key' => 'batch_detail.workflow.step.signed', 'label' => $batchDetailT('batch_detail.workflow.step.signed', 'تم التوقيع'), 'class' => 'badge-success'],
-    ];
-    $stageUi = $stageMap[$workflowStep] ?? ['key' => '', 'label' => strtoupper($workflowStep ?: '-'), 'class' => 'badge-neutral'];
+    $stageUi = WorkflowStageDisplayService::describe(
+        $workflowStep,
+        $activeAction,
+        'batch_detail.workflow.step',
+        static fn(string $key, string $fallback): string => $batchDetailT($key, $fallback)
+    );
     $g['workflow_stage_i18n_key'] = $stageUi['key'];
     $g['workflow_stage_label'] = $stageUi['label'];
     $g['workflow_stage_class'] = $stageUi['class'];
