@@ -814,16 +814,19 @@ $batchPrintableCount = $printBypassForSystemManager ? $printBypassCount : $print
                     : t('batch_detail.bulk.release_success', `تم اختيار الإفراج لـ ${res.released_count} ضمان`, { count: res.released_count || 0 });
                 Toast.show(successMessage, 'success');
 
+                let reloadDelay = 1000;
                 const crossBatchImpacted = Number(res.cross_batch_impacted_count || 0);
                 if (crossBatchImpacted > 0) {
+                    const warningToastDuration = 9000;
                     const warningMessage = t(
                         'batch_detail.bulk.cross_batch_warning',
                         `تنبيه: ${crossBatchImpacted} ضمان/ضمانات من المحدد موجودة في دفعات أخرى، وسيظهر أثر الإجراء هناك أيضًا.`,
                         { count: crossBatchImpacted }
                     );
-                    Toast.show(warningMessage, 'warning', 5200);
+                    Toast.show(warningMessage, 'warning', warningToastDuration);
+                    reloadDelay = warningToastDuration + 300;
                 }
-                setTimeout(() => location.reload(), 1000);
+                setTimeout(() => location.reload(), reloadDelay);
 
             } catch (e) {
                 document.getElementById('table-loading').style.display = 'none';
